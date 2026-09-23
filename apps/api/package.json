@@ -1,0 +1,25 @@
+{
+  "name": "@constella/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@constella/db": "workspace:*",
+    "@constella/shared": "workspace:*",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/jwt": "^8.0.1",
+    "@trpc/server": "^11.19.0",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.31.4",
+    "fastify": "^4.27.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0"
+  }
+}

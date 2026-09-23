@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: constella_db
+    restart: always
+    environment:
+      POSTGRES_USER: constella
+      POSTGRES_PASSWORD: constella_secret_password
+      POSTGRES_DB: constella
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./volumes/pgdata:/var/lib/postgresql/data
