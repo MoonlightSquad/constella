@@ -18,6 +18,7 @@ import { authTokens, closeDb, db, users, identities, webCredentials, photoAssets
 import { appendTrpcOpenApiPaths } from './openapi.js';
 import { isEmailDeliveryConfigured, sendTransactionalEmail } from './utils/email.js';
 import { isPhotoStorageConfigured, removePhotoObjects } from './photos/storage.js';
+import { startBackgroundScheduler } from './engine/scheduler.js';
 
 declare module 'fastify' {
   interface FastifySchema {
@@ -543,7 +544,42 @@ async function bootstrap() {
   fastify.get('/docs/json', { schema: { hide: true } }, async () => openApiDocument);
   fastify.get('/docs', { schema: { hide: true } }, async (_request, reply) => reply.type('text/html; charset=utf-8').header('cache-control', 'public, max-age=300').send(swaggerHtml));
   fastify.get('/docs/', { schema: { hide: true } }, async (_request, reply) => reply.type('text/html; charset=utf-8').send(swaggerHtml));
-  fastify.addHook('onClose', async () => { await closeDb(); });
+  fastify.get('/realtime/stream', {
+    schema: { hide: true },
+  }, async (request, reply) => {
+    const token = (request.query as { token?: string })?.token || (request.headers.authorization?.replace(/^Bearer\s+/i, ''));
+    if (!token) return reply.status(401).send({ error: 'Token is required' });
+    let claims: { id: string };
+    try {
+      claims = fastify.jwt.verify(token);
+    } catch {
+      return reply.status(401).send({ error: 'Invalid token' });
+    }
+
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('X-Accel-Buffering', 'no');
+    reply.raw.flushHeaders?.();
+
+    reply.raw.write(`event: connected\ndata: ${JSON.stringify({ userId: claims.id, time: new Date().toISOString() })}\n\n`);
+
+    const interval = setInterval(() => {
+      if (!reply.raw.writableEnded) {
+        reply.raw.write(`event: ping\ndata: ${JSON.stringify({ time: Date.now() })}\n\n`);
+      }
+    }, 15000);
+
+    request.raw.on('close', () => {
+      clearInterval(interval);
+    });
+  });
+
+  const stopScheduler = startBackgroundScheduler(db);
+  fastify.addHook('onClose', async () => {
+    stopScheduler();
+    await closeDb();
+  });
 
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });

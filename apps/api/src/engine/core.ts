@@ -299,14 +299,83 @@ export const telegramIdForUser = async (db: any, userId: string) => {
   return identity?.uid ?? null;
 };
 
-export const notifyTelegram = async (telegramUserId: string, text: string) => {
+const userVelocityMap = new Map<string, { timestamps: number[]; lastLat?: number; lastLng?: number; lastLocTime?: number }>();
+
+export const checkSwipeVelocityAndSpam = async (
+  db: any,
+  userId: string,
+  location?: { lat: number; lng: number }
+) => {
+  const now = Date.now();
+  let entry = userVelocityMap.get(userId);
+  if (!entry) {
+    entry = { timestamps: [] };
+    userVelocityMap.set(userId, entry);
+  }
+  entry.timestamps = entry.timestamps.filter((t) => now - t <= 10_000);
+  entry.timestamps.push(now);
+
+  let flaggedReason: string | null = null;
+  if (entry.timestamps.length > 25) {
+    flaggedReason = 'Abnormal swipe velocity (>25 swipes in 10s)';
+  }
+
+  if (location && entry.lastLat != null && entry.lastLng != null && entry.lastLocTime != null) {
+    const elapsedSec = (now - entry.lastLocTime) / 1000;
+    if (elapsedSec < 300) {
+      const dLat = ((location.lat - entry.lastLat) * Math.PI) / 180;
+      const dLng = ((location.lng - entry.lastLng) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((entry.lastLat * Math.PI) / 180) * Math.cos((location.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+      const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      if (distKm > 500) {
+        flaggedReason = `Suspicious GPS jump (${Math.round(distKm)}km in ${Math.round(elapsedSec)}s)`;
+      }
+    }
+  }
+
+  if (location) {
+    entry.lastLat = location.lat;
+    entry.lastLng = location.lng;
+    entry.lastLocTime = now;
+  }
+
+  if (flaggedReason) {
+    await db.update(users).set({ shadowbannedAt: new Date() }).where(eq(users.id, userId));
+    await db.insert(events).values({
+      userId,
+      type: 'auto_shadowban',
+      meta: { reason: flaggedReason, timestamp: new Date().toISOString() },
+    });
+    return false;
+  }
+  return true;
+};
+
+export const notifyTelegram = async (
+  telegramUserId: string,
+  text: string,
+  options?: { silent?: boolean; userTimeZone?: string }
+) => {
   const token = process.env.BOT_TOKEN;
   if (!token) return;
   try {
+    let disableNotification = Boolean(options?.silent);
+    if (!disableNotification && options?.userTimeZone) {
+      const hour = getLocalHour(options.userTimeZone);
+      if (hour >= 23 || hour < 8) {
+        disableNotification = true;
+      }
+    }
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: telegramUserId, text }),
+      body: JSON.stringify({
+        chat_id: telegramUserId,
+        text,
+        disable_notification: disableNotification,
+      }),
       signal: AbortSignal.timeout(5000),
     });
   } catch {

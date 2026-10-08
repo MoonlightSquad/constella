@@ -266,7 +266,7 @@ export const messages = pgTable('messages', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   matchId: uuid('match_id').references(() => matches.id, { onDelete: 'cascade' }).notNull(),
   senderId: uuid('sender_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  kind: text('kind').$type<'text' | 'system' | 'contact' | 'gift'>().default('text').notNull(),
+  kind: text('kind').$type<'text' | 'system' | 'contact' | 'gift' | 'voice' | 'call'>().default('text').notNull(),
   body: text('body').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   deliveredAt: timestamp('delivered_at', { withTimezone: true }),

@@ -198,10 +198,29 @@ const openChat = async (match: Match) => {
   await loadChatMessages()
 }
 
+const contactInfo = ref<{ offeredByMe: boolean; mutual: boolean; usernames: string[] } | null>(null)
+const isSharingContact = ref(false)
+
+const isRecording = ref(false)
+const recordingDuration = ref(0)
+let mediaRecorder: MediaRecorder | null = null
+let audioChunks: Blob[] = []
+let recordingTimer: number | null = null
+
+const activeCall = ref<{ roomId: string; callType: 'audio' | 'video'; peerName: string } | null>(null)
+const isCalling = ref(false)
+
 const loadChatMessages = async () => {
   if (!selectedMatch.value) return
   try {
-    chatMessages.value = await $trpc.social.chatMessages.query({ matchId: selectedMatch.value.id })
+    const res = await $trpc.social.chatMessages.query({ matchId: selectedMatch.value.id })
+    if (Array.isArray(res)) {
+      chatMessages.value = res
+      contactInfo.value = null
+    } else if (res && typeof res === 'object') {
+      chatMessages.value = res.messages || []
+      contactInfo.value = res.contact || null
+    }
   } catch (error) {
     showError(error)
   }
@@ -220,6 +239,142 @@ const sendMessage = async () => {
   } finally {
     isSending.value = false
   }
+}
+
+const startVoiceRecording = async () => {
+  if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+    toast.value = t('dashboard.voiceUnsupported')
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm')
+      ? 'audio/webm'
+      : 'audio/ogg'
+    mediaRecorder = new MediaRecorder(stream)
+    audioChunks = []
+    recordingDuration.value = 0
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data)
+    }
+    mediaRecorder.start(100)
+    isRecording.value = true
+    recordingTimer = window.setInterval(() => {
+      recordingDuration.value += 1
+      if (recordingDuration.value >= 300) {
+        void stopVoiceRecording(true)
+      }
+    }, 1000)
+  } catch (error) {
+    showError(error)
+  }
+}
+
+const stopVoiceRecording = async (send = true) => {
+  if (!mediaRecorder || !isRecording.value) return
+  if (recordingTimer) clearInterval(recordingTimer)
+  isRecording.value = false
+  const duration = recordingDuration.value || 1
+
+  mediaRecorder.onstop = async () => {
+    const stream = mediaRecorder?.stream
+    stream?.getTracks().forEach((track) => track.stop())
+    if (!send || audioChunks.length === 0 || !selectedMatch.value) return
+    const mime = mediaRecorder?.mimeType || 'audio/webm'
+    const blob = new Blob(audioChunks, { type: mime })
+
+    isSending.value = true
+    try {
+      let audioUrl: string | null = null
+      try {
+        const uploadMeta = await $trpc.photos.createVoiceUpload.mutate({ contentType: mime as any })
+        await fetch(uploadMeta.uploadUrl, {
+          method: 'PUT',
+          body: blob,
+          headers: { 'Content-Type': mime },
+        })
+        const processed = await $trpc.photos.confirmVoiceUpload.mutate({
+          objectKey: uploadMeta.objectKey,
+          contentType: mime as any,
+        })
+        audioUrl = processed.publicUrl
+      } catch {
+        audioUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.readAsDataURL(blob)
+        })
+      }
+
+      if (audioUrl) {
+        await $trpc.social.sendVoiceMessage.mutate({
+          matchId: selectedMatch.value.id,
+          audioUrl,
+          durationSec: duration,
+        })
+        await Promise.all([loadChatMessages(), loadMatches(), loadQuests()])
+      }
+    } catch (err) {
+      showError(err)
+    } finally {
+      isSending.value = false
+    }
+  }
+  mediaRecorder.stop()
+}
+
+const cancelVoiceRecording = () => {
+  void stopVoiceRecording(false)
+}
+
+const parseVoice = (body: string) => {
+  try {
+    const parsed = JSON.parse(body)
+    if (parsed && typeof parsed === 'object' && parsed.audioUrl) {
+      return { audioUrl: parsed.audioUrl, durationSec: parsed.durationSec || 0 }
+    }
+  } catch {}
+  return { audioUrl: body, durationSec: 0 }
+}
+
+const shareContact = async () => {
+  if (!selectedMatch.value || isSharingContact.value) return
+  isSharingContact.value = true
+  try {
+    const res = await $trpc.social.shareContact.mutate({ matchId: selectedMatch.value.id })
+    toast.value = res.mutual ? 'Контакти відкрито!' : 'Пропозицію Telegram надіслано!'
+    await loadChatMessages()
+    window.setTimeout(() => { toast.value = '' }, 3600)
+  } catch (err) {
+    showError(err)
+  } finally {
+    isSharingContact.value = false
+  }
+}
+
+const startCall = async (callType: 'audio' | 'video') => {
+  if (!selectedMatch.value || isCalling.value) return
+  isCalling.value = true
+  try {
+    const callSession = await $trpc.social.startCall.mutate({
+      matchId: selectedMatch.value.id,
+      callType,
+    })
+    activeCall.value = {
+      roomId: callSession.roomId,
+      callType,
+      peerName: selectedMatch.value.profile?.displayName || 'Мандрівник',
+    }
+    await loadChatMessages()
+  } catch (err) {
+    showError(err)
+  } finally {
+    isCalling.value = false
+  }
+}
+
+const endCall = () => {
+  activeCall.value = null
 }
 
 const requestConfirmation = (message: string) => new Promise<boolean>((resolve) => {
@@ -398,22 +553,51 @@ onUnmounted(() => {
           <header class="chat-header">
             <button class="back-button" type="button" :aria-label="t('dashboard.allChats')" @click="selectedMatch = null">←</button>
             <div class="mini-avatar">{{ selectedMatch.profile?.city?.slice(0, 1)?.toUpperCase() || '✦' }}</div>
-            <div><h1>{{ selectedMatch.profile?.displayName || t('dashboard.newMatch') }}</h1><p>{{ selectedMatch.profile?.age }} {{ t('dashboard.years') }} · {{ selectedMatch.profile?.city }}</p></div>
-            <button v-if="selectedMatch.profile" class="chat-safety" type="button" @click="openReport(selectedMatch.profile, selectedMatch.id)">{{ t('dashboard.reportShort') }}</button>
-            <button v-if="selectedMatch.profile" class="chat-safety" type="button" @click="blockProfile(selectedMatch.profile.id, selectedMatch.id)">{{ t('dashboard.blockShort') }}</button>
-            <button class="refresh-button" type="button" :aria-label="t('dashboard.refreshMessages')" @click="loadChatMessages">↻</button>
+            <div class="chat-header-info">
+              <h1>{{ selectedMatch.profile?.displayName || t('dashboard.newMatch') }}</h1>
+              <p>{{ selectedMatch.profile?.age }} {{ t('dashboard.years') }} · {{ selectedMatch.profile?.city }}</p>
+            </div>
+            <div class="chat-header-actions">
+              <button class="call-icon-button" type="button" :title="t('dashboard.audioCall')" @click="startCall('audio')">📞</button>
+              <button class="call-icon-button" type="button" :title="t('dashboard.videoCall')" @click="startCall('video')">📹</button>
+              <button v-if="contactInfo?.mutual" class="contact-pill" type="button">
+                ✈️ {{ contactInfo.usernames.map(u => `@${u}`).join(', ') }}
+              </button>
+              <button v-else-if="selectedMatch.profile" class="contact-share-button" type="button" :disabled="isSharingContact || contactInfo?.offeredByMe" @click="shareContact">
+                {{ contactInfo?.offeredByMe ? '✓ Telegram запропоновано' : '✈️ ' + t('dashboard.shareTelegram') }}
+              </button>
+              <button v-if="selectedMatch.profile" class="chat-safety" type="button" @click="openReport(selectedMatch.profile, selectedMatch.id)">{{ t('dashboard.reportShort') }}</button>
+              <button v-if="selectedMatch.profile" class="chat-safety" type="button" @click="blockProfile(selectedMatch.profile.id, selectedMatch.id)">{{ t('dashboard.blockShort') }}</button>
+              <button class="refresh-button" type="button" :aria-label="t('dashboard.refreshMessages')" @click="loadChatMessages">↻</button>
+            </div>
           </header>
           <div class="message-list" aria-live="polite">
             <p class="chat-date">{{ t('dashboard.chatDate') }} · {{ formatOrbitDate(selectedMatch.createdAt.slice(0, 10)) }}</p>
             <article v-for="message in chatMessages" :key="message.id" class="message" :class="{ mine: message.senderId === account.userId }">
-              <p>{{ message.body }}</p>
+              <div v-if="message.kind === 'voice'" class="voice-bubble">
+                <audio :src="parseVoice(message.body).audioUrl" controls preload="none" class="voice-player" />
+                <span v-if="parseVoice(message.body).durationSec" class="voice-duration">{{ parseVoice(message.body).durationSec }}s</span>
+              </div>
+              <p v-else-if="message.kind === 'call'" class="call-banner">
+                📞 {{ message.body.includes('video') ? t('dashboard.videoCall') : t('dashboard.audioCall') }}
+              </p>
+              <p v-else>{{ message.body }}</p>
               <time>{{ formatTime(message.createdAt) }}</time>
             </article>
             <p v-if="chatMessages.length === 0" class="chat-start">{{ t('dashboard.chatStart') }}</p>
           </div>
           <form class="composer" @submit.prevent="sendMessage">
-            <input v-model="chatDraft" maxlength="1000" :placeholder="t('dashboard.messagePlaceholder')" autocomplete="off">
-            <button type="submit" :disabled="isSending || !chatDraft.trim()" :aria-label="t('dashboard.send')">{{ isSending ? '…' : t('dashboard.send') }}</button>
+            <div v-if="isRecording" class="recording-bar">
+              <span class="recording-dot">●</span>
+              <span>{{ t('dashboard.recording') }} {{ recordingDuration }}s</span>
+              <button type="button" class="cancel-rec-button" @click="cancelVoiceRecording">✕</button>
+              <button type="button" class="send-rec-button" @click="() => stopVoiceRecording(true)">✓</button>
+            </div>
+            <template v-else>
+              <input v-model="chatDraft" maxlength="1000" :placeholder="t('dashboard.messagePlaceholder')" autocomplete="off">
+              <button type="button" class="voice-rec-button" :aria-label="t('dashboard.recordVoice')" @click="startVoiceRecording">🎙️</button>
+              <button type="submit" :disabled="isSending || !chatDraft.trim()" :aria-label="t('dashboard.send')">{{ isSending ? '…' : t('dashboard.send') }}</button>
+            </template>
           </form>
           <p class="chat-footnote">{{ t('dashboard.chatPolling') }}</p>
         </div>
@@ -498,6 +682,18 @@ onUnmounted(() => {
         <button class="delete-account" type="button" @click="emit('deleteAccount')">Видалити акаунт і дані</button>
       </section>
     </main>
+
+    <div v-if="activeCall" class="modal-backdrop" @click.self="endCall">
+      <div class="call-modal">
+        <div class="call-avatar">✦</div>
+        <h2>{{ activeCall.peerName }}</h2>
+        <p class="call-subtitle">{{ activeCall.callType === 'video' ? t('dashboard.videoCall') : t('dashboard.audioCall') }}</p>
+        <p class="call-connected-text">{{ t('dashboard.callConnected') }}</p>
+        <div class="call-actions">
+          <button class="end-call-button" type="button" @click="endCall">{{ t('dashboard.endCall') }}</button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="safetyTarget" class="modal-backdrop" @click.self="safetyTarget = null">
       <form class="report-dialog" @submit.prevent="submitReport">
@@ -602,6 +798,29 @@ h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
 .row-arrow { color: #80918c; font-size: 23px; }
 .chat-panel { display: flex; min-height: min(72svh, 720px); flex-direction: column; border: 1px solid #2b3c3d; border-radius: 10px; background: #121f20; }
 .chat-header { display: flex; align-items: center; gap: 11px; border-bottom: 1px solid #2b3c3d; padding: 13px; }
+.chat-header-info { min-width: 0; flex: 1; }
+.chat-header-actions { display: flex; align-items: center; gap: 6px; }
+.call-icon-button { border: 1px solid #364949; border-radius: 8px; background: #182828; color: #e4b46c; padding: 5px 8px; font-size: 14px; cursor: pointer; }
+.contact-pill { border: 1px solid #4a756b; border-radius: 99px; background: #1b3832; color: #a5eedb; padding: 4px 9px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.contact-share-button { border: 1px solid #8f744e; border-radius: 99px; background: #2f2519; color: #e4c28b; padding: 4px 9px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.contact-share-button:disabled { opacity: .6; }
+.voice-bubble { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+.voice-player { height: 36px; max-width: 210px; border-radius: 18px; outline: none; }
+.voice-duration { color: #879b95; font-size: 10px; white-space: nowrap; }
+.call-banner { margin: 0; padding: 4px 8px; border-radius: 6px; background: #223c36; color: #a2e8d7; font-size: 12px; font-weight: 600; }
+.voice-rec-button { border: 1px solid #3d524f; border-radius: 8px; background: #192d2b; color: #e4b46c; padding: 0 10px; font-size: 14px; cursor: pointer; }
+.recording-bar { display: flex; flex: 1; align-items: center; gap: 8px; border: 1px solid #8e4848; border-radius: 8px; padding: 6px 12px; background: #2f1818; color: #ffd1cb; font-size: 12px; }
+.recording-dot { color: #ff5555; animation: pulse-rec 1s infinite; }
+@keyframes pulse-rec { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.cancel-rec-button { border: 0; background: transparent; color: #ff9b90; font-size: 14px; cursor: pointer; }
+.send-rec-button { border: 0; border-radius: 6px; background: #4caf50; color: #fff; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.call-modal { width: min(100%, 360px); border: 1px solid #4a756b; border-radius: 16px; padding: 28px 20px; background: #132422; box-shadow: 0 24px 80px #000; text-align: center; }
+.call-avatar { width: 72px; height: 72px; margin: 0 auto 16px; display: grid; place-items: center; border: 2px solid #e4b46c; border-radius: 50%; background: #2a3d36; color: #e4b46c; font-size: 28px; }
+.call-modal h2 { margin: 0 0 6px; font-size: 22px; color: #eff5f2; }
+.call-subtitle { margin: 0 0 12px; color: #e4b46c; font-size: 13px; font-weight: 600; }
+.call-connected-text { margin: 0 0 24px; color: #8ba59d; font-size: 12px; }
+.call-actions { display: flex; justify-content: center; }
+.end-call-button { min-height: 44px; padding: 0 28px; border: 0; border-radius: 99px; background: #c63f3f; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
 .chat-header h1 { font-size: 16px; }
 .chat-header p { margin: 3px 0 0; color: #8c9b97; font-size: 11px; }
 .back-button, .refresh-button { border: 0; background: transparent; color: #d6e1dd; font-size: 20px; }

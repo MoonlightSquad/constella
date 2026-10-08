@@ -2,9 +2,21 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 process.env.DATABASE_URL ??= 'postgres://constella:test@127.0.0.1:5432/constella';
-const { effectivePoint, interestScore, remainingLikes, referralCodeFor, toPublicProfile } = await import('./core.js');
+const { checkSwipeVelocityAndSpam, effectivePoint, interestScore, remainingLikes, referralCodeFor, toPublicProfile } = await import('./core.js');
 
 describe('profile and discovery helpers', () => {
+  it('detects abnormal swipe velocity bursts and throttles spam bots', async () => {
+    const mockDb = {
+      update: () => ({ set: () => ({ where: async () => {} }) }),
+      insert: () => ({ values: async () => {} }),
+    };
+    const userId = 'bot-user-123';
+    let isOk = true;
+    for (let i = 0; i < 30; i++) {
+      isOk = await checkSwipeVelocityAndSpam(mockDb, userId);
+    }
+    assert.equal(isOk, false);
+  });
   it('scores matching interests and handles empty lists', () => {
     assert.equal(interestScore(['music', 'travel'], ['music', 'books']), 50);
     assert.equal(interestScore([], ['music']), 0);

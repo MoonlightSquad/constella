@@ -129,6 +129,49 @@ bot.on('message:successful_payment', async (ctx) => {
   }
 });
 
+bot.command('profile', async (ctx) => {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+  try {
+    const response = await fetch(`${API_INTERNAL_URL}/internal/users/${telegramId}/status`, {
+      headers: { 'x-payments-token': PAYMENTS_INTERNAL_TOKEN || '' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) throw new Error(`Payments API returned ${response.status}.`);
+    const status = (await response.json()) as {
+      linked: boolean;
+      vip?: boolean;
+      expiresAt?: string | null;
+      superlikeBalance?: number;
+      streak?: number;
+      freezes?: number;
+    };
+    if (!status.linked) {
+      await ctx.reply('Твій профіль ще не налаштований. Відкрий Constella, щоб почати знайомства!', {
+        reply_markup: appKeyboard(),
+      });
+      return;
+    }
+    const vipText = status.vip ? '🌟 VIP статус активний' : 'Базовий акаунт';
+    await ctx.reply(
+      `👤 Твій профіль у Constella\n\nСтатус: ${vipText}\n🔥 Стрік активності: ${status.streak ?? 0} дн.\n❄️ Захист стріку: ${status.freezes ?? 0}\n⭐ Суперлайки: ${status.superlikeBalance ?? 0}`,
+      { reply_markup: appKeyboard() }
+    );
+  } catch (error) {
+    logger.warn('Could not load profile info', { message: error instanceof Error ? error.message : 'Unknown error' });
+    await ctx.reply('Відкрий застосунок Constella для перегляду та редагування анкети.', {
+      reply_markup: appKeyboard(),
+    });
+  }
+});
+
+bot.command('help', async (ctx) => {
+  await ctx.reply(
+    `✨ Доступні команди Constella:\n\n/start — Головне меню та запуск Mini App\n/profile — Твій профіль і статус\n/balance — Баланс зірок, стрік та бонуси\n/orbit — Щоденна орбіта рекомендацій\n/premium — VIP статус та підписки\n/support — Підтримка користувачів`,
+    { reply_markup: appKeyboard() }
+  );
+});
+
 bot.command('support', async (ctx) => {
   await ctx.reply('Якщо виникла проблема, напиши команді підтримки або скористайся блокуванням і скаргою в Mini App.');
 });

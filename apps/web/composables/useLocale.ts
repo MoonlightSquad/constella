@@ -188,6 +188,17 @@ const messages = {
   'dashboard.retry': ['Повторити', 'Retry', 'Erneut versuchen', 'Réessayer'],
   'dashboard.verifiedProfile': ['Перевірений профіль', 'Verified profile', 'Verifiziertes Profil', 'Profil vérifié'],
   'dashboard.chatDate': ['Взаємна іскра', 'Mutual Spark', 'Gegenseitiger Funke', 'Étincelle réciproque'],
+  'dashboard.recordVoice': ['Голосове повідомлення', 'Voice message', 'Sprachnachricht', 'Message vocal'],
+  'dashboard.recording': ['Запис…', 'Recording…', 'Aufnahme…', 'Enregistrement…'],
+  'dashboard.voiceMessage': ['Голосове повідомлення', 'Voice message', 'Sprachnachricht', 'Message vocal'],
+  'dashboard.audioCall': ['Аудіодзвінок', 'Audio call', 'Sprachanruf', 'Appel audio'],
+  'dashboard.videoCall': ['Відеодзвінок', 'Video call', 'Videoanruf', 'Appel vidéo'],
+  'dashboard.callActive': ['Дзвінок у Constella', 'Constella in-app call', 'Constella Anruf', 'Appel Constella'],
+  'dashboard.callConnected': ['З’єднано через захищений канал WebRTC', 'Connected via secure WebRTC channel', 'Verbunden über sicheren WebRTC-Kanal', 'Connecté via un canal WebRTC sécurisé'],
+  'dashboard.endCall': ['Завершити', 'End call', 'Beenden', 'Raccrocher'],
+  'dashboard.shareTelegram': ['Поділитися Telegram', 'Share Telegram', 'Telegram teilen', 'Partager Telegram'],
+  'dashboard.telegramShared': ['Контакт відкрито', 'Contact revealed', 'Kontakt geteilt', 'Contact partagé'],
+  'dashboard.voiceUnsupported': ['Запис звуку недоступний на цьому пристрої.', 'Audio recording is unavailable on this device.', 'Audioaufnahme ist auf diesem Gerät nicht verfügbar.', 'Enregistrement audio indisponible sur cet appareil.'],
 } as const
 
 export type TranslationKey = keyof typeof messages

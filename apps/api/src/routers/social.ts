@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import {
@@ -22,6 +23,7 @@ import {
   awardAchievement,
   blockedIds,
   bumpQuest,
+  checkSwipeVelocityAndSpam,
   grantXp,
   effectivePoint,
   getAge,
@@ -165,7 +167,12 @@ const createMatchIfMutual = async (db: any, userId: string, profileId: string, k
   if (existing) {
     const peerTelegram = await telegramIdForUser(db, profileId);
     const [me] = await db.select({ displayName: users.displayName }).from(users).where(eq(users.id, userId)).limit(1);
-    if (peerTelegram) await notifyTelegram(peerTelegram, `У вас новий матч з ${me?.displayName || 'кимось'}! ✨`);
+    const [peer] = await db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, profileId)).limit(1);
+    if (peerTelegram) {
+      await notifyTelegram(peerTelegram, `У вас новий матч з ${me?.displayName || 'кимось'}! ✨`, {
+        userTimeZone: peer?.timeZone ?? 'UTC',
+      });
+    }
   }
   return { matchId: existing?.id ?? null, matched: Boolean(existing) };
 };
@@ -298,6 +305,7 @@ export const socialRouter = router({
     .mutation(async ({ ctx, input }) => {
       const profile = await touchStreakAndPresence(ctx.db, await requireCompleteProfile(ctx.db, ctx.user.id));
       if (input.profileId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot react to your own profile.' });
+      await checkSwipeVelocityAndSpam(ctx.db, ctx.user.id);
       const vip = await hasVip(ctx.db, ctx.user.id);
       const likesLeft = remainingLikes(profile, vip);
       if (input.kind !== 'pass' && likesLeft <= 0) {
@@ -413,6 +421,7 @@ export const socialRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       if (!(await hasVip(ctx.db, ctx.user.id))) throw new TRPCError({ code: 'FORBIDDEN', message: 'Passport is a VIP feature.' });
+      await checkSwipeVelocityAndSpam(ctx.db, ctx.user.id, { lat: input.latitude, lng: input.longitude });
       await ctx.db
         .update(users)
         .set({
@@ -565,6 +574,72 @@ export const socialRouter = router({
         await Promise.all([awardAchievement(ctx.db, ctx.user.id, 'good-conversation'), awardAchievement(ctx.db, peerId, 'good-conversation')]);
       }
       return message;
+    }),
+
+  sendVoiceMessage: protectedProcedure
+    .input(
+      z.object({
+        matchId: z.string().uuid(),
+        audioUrl: z.string().url(),
+        durationSec: z.number().min(1).max(300),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      const [recentCount] = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(messages)
+        .where(and(eq(messages.senderId, ctx.user.id), gte(messages.createdAt, new Date(Date.now() - 60_000))));
+      if ((recentCount?.count ?? 0) >= 12) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Please slow down before sending more messages.' });
+      }
+      const body = JSON.stringify({ audioUrl: input.audioUrl, durationSec: Math.round(input.durationSec) });
+      const [message] = await ctx.db
+        .insert(messages)
+        .values({ matchId: input.matchId, senderId: ctx.user.id, kind: 'voice', body, deliveredAt: new Date() })
+        .returning();
+      await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
+      return message;
+    }),
+
+  startCall: protectedProcedure
+    .input(
+      z.object({
+        matchId: z.string().uuid(),
+        callType: z.enum(['audio', 'video']),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const match = await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      const peerId = match.userOneId === ctx.user.id ? match.userTwoId : match.userOneId;
+      const roomId = `constella-call-${input.matchId}`;
+      const token = createHash('sha256')
+        .update(`${roomId}-${ctx.user.id}-${Date.now()}`)
+        .digest('hex')
+        .slice(0, 32);
+
+      await ctx.db.insert(messages).values({
+        matchId: input.matchId,
+        senderId: ctx.user.id,
+        kind: 'call',
+        body: JSON.stringify({
+          callType: input.callType,
+          status: 'initiated',
+          roomId,
+        }),
+      });
+
+      return {
+        roomId,
+        token,
+        callType: input.callType,
+        initiatorId: ctx.user.id,
+        peerId,
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+      };
     }),
 
   shareContact: protectedProcedure.input(z.object({ matchId: z.string().uuid() })).mutation(async ({ ctx, input }) => {

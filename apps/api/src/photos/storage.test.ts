@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, describe, it } from 'node:test';
-import { createPhotoUpload, isPhotoStorageConfigured, processPhotoUpload } from './storage.js';
+import { createPhotoUpload, createVoiceUpload, isPhotoStorageConfigured, processPhotoUpload } from './storage.js';
 
 const names = ['PHOTO_BUCKET', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_PUBLIC_BASE_URL'] as const;
 const original = Object.fromEntries(names.map((name) => [name, process.env[name]]));
@@ -16,6 +16,10 @@ describe('photo storage validation', () => {
   it('rejects unsupported MIME types before touching S3', async () => {
     await assert.rejects(createPhotoUpload('user-1', 'image/svg+xml'), /Only JPEG, PNG, or WebP/);
     await assert.rejects(createPhotoUpload('user-1', 'application/octet-stream'), /Only JPEG, PNG, or WebP/);
+  });
+  it('rejects unsupported voice MIME types', async () => {
+    await assert.rejects(createVoiceUpload('user-1', 'video/mp4'), /Only WebM, OGG, MP4/);
+    await assert.rejects(createVoiceUpload('user-1', 'application/pdf'), /Only WebM, OGG, MP4/);
   });
   it('rejects keys outside the caller upload namespace', async () => {
     await assert.rejects(processPhotoUpload('user-1', 'uploads/user-2/photo.jpg', 'image/jpeg'), /Invalid or unauthorized/);

@@ -13,6 +13,8 @@ node_modules
 volumes
 coverage
 *.log
+*.old
+**/*.old
 
 .pnpm-store
 **/.pnpm-store

@@ -1,10 +1,25 @@
 .vscode
 .idea
 .turbo
+**/.turbo
 
 node_modules
+**/node_modules
+dist
+**/dist
+.nuxt
+**/.nuxt
+.output
+**/.output
+*.old
+**/*.old
 
 .env
+.env.*
+!.env.example
+!.env.production.example
+
+constella.deploy.config.json
 
 volumes/*
 .pnpm-store

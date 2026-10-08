@@ -4,6 +4,9 @@
   "scripts": {
     "build": "turbo run build",
     "test": "pnpm --filter @constella/api test && pnpm --filter @constella/web test",
+    "start:api": "pnpm --filter @constella/api start",
+    "start:bot": "pnpm --filter @constella/bot start",
+    "start:web": "pnpm --filter @constella/web start",
     "db:generate": "turbo --filter=@constella/db db:generate",
     "db:migrate": "turbo --filter=@constella/db db:migrate",
     "dev:services": "turbo run dev",
