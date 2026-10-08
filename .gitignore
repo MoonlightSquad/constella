@@ -1,8 +1,11 @@
 .vscode
 .idea
+.turbo
 
 node_modules
 
 .env
 
 volumes/*
+.pnpm-store
+**/.pnpm-store

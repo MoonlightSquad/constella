@@ -3,7 +3,8 @@ import * as dotenv from 'dotenv';
 import { resolve } from 'path';
 
 // Підтягуємо кореневий .env
-dotenv.config({ path: resolve(__dirname, '../../.env') });
+dotenv.config();
+dotenv.config({ path: resolve(process.cwd(), '../../.env') });
 
 export default defineConfig({
   schema: './src/schema.ts',

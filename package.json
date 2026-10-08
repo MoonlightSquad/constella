@@ -2,14 +2,23 @@
   "name": "constella",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev",
     "build": "turbo run build",
+    "test": "pnpm --filter @constella/api test && pnpm --filter @constella/web test",
     "db:generate": "turbo --filter=@constella/db db:generate",
-    "db:migrate": "turbo --filter=@constella/db db:migrate"
+    "db:migrate": "turbo --filter=@constella/db db:migrate",
+    "dev:services": "turbo run dev",
+    "tunnel:web": "ngrok http 5173",
+    "tunnel:api": "ngrok http 4000",
+    "dev": "concurrently -c \"cyan,magenta,yellow,blue\" -n \"api,bot,web,tunnel:web\" \"pnpm --filter @constella/api dev\" \"pnpm --filter @constella/bot dev\" \"pnpm --filter @constella/web dev\" \"pnpm run tunnel:web\""
   },
   "devDependencies": {
+    "@types/winston": "^2.4.4",
+    "concurrently": "^10.0.5",
     "turbo": "^2.0.0",
     "typescript": "^5.5.0"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@9.0.0",
+  "dependencies": {
+    "winston": "^3.19.0"
+  }
 }
