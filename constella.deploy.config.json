@@ -37,8 +37,8 @@
     "smtp_from": "Constella Support <support@test.constella.pp.ua>"
   },
   "security": {
-    "jwt_secret": "GENERATE_RANDOM_32_BYTE_HEX_KEY",
-    "payments_internal_token": "GENERATE_RANDOM_32_BYTE_HEX_KEY",
+    "jwt_secret": "6d91a703e6ce4599d7b2f370764e8abd6a67fe8f16f22df01d0417e5fb3326bb",
+    "payments_internal_token": "91848c1da14a2b50cde35868704c0d86c0f0969ff26c73facdb6715e77b18620",
     "rate_limit_max": 120
   },
   "domains": {

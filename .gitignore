@@ -18,8 +18,7 @@ dist
 .env.*
 !.env.example
 !.env.production.example
-
-constella.deploy.config.json
+!.env.vercel.example
 
 volumes/*
 .pnpm-store
