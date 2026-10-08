@@ -10,8 +10,8 @@ export function verifyTelegramInitData(
   const hash = params.get('hash');
   params.delete('hash');
 
-  if (!hash) {
-    throw new Error('Hash parameter is missing');
+  if (!hash || !/^[\da-f]{64}$/i.test(hash)) {
+    throw new Error('Hash parameter is missing or invalid');
   }
 
   const dataCheckString = Array.from(params.entries())
@@ -32,6 +32,9 @@ export function verifyTelegramInitData(
 
   const authDate = Number(params.get('auth_date'));
   const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(authDate) || authDate <= 0 || authDate > now + 30) {
+    throw new Error('InitData auth_date is invalid');
+  }
   if (now - authDate > maxAgeSeconds) {
     throw new Error('InitData is expired');
   }

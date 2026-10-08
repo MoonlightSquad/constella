@@ -1,0 +1,128 @@
+name: constella
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: constella
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: constella
+    volumes:
+      - constella_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U constella -d constella"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks: [private]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: constella:release
+    command: ["node", "apps/api/dist/index.js"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.production}
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env.production}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.production}
+      PAYMENTS_INTERNAL_TOKEN: ${PAYMENTS_INTERNAL_TOKEN:?Set PAYMENTS_INTERNAL_TOKEN in .env.production}
+      WEB_APP_URL: ${WEB_APP_URL:?Set WEB_APP_URL in .env.production}
+      API_PUBLIC_URL: /api
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
+      ADMIN_TELEGRAM_IDS: ${ADMIN_TELEGRAM_IDS:-}
+      SMTP_HOST: ${SMTP_HOST:?Set SMTP_HOST in .env.production}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:?Set SMTP_USER in .env.production}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?Set SMTP_PASSWORD in .env.production}
+      SMTP_FROM: ${SMTP_FROM:?Set SMTP_FROM in .env.production}
+      PHOTO_BUCKET: ${PHOTO_BUCKET:?Set PHOTO_BUCKET in .env.production}
+      S3_REGION: ${S3_REGION:?Set S3_REGION in .env.production}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID in .env.production}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY in .env.production}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:?Set S3_PUBLIC_BASE_URL in .env.production}
+      CONTENT_MODERATION_URL: ${CONTENT_MODERATION_URL:-}
+      CONTENT_MODERATION_TOKEN: ${CONTENT_MODERATION_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [private]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  migrate:
+    image: constella:release
+    profiles: [release]
+    command: ["node", "node_modules/drizzle-kit/bin.cjs", "migrate"]
+    working_dir: /app/packages/db
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [private]
+
+  web:
+    image: constella:release
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "apps/web/.output/server/index.mjs"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3000
+      NUXT_API_INTERNAL_BASE: http://api:4000
+      WEB_APP_URL: ${WEB_APP_URL:?Set WEB_APP_URL in .env.production}
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [private]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  bot:
+    image: constella:release
+    command: ["node", "apps/bot/dist/index.js"]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.production}
+      BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env.production}
+      API_INTERNAL_URL: http://api:4000
+      PAYMENTS_INTERNAL_TOKEN: ${PAYMENTS_INTERNAL_TOKEN:?Set PAYMENTS_INTERNAL_TOKEN in .env.production}
+      WEB_APP_URL: ${WEB_APP_URL:?Set WEB_APP_URL in .env.production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [private]
+
+networks:
+  private:
+    driver: bridge
+
+volumes:
+  constella_pgdata:

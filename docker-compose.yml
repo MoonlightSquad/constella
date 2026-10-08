@@ -7,9 +7,14 @@ services:
     restart: always
     environment:
       POSTGRES_USER: constella
-      POSTGRES_PASSWORD: constella_secret_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: constella
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U constella -d constella"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     ports:
-      - "5432:5432"
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:5432:5432"
     volumes:
       - ./volumes/pgdata:/var/lib/postgresql/data
