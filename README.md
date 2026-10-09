@@ -181,11 +181,12 @@ Swagger показує REST маршрути й перелік tRPC процед
 1. На чистому checkout: pnpm install --frozen-lockfile.
 2. Збірка: pnpm build.
 3. Якщо build успішний, одноразово застосуйте pnpm db:migrate. Не запускайте міграції паралельно на кожній репліці.
-4. Запустіть API: pnpm --filter @constella/api start.
-5. Запустіть web: pnpm --filter @constella/web start.
-6. Запустіть один bot: pnpm --filter @constella/bot start.
-7. Налаштуйте readiness /health/ready, liveness /health/live і збір stdout/stderr.
-8. Перевірте production origin, Telegram login, web login/register, профіль, взаємний match, чат, block/report, admin access і Stars payment у цільовому середовищі.
+4. Для browser upload у R2 додайте `CLOUDFLARE_API_TOKEN` до локального `.env.vercel` і запустіть `node scripts/r2-cors.mjs`. Це має бути Cloudflare Account API token із правом `Workers R2 Storage Write`; R2 S3 `Access Key ID`/`Secret Access Key` або `Workers R2 Storage Bucket Item Write` дають доступ до об'єктів, але не змінюють CORS policy. Скрипт отримує account ID із `S3_ENDPOINT`, зберігає інші CORS rules і перевіряє результат.
+5. Запустіть API: pnpm --filter @constella/api start.
+6. Запустіть web: pnpm --filter @constella/web start.
+7. Запустіть один bot: pnpm --filter @constella/bot start.
+8. Налаштуйте readiness /health/ready, liveness /health/live і збір stdout/stderr.
+9. Перевірте production origin, Telegram login, web login/register, профіль, взаємний match, чат, block/report, admin access і Stars payment у цільовому середовищі.
 
 ### Smoke checklist перед публічним запуском
 
