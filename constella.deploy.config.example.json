@@ -1,26 +1,14 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "project": "constella",
-  "version": "1.0.0-rc",
-  "description": "Universal deployment configuration for Constella. Fill this file and provide it to any AI agent or deployment pipeline.",
-  "infrastructure": {
-    "frontend_hosting": "vercel",
-    "backend_hosting": "railway_or_render_or_vps",
-    "database_provider": "aiven_postgres_postgis",
-    "storage_provider": "cloudflare_r2",
-    "email_provider": "resend_or_brevo_smtp",
-    "monitoring_provider": "sentry"
-  },
   "telegram": {
     "bot_token": "YOUR_TELEGRAM_BOT_TOKEN_FROM_BOTFATHER",
     "bot_username": "YOUR_BOT_USERNAME",
     "admin_telegram_ids": [
-      "123456789"
+      "YOUR_NUMERIC_TELEGRAM_ID"
     ]
   },
   "database": {
     "provider": "aiven",
-    "database_url": "postgres://avnadmin:YOUR_PASSWORD@YOUR_AIVEN_HOST:PORT/defaultdb?sslmode=require",
+    "database_url": "postgres://avnadmin:YOUR_PASSWORD@pg-service.aivencloud.com:15432/defaultdb?sslmode=require",
     "pool_size": 10,
     "require_postgis": true
   },
@@ -31,12 +19,16 @@
     "s3_region": "auto",
     "s3_access_key_id": "YOUR_R2_ACCESS_KEY_ID",
     "s3_secret_access_key": "YOUR_R2_SECRET_ACCESS_KEY",
-    "s3_public_base_url": "https://pub-xxxxxx.r2.dev",
+    "s3_public_base_url": "https://pub-YOUR_BUCKET_ID.r2.dev",
     "s3_force_path_style": false
   },
+  "cloudflare": {
+    "api_token": "",
+    "account_id": ""
+  },
   "monitoring": {
-    "sentry_dsn_backend": "https://PUBLIC_KEY@oORG_ID.ingest.sentry.io/API_PROJECT_ID",
-    "sentry_dsn_frontend": "https://PUBLIC_KEY@oORG_ID.ingest.sentry.io/WEB_PROJECT_ID",
+    "sentry_dsn_backend": "https://PUBLIC_KEY@o000000.ingest.sentry.io/0000000",
+    "sentry_dsn_frontend": "https://PUBLIC_KEY@o000000.ingest.sentry.io/0000000",
     "environment": "production"
   },
   "email": {
@@ -46,22 +38,30 @@
     "smtp_secure": false,
     "smtp_user": "resend",
     "smtp_password": "re_YOUR_RESEND_API_KEY",
-    "smtp_from": "Constella Support <support@yourdomain.com>"
+    "smtp_from": "Constella Support <support@test.constella.pp.ua>"
   },
   "security": {
-    "jwt_secret": "GENERATE_RANDOM_32_CHAR_STRING",
-    "payments_internal_token": "GENERATE_RANDOM_32_CHAR_STRING",
+    "jwt_secret": "GENERATE_RANDOM_32_BYTE_HEX_KEY",
+    "payments_internal_token": "GENERATE_RANDOM_32_BYTE_HEX_KEY",
     "rate_limit_max": 120
   },
+  "domains": {
+    "web_app_url": "https://app-test.constella.pp.ua",
+    "api_url": "https://api-test.constella.pp.ua"
+  },
   "urls": {
-    "frontend_web_app_url": "https://constella.vercel.app",
-    "backend_api_url": "https://constella-api.up.railway.app",
+    "app_url": "https://app-test.constella.pp.ua",
+    "frontend_web_app_url": "https://app-test.constella.pp.ua",
+    "backend_api_url": "https://api-test.constella.pp.ua",
     "api_public_url": "/api"
   },
   "vercel": {
-    "vercel_token": "YOUR_VERCEL_CLI_TOKEN_OPTIONAL",
-    "project_name": "constella-web",
-    "framework": "nuxtjs",
-    "root_directory": "apps/web"
+    "api_token": "",
+    "project_name": "constella",
+    "domains": [
+      "app-test.constella.pp.ua",
+      "api-test.constella.pp.ua"
+    ],
+    "cron_schedule": "0 0 * * *"
   }
 }

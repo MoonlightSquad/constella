@@ -1,0 +1,13 @@
+.git
+.vercel
+**/.vercel
+**/node_modules
+**/.nuxt
+**/.output
+**/dist
+**/.turbo
+**/.cache
+**/coverage
+volumes
+**/volumes
+**/.env*

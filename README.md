@@ -181,11 +181,12 @@ Swagger показує REST маршрути й перелік tRPC процед
 1. На чистому checkout: pnpm install --frozen-lockfile.
 2. Збірка: pnpm build.
 3. Якщо build успішний, одноразово застосуйте pnpm db:migrate. Не запускайте міграції паралельно на кожній репліці.
-4. Запустіть API: pnpm --filter @constella/api start.
-5. Запустіть web: pnpm --filter @constella/web start.
-6. Запустіть один bot: pnpm --filter @constella/bot start.
-7. Налаштуйте readiness /health/ready, liveness /health/live і збір stdout/stderr.
-8. Перевірте production origin, Telegram login, web login/register, профіль, взаємний match, чат, block/report, admin access і Stars payment у цільовому середовищі.
+4. Зберігайте deployment credentials у локальному `constella.deploy.config.local.json`: скопіюйте `constella.deploy.config.local.example.json` (`cp constella.deploy.config.local.example.json constella.deploy.config.local.json`) і заповніть `telegram.bot_token`, `database.database_url`, `storage.s3_access_key_id`/`s3_secret_access_key`, `email.smtp_password`, `vercel.api_token` та `cloudflare.api_token`. Файл ігнорується Git. Основний `constella.deploy.config.json` також локальний/ігнорований; на чистому checkout скрипти беруть безпечні defaults із `constella.deploy.config.example.json`. Запустіть `pnpm config:sync`, щоб локально згенерувати `.env` файли для runtime та синхронізації Vercel; Cloudflare management token у runtime/Vercel не передається. Для browser upload у R2 потрібен Cloudflare Account API token із правом `Workers R2 Storage Write`; R2 S3 `Access Key ID`/`Secret Access Key` або `Workers R2 Storage Bucket Item Write` дають доступ до об'єктів, але не змінюють CORS policy. Запустіть `node scripts/r2-cors.mjs`: скрипт отримує account ID із `S3_ENDPOINT`, зберігає інші CORS rules і перевіряє результат.
+5. Запустіть API: pnpm --filter @constella/api start.
+6. Запустіть web: pnpm --filter @constella/web start.
+7. Запустіть один bot: pnpm --filter @constella/bot start.
+8. Налаштуйте readiness /health/ready, liveness /health/live і збір stdout/stderr.
+9. Перевірте production origin, Telegram login, web login/register, профіль, взаємний match, чат, block/report, admin access і Stars payment у цільовому середовищі.
 
 ### Smoke checklist перед публічним запуском
 

@@ -6,3 +6,5 @@ dist
 .turbo
 
 .env
+.vercel
+.env*
