@@ -1,4 +1,6 @@
 
+CREATE EXTENSION IF NOT EXISTS postgis;
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "events" (
 	"id" bigserial PRIMARY KEY NOT NULL,
 	"user_id" uuid NOT NULL,

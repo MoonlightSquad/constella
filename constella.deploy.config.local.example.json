@@ -1,0 +1,27 @@
+{
+  "telegram": {
+    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+    "webhook_secret": "GENERATE_RANDOM_WEBHOOK_SECRET"
+  },
+  "database": {
+    "database_url": "YOUR_POSTGRES_CONNECTION_URL"
+  },
+  "storage": {
+    "s3_access_key_id": "YOUR_R2_ACCESS_KEY_ID",
+    "s3_secret_access_key": "YOUR_R2_SECRET_ACCESS_KEY"
+  },
+  "email": {
+    "smtp_password": "YOUR_SMTP_PASSWORD"
+  },
+  "security": {
+    "jwt_secret": "GENERATE_RANDOM_32_BYTE_HEX_KEY",
+    "payments_internal_token": "GENERATE_RANDOM_32_BYTE_HEX_KEY"
+  },
+  "vercel": {
+    "api_token": "YOUR_VERCEL_API_TOKEN"
+  },
+  "cloudflare": {
+    "api_token": "YOUR_CLOUDFLARE_ACCOUNT_API_TOKEN",
+    "account_id": ""
+  }
+}
