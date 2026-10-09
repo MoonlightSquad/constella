@@ -6,9 +6,9 @@ export interface OpenApiDocument {
 const bearerSecurity = [{ bearerAuth: [] }];
 
 const procedures = [
-  { name: 'photos.mine', method: 'get', summary: 'List my photos', description: 'Lists profile photos with moderation status.' },
+  { name: 'photos.mine', method: 'get', summary: 'List my photos', description: 'Lists profile photos and their availability.' },
   { name: 'photos.createUpload', method: 'post', summary: 'Create photo upload', description: 'Returns a signed upload URL for supported raster images.' },
-  { name: 'photos.confirmUpload', method: 'post', summary: 'Process uploaded photo', description: 'Validates, converts, and moderates an uploaded image.' },
+  { name: 'photos.confirmUpload', method: 'post', summary: 'Process uploaded photo', description: 'Validates and converts an uploaded image, making it available immediately.' },
   { name: 'photos.remove', method: 'post', summary: 'Delete profile photo', description: 'Deletes one of the authenticated users profile photos.' },
   { name: 'admin.photoQueue', method: 'get', summary: 'Photo moderation queue', description: 'Lists uploaded profile photos waiting for review.' },
   { name: 'admin.reviewPhoto', method: 'post', summary: 'Review profile photo', description: 'Approves or rejects an uploaded photo and records the moderation action.' },

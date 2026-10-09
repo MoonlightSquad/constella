@@ -64,6 +64,13 @@
       "when": 1791370003000,
       "tag": "0008_support_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791570000000,
+      "tag": "0009_photos_without_pre_moderation",
+      "breakpoints": true
     }
   ]
 }

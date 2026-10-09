@@ -159,29 +159,6 @@ export const processPhotoUpload = async (userId: string, objectKey: string, cont
   return { imageKey, publicUrl, width: output.info.width, height: output.info.height };
 };
 
-export const moderatePhoto = async (imageKey: string) => {
-  const client = getClient();
-  const moderationUrl = process.env.CONTENT_MODERATION_URL;
-  if (!moderationUrl) return { status: 'pending' as const, score: null, provider: 'manual' };
-  const imageUrl = await getSignedUrl(client, new GetObjectCommand({ Bucket: bucket(), Key: imageKey }), { expiresIn: 300 });
-  const response = await fetch(moderationUrl, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(process.env.CONTENT_MODERATION_TOKEN ? { authorization: `Bearer ${process.env.CONTENT_MODERATION_TOKEN}` } : {}),
-    },
-    body: JSON.stringify({ imageUrl }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!response.ok) throw new Error(`Content moderation service returned HTTP ${response.status}.`);
-  const result = await response.json() as { safe?: unknown; score?: unknown };
-  if (typeof result.safe !== 'boolean') throw new Error('Content moderation response must include a boolean safe field.');
-  const score = typeof result.score === 'number' && Number.isFinite(result.score)
-    ? Math.max(0, Math.min(1, result.score))
-    : null;
-  return { status: result.safe ? 'approved' as const : 'rejected' as const, score, provider: 'configured-api' };
-};
-
 export const removePhotoObjects = async (keys: string[]) => {
   const uniqueKeys = [...new Set(keys.filter(Boolean))];
   if (!uniqueKeys.length) return;
