@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useLocale } from '~/composables/useLocale'
 
 const { $trpc } = useNuxtApp() as any
@@ -226,6 +226,16 @@ const deleteAccount = async () => {
   } catch (cause: any) { error.value = cause?.message || 'Не вдалося видалити акаунт.' }
 }
 const retry = () => window.location.reload()
+
+watch(
+  [() => route.path, isLoading, isAdmin],
+  ([path, loading, admin]) => {
+    if (loading) return
+    if (path === '/admin' && !admin) navigateTo('/admin/login', { replace: true })
+    if (path === '/admin/login' && admin) navigateTo('/admin', { replace: true })
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -238,13 +248,21 @@ const retry = () => window.location.reload()
 
     <AuthAction v-else-if="route.path.startsWith('/auth/')" />
     <AdminAuth
-      v-else-if="route.path === '/admin' && !isAdmin"
+      v-else-if="route.path === '/admin/login'"
       :busy="isSaving"
       :error="error"
       @submit="adminLogin"
       @exit="navigateTo('/')"
     />
-    <AdminConsole v-else-if="route.path === '/admin' && isAdmin" @exit="navigateTo('/')" />
+    <AdminConsole
+      v-else-if="route.path === '/admin' && isAdmin"
+      @exit="navigateTo('/')"
+      @logout="logout(); navigateTo('/admin/login')"
+    />
+    <div v-else-if="route.path === '/admin'" class="startup-state" role="status">
+      <div class="startup-mark">✦</div>
+      <p>Перевіряємо доступ до адмінпанелі…</p>
+    </div>
     <WebAuth
       v-else-if="!account"
       :busy="isSaving"

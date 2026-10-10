@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-const emit = defineEmits<{ exit: [] }>()
+const emit = defineEmits<{ exit: []; logout: [] }>()
 const { $trpc } = useNuxtApp() as any
 const section = ref<'overview' | 'users' | 'reports' | 'payments' | 'audit' | 'support' | 'photos'>('overview')
 const loading = ref(false)
@@ -62,7 +62,7 @@ onMounted(refresh)
 
 <template>
   <div class="admin-shell">
-    <header><div><span class="brand">✦ CONSTELLA</span><h1>Панель управління</h1><p>Користувачі, безпека та операційні показники</p></div><button class="back" @click="emit('exit')">← До продукту</button></header>
+    <header><div><span class="brand">✦ CONSTELLA</span><h1>Панель управління</h1><p>Користувачі, безпека та операційні показники</p></div><div class="header-actions"><button class="back" @click="emit('exit')">← До продукту</button><button class="back" @click="emit('logout')">Вийти з адмінки</button></div></header>
     <div v-if="isAdmin === false" class="notice"><h2>Доступ закритий</h2><p>Ваш обліковий запис не входить до серверного списку адміністраторів.</p></div>
     <template v-else-if="isAdmin">
       <nav class="sections">
@@ -87,6 +87,22 @@ onMounted(refresh)
       <section v-else-if="section === 'payments'" class="panel table-wrap"><table><thead><tr><th>Покупець</th><th>Товар</th><th>Сума</th><th>Час</th><th>Тип</th></tr></thead><tbody><tr v-for="payment in payments" :key="payment.id"><td>{{ payment.displayName || payment.userId }}</td><td>{{ payment.plan || payment.sku }}</td><td>{{ payment.stars }} {{ payment.currency }}</td><td>{{ date(payment.paidAt) }}</td><td>{{ payment.recurring ? 'Підписка' : 'Разова' }}</td></tr></tbody></table><p v-if="!payments.length" class="muted">Оплат ще немає.</p></section>
       <section v-else-if="section === 'support'" class="panel support-panel"><h2>Черга звернень</h2><div class="support-layout"><div class="support-queue"><button v-for="ticket in supportTickets" :key="ticket.id" class="support-ticket" :class="{ active: activeTicket?.id === ticket.id }" @click="openTicket(ticket)"><strong>{{ ticket.subject }}</strong><span>{{ ticket.displayName || ticket.userId }} · {{ ticket.status }}</span><small>{{ ticket.category }} · {{ date(ticket.updatedAt) }}</small></button><p v-if="!supportTickets.length" class="muted">Звернень немає.</p></div><div v-if="activeTicket" class="support-thread"><h3>{{ activeTicket.subject }}</h3><p>{{ activeTicket.displayName || activeTicket.userId }} · {{ activeTicket.category }} · {{ activeTicket.status }}</p><article v-for="message in ticketMessages" :key="message.id" class="support-message"><small>{{ message.authorRole === 'support' ? 'Служба підтримки' : 'Користувач' }} · {{ date(message.createdAt) }}</small><p>{{ message.body }}</p></article><form @submit.prevent="replyTicket"><textarea v-model="supportReply" rows="4" maxlength="5000" required placeholder="Ваша відповідь..." /><select v-model="supportStatus"><option value="in_progress">У роботі</option><option value="waiting_user">Очікуємо на користувача</option><option value="resolved">Вирішено</option><option value="closed">Закрито</option></select><button class="primary" type="submit">Надіслати відповідь</button></form></div><div v-else class="muted">Оберіть звернення зі списку.</div></div></section>
       <section v-else-if="section === 'audit'" class="panel"><article v-for="entry in audit" :key="entry.id" class="audit"><strong>{{ entry.action }}</strong><span>{{ date(entry.createdAt) }} · {{ entry.actorName || entry.actorId }}</span><p>{{ entry.reason || 'Без примітки' }} <small v-if="entry.targetUserId"> · Користувач {{ entry.targetUserId }}</small><small v-if="entry.reportId"> · Скарга #{{ entry.reportId }}</small></p></article><p v-if="!audit.length" class="muted">Записів поки немає.</p></section>
+      <section v-else-if="section === 'photos'" class="panel">
+        <h2>Фото на модерації</h2>
+        <div v-if="photoQueue.length" class="photo-grid">
+          <article v-for="photo in photoQueue" :key="photo.id">
+            <img :src="photo.publicUrl" :alt="`Фото профілю ${photo.displayName || photo.userId}`" loading="lazy">
+            <strong>{{ photo.displayName || 'Без імені' }}</strong>
+            <small>{{ photo.width }} × {{ photo.height }} · {{ date(photo.createdAt) }}</small>
+            <small>Модерація автоматична: {{ photo.moderationProvider || 'невідомо' }} · оцінка {{ photo.moderationScore ?? '—' }}</small>
+            <div class="actions">
+              <button @click="reviewPhoto(photo, 'approved')">Схвалити</button>
+              <button @click="reviewPhoto(photo, 'rejected')">Відхилити</button>
+            </div>
+          </article>
+        </div>
+        <p v-else-if="!loading" class="muted">Фото на модерації немає.</p>
+      </section>
     </template>
     <div v-else-if="error" class="notice error">{{ error }}</div>
   </div>
@@ -94,4 +110,5 @@ onMounted(refresh)
 
 <style scoped>
 .admin-shell{min-height:100svh;background:#0b1214;color:#edf2ed;padding:clamp(20px,5vw,64px);font:15px Manrope,system-ui,sans-serif}.admin-shell header{display:flex;justify-content:space-between;align-items:center;max-width:1440px;margin:0 auto 34px}.brand{color:#e5b66d;letter-spacing:.12em;font-weight:800}.admin-shell h1{font-size:clamp(28px,4vw,42px);margin:14px 0 4px}.admin-shell header p,.muted{color:#9aabaa}.back,.sections button,.filters button,.actions button{background:#172325;color:#edf2ed;border:1px solid #344547;border-radius:12px;padding:11px 16px;cursor:pointer}.sections{display:flex;gap:8px;max-width:1440px;margin:0 auto 22px;overflow:auto}.sections button.active{background:#d9aa64;color:#15201e;border-color:#d9aa64;font-weight:700}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;max-width:1440px;margin:auto}.cards article,.panel,.notice{background:#111c1e;border:1px solid #273638;border-radius:18px;padding:20px}.cards article{display:grid;gap:10px}.cards span,.cards small,.report span,.audit span{color:#9aabaa}.cards strong{font-size:34px}.panel{max-width:1440px;margin:auto}.filters{display:flex;gap:10px;margin-bottom:18px}.filters input,.filters select,.panel select{background:#0b1214;border:1px solid #344547;border-radius:10px;color:#edf2ed;padding:11px}.filters input{flex:1}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:780px}th,td{text-align:left;padding:13px;border-bottom:1px solid #273638}th{color:#9aabaa;font-weight:600}td small{display:block;color:#809091;font-size:11px;max-width:250px;overflow-wrap:anywhere;margin-top:4px}.report,.audit{display:flex;justify-content:space-between;gap:22px;border-bottom:1px solid #273638;padding:18px 0}.report span,.audit span{display:block;font-size:13px;margin-top:5px}.report p,.audit p{margin:10px 0}.actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.actions button{font-size:12px;padding:9px}.notice{max-width:700px;margin:60px auto}.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}.photo-grid article{display:grid;gap:8px;background:#0b1214;border:1px solid #344547;border-radius:12px;padding:12px}.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px}.photo-grid small{color:#9aabaa}.support-layout{display:grid;grid-template-columns:minmax(230px,.8fr) minmax(0,1.3fr);gap:14px}.support-queue{display:grid;align-content:start;gap:8px}.support-ticket{display:grid;text-align:left;gap:5px;background:#0b1214;border:1px solid #344547;border-radius:10px;color:#edf2ed;padding:12px;cursor:pointer}.support-ticket.active{border-color:#82c7b7}.support-ticket span,.support-ticket small,.support-message small{color:#9aabaa;font-size:11px}.support-thread{min-width:0}.support-thread h3{margin:0}.support-thread>p{color:#9aabaa;font-size:12px}.support-message{border-radius:10px;background:#172325;padding:12px;margin:10px 0}.support-message p{white-space:pre-wrap;overflow-wrap:anywhere}.support-thread form{display:grid;gap:10px}.support-thread textarea,.support-thread select{width:100%;background:#0b1214;border:1px solid #344547;border-radius:10px;color:#edf2ed;padding:11px}.primary{background:#d9aa64;color:#15201e;border:0;border-radius:10px;padding:11px;font-weight:700}.error{color:#ff9f9f}@media(max-width:700px){.support-layout{grid-template-columns:1fr}}.admin-shell button:hover{filter:brightness(1.2)}@media(max-width:700px){.admin-shell header{align-items:flex-start;gap:12px}.back{font-size:12px;padding:9px}.filters{flex-wrap:wrap}.filters input{min-width:100%}.report{flex-direction:column}.actions button{flex:1}}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap}
 </style>

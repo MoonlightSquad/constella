@@ -93,6 +93,8 @@ const projects = {
       WEB_APP_URL: { value: webUrl, required: true },
       API_INTERNAL_URL: { value: apiUrl, required: true },
       API_PUBLIC_URL: { value: apiUrl },
+      ADMIN_EMAIL: { required: true },
+      ADMIN_PASSWORD: { required: true },
       ADMIN_TELEGRAM_IDS: {},
       PHOTO_BUCKET: { required: true },
       S3_REGION: { required: true },
