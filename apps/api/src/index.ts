@@ -6,6 +6,7 @@ import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import * as dotenv from 'dotenv';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { eq, and, gt, isNull, or, sql } from 'drizzle-orm';
@@ -19,6 +20,8 @@ import { appendTrpcOpenApiPaths } from './openapi.js';
 import { isEmailDeliveryConfigured, sendTransactionalEmail } from './utils/email.js';
 import { isPhotoStorageConfigured, removePhotoObjects } from './photos/storage.js';
 import { startBackgroundScheduler } from './engine/scheduler.js';
+import { bot as telegramBot } from '@constella/bot';
+import { isConfiguredTelegramWebhookSecret, isValidTelegramWebhookSecret } from './utils/telegram-webhook.js';
 import { z } from 'zod';
 
 declare module 'fastify' {
@@ -107,6 +110,7 @@ fastify.setErrorHandler((error, request, reply) => {
 
 const PORT = Number(process.env.PORT) || 4000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
+let telegramBotInitialization: Promise<void> | undefined;
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomBytes(32).toString('hex'), 10);
 const hashOpaqueToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const publicAppUrl = () => (process.env.WEB_APP_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -145,11 +149,14 @@ const sendPasswordResetEmail = async (email: string, userId: string) => {
   });
 };
 
-async function bootstrap() {
+async function initialize() {
   if (!BOT_TOKEN) {
     throw new Error('BOT_TOKEN must be configured before starting the API.');
   }
   if (process.env.NODE_ENV === 'production') {
+    if (!isConfiguredTelegramWebhookSecret(process.env.TELEGRAM_WEBHOOK_SECRET)) {
+      throw new Error('TELEGRAM_WEBHOOK_SECRET must be 32-256 characters using only letters, digits, underscores or hyphens in production.');
+    }
     if (!isPhotoStorageConfigured()) {
       throw new Error('PHOTO_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY and S3_PUBLIC_BASE_URL must be configured in production.');
     }
@@ -206,6 +213,29 @@ async function bootstrap() {
   });
 
   registerTelegramPaymentRoutes(fastify);
+
+  fastify.post('/telegram/webhook', async (request, reply) => {
+    if (!isValidTelegramWebhookSecret(process.env.TELEGRAM_WEBHOOK_SECRET, request.headers['x-telegram-bot-api-secret-token'])) {
+      return reply.status(401).send({ error: 'Unauthorized.' });
+    }
+    if (
+      !request.body ||
+      typeof request.body !== 'object' ||
+      Array.isArray(request.body) ||
+      !('update_id' in request.body) ||
+      typeof request.body.update_id !== 'number' ||
+      !Number.isSafeInteger(request.body.update_id)
+    ) {
+      return reply.status(400).send({ error: 'Invalid Telegram update.' });
+    }
+    telegramBotInitialization ??= telegramBot.init().catch((error) => {
+      telegramBotInitialization = undefined;
+      throw error;
+    });
+    await telegramBotInitialization;
+    await telegramBot.handleUpdate(request.body as Parameters<typeof telegramBot.handleUpdate>[0]);
+    return reply.send({ ok: true });
+  });
 
   fastify.get('/health/live', { schema: { tags: ['Health'], summary: 'Liveness probe' } }, async () => ({
     ok: true,
@@ -321,6 +351,10 @@ async function bootstrap() {
           return reply.status(409).send({ error: 'An account with this email already exists.' });
         }
         throw error;
+      }
+    }
+  );
+
   fastify.post(
     '/auth/admin/login',
     {
@@ -407,10 +441,6 @@ async function bootstrap() {
         sessionVersion: account.sessionVersion,
       }, { expiresIn: '8h' });
       return reply.send({ token, userId: account.userId });
-    }
-  );
-
-      }
     }
   );
 
@@ -665,12 +695,17 @@ async function bootstrap() {
     });
   });
 
-  const stopScheduler = startBackgroundScheduler(db);
+  const stopScheduler = process.env.VERCEL === '1' ? undefined : startBackgroundScheduler(db);
   fastify.addHook('onClose', async () => {
-    stopScheduler();
+    stopScheduler?.();
     await closeDb();
   });
 
+  await fastify.ready();
+}
+
+async function startServer() {
+  await initialize();
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
     logger.info(`Constella API is running on http://localhost:${PORT}`);
@@ -681,8 +716,16 @@ async function bootstrap() {
   }
 }
 
+let initialization: Promise<void> | undefined;
+
+export default async function handler(request: IncomingMessage, response: ServerResponse) {
+  initialization ??= initialize();
+  await initialization;
+  fastify.server.emit('request', request, response);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void bootstrap().catch((error) => {
+  void startServer().catch((error) => {
     fastify.log.error({ err: error }, 'API startup failed');
     process.exitCode = 1;
   });

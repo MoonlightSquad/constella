@@ -3,12 +3,6 @@
   "framework": "nuxtjs",
   "buildCommand": "pnpm --filter @constella/web build",
   "installCommand": "pnpm install",
-  "crons": [
-    {
-      "path": "/api/cron/scheduler",
-      "schedule": "0 0 * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",

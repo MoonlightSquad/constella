@@ -1,12 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nuxtjs",
-  "crons": [
-    {
-      "path": "/api/cron/scheduler",
-      "schedule": "0 0 * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",

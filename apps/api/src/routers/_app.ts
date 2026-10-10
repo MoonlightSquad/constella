@@ -87,7 +87,7 @@ export const appRouter = router({
         lookingFor: input.lookingFor,
         city: input.city,
         timeZone: input.timeZone,
-        termsAcceptedAt: new Date(),
+        ...(input.acceptedTerms ? { termsAcceptedAt: new Date() } : {}),
         bio: input.bio,
         promptOne: input.promptOne,
         promptTwo: input.promptTwo,

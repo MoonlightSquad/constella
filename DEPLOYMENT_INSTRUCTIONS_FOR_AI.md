@@ -1,35 +1,77 @@
 # Constella Universal Deployment Guide & AI Prompt (Vercel Serverless)
 
-Цей документ і конфігураційний файл `constella.deploy.config.json` описують процес розгортання всієї екосистеми **Constella** (Telegram Mini App, tRPC API, Telegram Webhook Bot, Aiven PostGIS DB, Cloudflare R2, Sentry, Resend SMTP) повністю на платформі **Vercel** в єдиному проєкті без потреби в окремих серверах чи VPS.
+Цей документ описує розгортання **Constella** як pnpm/Turborepo монорепозиторію. Web та Fastify API розгортаються як окремі Vercel Projects; API обробляє Telegram webhook, тож окремий постійний bot worker не потрібен.
 
 ---
 
 ## 🤖 Промпт для будь-якої AI (Copy-Paste)
 
 > **Промпт для передачі в AI (ChatGPT / Claude / Cursor / Junie):**
-> 
-> "Привіт! Я хочу розгорнути проєкт Constella (Telegram Mini App + Serverless API + Telegram Webhook Bot) на Vercel. 
-> Я заповнив конфігураційний файл `constella.deploy.config.json`.
-> Прочитай цей файл, застосуй Drizzle-міграції для PostgreSQL на Aiven (`db:migrate`), налаштуй змінні середовища для Vercel та запусти команду деплою через Vercel CLI (або надай точні інструкції з деплою). Також активуй вебхук для Telegram бота командою `pnpm webhook:set`."
+>
+> "Допоможи розгорнути web і Fastify API Constella як окремі Vercel Projects у pnpm/Turborepo монорепозиторії. Перевір налаштування з `DEPLOYMENT_INSTRUCTIONS_FOR_AI.md`, встанови `TELEGRAM_WEBHOOK_URL` і випадковий `TELEGRAM_WEBHOOK_SECRET`, а після production-деплою виконай `pnpm webhook:set`."
 
 ---
 
-## 📁 Архітектура на Vercel (Розділення на піддомени)
+## Автоматичне розгортання однією командою
 
-1. **Frontend (Mini App + Admin)**: доступний на `https://app-test.constella.pp.ua`. Nuxt 3 (SSR/SPA) роздається через Vercel Global Edge Network.
-2. **tRPC Serverless API**: доступний на `https://api-test.constella.pp.ua` (також проксується через `/api/*` на фронтенді). Обробляє запити онбордингу, свайпів, чату, адмінки та платежів.
-3. **Telegram Webhook Bot**: працює безперервно через ендпоінт `POST /api/telegram/webhook` (або `POST https://api-test.constella.pp.ua/telegram/webhook`).
-4. **Scheduled Tasks (Cron)**: щоденні оновлення стріків, захист від спаму та очищення застарілих бустів виконуються автоматично за розкладом через Vercel Cron (`0 0 * * *`).
-5. **База даних**: Aiven PostgreSQL з розширенням `postgis`.
-6. **Медіа-файли**: Cloudflare R2 (S3-сумісне сховище без комісії за трафік).
-7. **Пошта**: Resend SMTP.
-8. **Моніторинг**: Sentry.
+Скопіюй `.env.vercel.example` у локальний, gitignored файл `.env.vercel` та заповни його реальними credentials і Vercel access token:
+
+```bash
+cp .env.vercel.example .env.vercel
+```
+
+Заповни production-секрети у `.env.vercel`. Скрипт також читає `.env`, `apps/api/.env`, `apps/web/.env` та `apps/bot/.env`, але `.env.vercel` має пріоритет для деплою, а змінні, явно передані в shell, — найвищий пріоритет. Не надсилай токени й секрети в чат і не додавай локальні `.env` до Git.
+
+Спершу запусти безпечну перевірку, що перевірить обов'язкові поля та збере всі workspace-пакети, але не змінюватиме Vercel:
+
+```bash
+pnpm deploy:vercel -- --dry-run
+```
+
+Після успішної перевірки виконай:
+
+```bash
+pnpm deploy:vercel
+```
+
+Якщо DNS API-домену ще не налаштований, розгорни застосунки, тимчасово пропустивши реєстрацію webhook:
+
+```bash
+pnpm deploy:vercel -- --skip-webhook
+```
+
+Після того як `api-test.constella.pp.ua` почне резолвитися, повторний звичайний запуск `pnpm deploy:vercel` оновить deployments і налаштує webhook.
+
+Для повторного деплою лише одного застосунку можна використати `pnpm deploy:vercel -- --api-only` або `--web-only`; додай `--skip-webhook`, якщо DNS API ще не готовий.
+
+Команда послідовно:
+
+1. Перевіряє production env та запускає `pnpm build`.
+2. Через Vercel API створює, якщо потрібно, проєкти `constella-api` і `constella-web` з відповідними Root Directories. Назви змінюються через `VERCEL_API_PROJECT` і `VERCEL_WEB_PROJECT` у `.env.vercel`.
+3. Прив'язує `api-test.constella.pp.ua` та `app-test.constella.pp.ua` до правильних проєктів.
+4. Синхронізує allowlist Production environment variables з локальних `.env`.
+5. Розгортає API і Web з прапорцем `--prod`, а потім реєструє Telegram webhook та Mini App кнопку.
+
+Для команди потрібен `VERCEL_TOKEN` у `.env.vercel`; для Team account задай `VERCEL_TEAM_ID` або `VERCEL_SCOPE`. Назви проєктів і доменів можна перевизначити відповідними `VERCEL_*` змінними у тому ж файлі. Повторний запуск використовує наявні проєкти та доменні прив'язки замість створення дублікатів. Якщо однойменний Vercel Project вже має неправильний Root Directory, скрипт зупиниться без автоматичної зміни його налаштувань.
+
+Скрипт не може змінити DNS у реєстратора домену та не створює сторонні ресурси/credentials для PostgreSQL, Cloudflare R2, Resend або Sentry. Якщо Vercel поверне DNS verification records, додай їх у DNS-панелі; прив'язка домену та деплой можуть завершитися до поширення DNS, але сайт стане доступним за кастомним доменом лише після верифікації.
+
+---
+
+## 📁 Архітектура на Vercel (окремі проєкти та домени)
+
+Створи два Vercel Projects з одного репозиторію — один Project не може призначити різні Root Directories різним доменам:
+
+1. **Web**: `https://app-test.constella.pp.ua`, Nuxt у Project з Root Directory `apps/web`.
+2. **API**: `https://api-test.constella.pp.ua`, Fastify у Project з Root Directory `apps/api`. Web звертається до API через свій `/api/*` proxy.
+3. **Bot**: handlers grammY імпортуються API, який приймає `POST /telegram/webhook` на API-домені й перевіряє `TELEGRAM_WEBHOOK_SECRET`. Окремий bot worker не потрібен.
+4. **Зовнішні сервіси**: Aiven PostgreSQL/PostGIS, Cloudflare R2, Resend і Sentry.
 
 ---
 
 ## 🛠️ Змінні середовища для Vercel (Project Settings $\rightarrow$ Environment Variables)
 
-Скопіюйте ці змінні у панель Vercel або імпортуйте з файлу `.env.vercel`:
+Нижче довідковий перелік. Для автоматичного завантаження з локальних `.env` запускай `pnpm vercel:env`; він надсилає лише allowlist потрібного проєкту. Не копіюй увесь `.env` в обидва проєкти.
 
 ```env
 # База даних (Aiven PostgreSQL + PostGIS)
@@ -37,8 +79,11 @@ DATABASE_URL=<database.database_url>
 
 # Telegram Бот
 BOT_TOKEN=<telegram.bot_token>
+TELEGRAM_WEBHOOK_SECRET=<random-32+-character-secret>
 BOT_USERNAME=<telegram.bot_username>
 ADMIN_TELEGRAM_IDS=<telegram.admin_telegram_ids>
+ADMIN_EMAIL=<admin.email>
+ADMIN_PASSWORD=<long-random-admin-password>
 
 # Домени та маршрутизація
 WEB_APP_URL=https://app-test.constella.pp.ua
@@ -77,45 +122,63 @@ NUXT_PUBLIC_SENTRY_DSN=<monitoring.sentry_dsn_frontend>
 
 ## 🚀 Покроковий алгоритм розгортання
 
-### Крок 1. Автоматична синхронізація конфігурацій та генерація ключів
-Запустіть скрипт для префлайт-перевірки та генерації безпекових ключів:
+### Крок 1. Підготовка workspace та бази даних
+З кореня репозиторію встанови залежності й перевір Turbo build:
 ```bash
-pnpm config:sync
+pnpm install --frozen-lockfile
+pnpm build
 ```
-ADMIN_EMAIL=<admin.email>
-ADMIN_PASSWORD=<long-random-admin-password>
-Ця команда автоматично згенерує `JWT_SECRET` та `PAYMENTS_INTERNAL_TOKEN`, перевірить коректність параметрів та оновить усі `.env` файли у проєкті, а також створить `.env.vercel`.
 
-### Крок 2. Застосування міграцій до бази даних (Aiven)
-Перед першим запуском накатіть схему та PostGIS-індекси:
+Turbo збирає workspace-залежності (`@constella/shared` та `@constella/db`) перед API. Не запускай `pnpm build` безпосередньо з `apps/api`: там скрипт виконує лише `tsc`, і package exports залежностей ще не матимуть зібраних `dist`-файлів. Для Vercel у `apps/api/vercel.json` налаштовано `turbo run build --filter=@constella/api...`.
+
+Застосуй міграції окремо:
 ```bash
 export DATABASE_URL="<your_aiven_database_url>"
 pnpm --filter @constella/db db:migrate
 ```
 
-### Крок 3. Деплой проєкту на Vercel
+### Крок 2. Налаштування Vercel Projects
+`pnpm deploy:vercel` створює обидва проєкти автоматично; вручну імпортувати репозиторій не потрібно. Назви можна задати у `.env.vercel`:
 
-#### Варіант A: Через Vercel CLI (найшвидший)
+| Project | Root Directory | Framework / Build |
+|---|---|---|
+| `constella-web` | `apps/web` | Nuxt.js; `pnpm --filter @constella/web build` |
+| `constella-api` | `apps/api` | Fastify auto-detect; build command з `apps/api/vercel.json` |
+
+За замовчуванням це `VERCEL_WEB_PROJECT=constella-web` і `VERCEL_API_PROJECT=constella-api`. Скрипт задає Root Directory та build settings під час створення і зупиняється з помилкою, якщо знайдений однойменний проєкт має іншу Root Directory. Не вказуй для API `pnpm build`: це обходить граф залежностей Turbo й викликає `Cannot find module '@constella/db'` / `@constella/shared`. API запускає Fastify під Vercel; локально його, як і раніше, запускає `pnpm --filter @constella/api start`.
+
+### Крок 3. Синхронізація Environment Variables
+Авторизуй Vercel CLI (`pnpm dlx vercel login`) і заповни локальний `.env` реальними production credentials. Скрипт читає root `.env` із перевизначеннями з `apps/api/.env` та `apps/web/.env`; токен бота також можна задати в `apps/bot/.env`. Секрети не друкуються й передаються до CLI через stdin. Якщо `TELEGRAM_WEBHOOK_SECRET` ще не задано, скрипт згенерує випадковий токен і збереже однакове значення у локальних `.env`, `apps/api/.env` та `apps/bot/.env` (усі ці файли виключені з Git).
+
+Спочатку перевір список змінних і відсутні значення без підключення до Vercel:
 ```bash
-# Встановлення та авторизація (якщо не встановлено)
-npx vercel link --yes
-npx vercel --prod --yes
+pnpm vercel:env -- --dry-run
 ```
 
-#### Варіант B: Через Vercel Web Dashboard
-1. Імпортуйте GitHub/GitLab репозиторій.
-2. Вкажіть **Framework Preset**: `Nuxt.js`.
-3. Вкажіть **Root Directory**: `apps/web` (або залиште `/` з кореневим `vercel.json`).
-4. Переконайтеся, що чекбокс *"Include source files outside of the Root Directory"* увімкнено.
-5. Додайте змінні середовища з таблиці вище (або з файлу `.env.vercel`) та натисніть **Deploy**.
-
-### Крок 4. Налаштування Telegram Webhook та Menu Button
-Після завершення деплою на Vercel зареєструйте вебхук бота для миттєвої доставки повідомлень і налаштуйте кнопку меню:
+За потреби можна окремо синхронізувати Production-змінні; повна команда `pnpm deploy:vercel` сама запускає цей крок:
 ```bash
-export BOT_TOKEN="<your_bot_token>"
-export WEB_APP_URL="https://app-test.constella.pp.ua"
-pnpm webhook:set
+pnpm vercel:env
 ```
+
+Скрипт лінкує `apps/api` і `apps/web` до проєктів із `VERCEL_API_PROJECT` та `VERCEL_WEB_PROJECT`, після чого додає/оновлює лише allowlist Production variables через Vercel CLI. Для Team account задай `VERCEL_TEAM_ID` або `VERCEL_SCOPE`.
+
+Обов'язкові значення для API: `DATABASE_URL`, `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `JWT_SECRET`, `PAYMENTS_INTERNAL_TOKEN`, R2 credentials і SMTP credentials. Для Web потрібен `BOT_USERNAME` або `NUXT_PUBLIC_BOT_USERNAME`; URLs за замовчуванням беруться з `.env` або використовують `app-test.constella.pp.ua` і `api-test.constella.pp.ua`. Скрипт відхиляє порожні обов'язкові поля та очевидні шаблонні значення. `TELEGRAM_WEBHOOK_URL` потрібен лише локальній команді реєстрації webhook, а не Vercel runtime.
+
+### Крок 4. Прив'язка кастомних доменів
+У **Settings → Domains** додай `app-test.constella.pp.ua` до web-проєкту, а `api-test.constella.pp.ua` — до API-проєкту. Скопіюй DNS record type/value, які покаже Vercel, у DNS-панель домену та дочекайся **Valid Configuration**. Не спрямовуй обидва домени на один Project.
+
+### Крок 5. Деплой
+Для Git integration кожен Project створюватиме власний deployment після push. Через CLI зв'яжи кожен проект з відповідною директорією:
+```bash
+npx vercel link --cwd apps/web
+npx vercel deploy --prod --cwd apps/web
+npx vercel link --cwd apps/api
+npx vercel deploy --prod --cwd apps/api
+```
+
+Після production-деплою API та додавання його домену виконай з кореня `pnpm webhook:set`, щоб зареєструвати webhook і налаштувати кнопку Mini App. Для цього локальний `apps/bot/.env` має містити `BOT_TOKEN`, `TELEGRAM_WEBHOOK_URL=https://api-test.constella.pp.ua/telegram/webhook`, той самий `TELEGRAM_WEBHOOK_SECRET` та `WEB_APP_URL=https://app-test.constella.pp.ua`; не додавай секрети до Git.
+
+Зверни увагу: Vercel не запускає постійний `startBackgroundScheduler`; для щоденних scheduler jobs потрібен окремий worker або окремо реалізований і захищений Cron endpoint. Наявні Vercel Cron налаштування видалені, бо в API ще немає такого endpoint.
 
 ---
 

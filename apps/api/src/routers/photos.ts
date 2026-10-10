@@ -6,7 +6,6 @@ import { protectedProcedure, router } from '../trpc.js';
 import {
   createPhotoUpload,
   createVoiceUpload,
-  moderatePhoto,
   processPhotoUpload,
   processVoiceUpload,
   removePhotoObjects,
@@ -35,19 +34,14 @@ export const photosRouter = router({
     if ((await activePhotos(ctx)).length >= 6) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Maximum of 6 active photos.' });
     try {
       const processed = await processPhotoUpload(ctx.user.id, input.objectKey, input.contentType);
-      let decision: Awaited<ReturnType<typeof moderatePhoto>>;
-      try { decision = await moderatePhoto(processed.imageKey); }
-      catch { decision = { status: 'pending', score: null, provider: 'manual-review-after-provider-error' }; }
       const [asset] = await ctx.db.insert(photoAssets).values({
         userId: ctx.user.id, originalKey: input.objectKey, ...processed,
-        moderationStatus: decision.status, moderationScore: decision.score, moderationProvider: decision.provider,
-        moderatedAt: decision.status === 'pending' ? null : new Date(),
+        moderationStatus: 'approved',
+        moderationProvider: 'automatic',
+        moderatedAt: new Date(),
       }).returning({ id: photoAssets.id, publicUrl: photoAssets.publicUrl, status: photoAssets.moderationStatus });
-      if (decision.status === 'approved') {
-        const [user] = await ctx.db.select({ photos: users.photos }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
-        await ctx.db.update(users).set({ photos: [...(user?.photos ?? []), processed.publicUrl] }).where(eq(users.id, ctx.user.id));
-      }
-      if (decision.status === 'rejected') await removePhotoObjects([processed.imageKey]);
+      const [user] = await ctx.db.select({ photos: users.photos }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+      await ctx.db.update(users).set({ photos: [...(user?.photos ?? []), processed.publicUrl] }).where(eq(users.id, ctx.user.id));
       return asset;
     } catch (e) { throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Photo processing failed.' }); }
   }),

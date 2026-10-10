@@ -94,9 +94,9 @@ Bot потребує справжній BOT_TOKEN. Не використовуй
 | TRUST_PROXY | false за замовчуванням; задавайте лише довірені IP/CIDR proxy |
 | RATE_LIMIT_MAX | Межа API запитів на IP |
 
-Для безкоштовного старту рекомендований Resend: Free-план наразі має 3 000 листів на місяць із лімітом 100 на день. Перевірте власний домен у Resend і створіть API key, потім задайте SMTP_HOST=smtp.resend.com, SMTP_PORT=587, SMTP_SECURE=false, SMTP_USER=resend, SMTP_PASSWORD=<API key> і адресу відправника з перевіреного домену в SMTP_FROM. Код вже надсилає через SMTP/Nodemailer; окремий Resend SDK не потрібен. Без перевіреного домену відправлення недоступне.
+Для безкоштовної відправки транзакційних листів налаштуйте Brevo Free (до 300 листів на день). У Brevo створіть SMTP key у розділі SMTP & API, підтвердьте адресу відправника, а потім задайте SMTP_HOST=smtp-relay.brevo.com, SMTP_PORT=587, SMTP_SECURE=false, SMTP_USER=<SMTP login>, SMTP_PASSWORD=<SMTP key> та SMTP_FROM із підтвердженою адресою. Потрібні саме SMTP login і SMTP key — не API key. Код уже надсилає через SMTP/Nodemailer; окремий Brevo SDK не потрібен. Без підтвердженого sender Brevo не дозволить надсилання; власний домен рекомендується для кращої доставлюваності.
 
-Альтернатива — Brevo Free: до 300 листів на день через SMTP relay smtp-relay.brevo.com; у SMTP_USER та SMTP_PASSWORD використовуйте саме SMTP credentials/key з Brevo. Безкоштовний план додає брендинг до листів. AWS SES коштує від $0.10 за 1 000 листів; актуальний Free Tier — кредити для нових акаунтів, а не постійна квота. Тарифи перевірені 8 жовтня 2026 року; перед підключенням звірте умови провайдера.
+У безкоштовному плані Brevo додає брендинг до листів. AWS SES — альтернатива з оплатою за використання; перед підключенням звірте актуальні квоти та умови провайдера.
 
 Створіть окремі випадкові JWT_SECRET і PAYMENTS_INTERNAL_TOKEN. Узгодьте DB_POOL_SIZE із кількістю API реплік та лімітом БД.
 
@@ -149,13 +149,13 @@ Swagger показує REST маршрути й перелік tRPC процед
 
 ### Початкове налаштування
 
-1. У серверному `.env` задайте `ADMIN_EMAIL` і сильний унікальний `ADMIN_PASSWORD`. Для Vercel збережіть їх у змінних середовища проєкту API.
-2. Відкрийте `/admin` і увійдіть із цією парою. За першого входу API створить службовий профіль для адміністративних дій, якщо облікового запису з такою поштою ще немає.
-3. API звіряє обидва значення серверно, обмежує спроби входу та видає адмін-сесію на 8 годин. Пароль не передається у клієнтську конфігурацію.
-4. `ADMIN_USER_IDS` та `ADMIN_TELEGRAM_IDS` залишаються додатковими способами надати доступ для вже наявних облікових записів.
+1. У `.env.vercel` задайте `ADMIN_EMAIL` і сильний унікальний `ADMIN_PASSWORD`; синхронізуйте їх тільки з API-проєктом Vercel.
+2. Відкрийте `/admin` і увійдіть із цією парою. За першого входу API створить службовий профіль для аудиту адміністративних дій, якщо облікового запису з такою поштою ще немає.
+3. API перевіряє облікові дані серверно, обмежує спроби входу та видає адмін-сесію на 8 годин. Пароль не передається у клієнтську конфігурацію.
+4. `ADMIN_USER_IDS` та `ADMIN_TELEGRAM_IDS` залишаються додатковими способами надати доступ наявним обліковим записам.
 5. Переконайтеся, що звичайний користувач отримує відмову, а тестова модераторська дія записується у журнал.
 
-Не додавайте admin IDs у клієнтський код. Порожні allowlist змінні вимикають доступ до адміністративних процедур. Панель не показує точну дату народження, координати, пароль або приватні повідомлення.
+Панель не показує точну дату народження, координати, пароль або приватні повідомлення.
 
 ### Інструменти панелі
 
@@ -182,7 +182,7 @@ Swagger показує REST маршрути й перелік tRPC процед
 1. На чистому checkout: pnpm install --frozen-lockfile.
 2. Збірка: pnpm build.
 3. Якщо build успішний, одноразово застосуйте pnpm db:migrate. Не запускайте міграції паралельно на кожній репліці.
-4. Для browser upload у R2 додайте `CLOUDFLARE_API_TOKEN` до локального `.env.vercel` і запустіть `node scripts/r2-cors.mjs`. Це має бути Cloudflare Account API token із правом `Workers R2 Storage Write`; R2 S3 `Access Key ID`/`Secret Access Key` або `Workers R2 Storage Bucket Item Write` дають доступ до об'єктів, але не змінюють CORS policy. Скрипт отримує account ID із `S3_ENDPOINT`, зберігає інші CORS rules і перевіряє результат.
+4. Зберігайте deployment credentials у локальному `constella.deploy.config.local.json`: скопіюйте `constella.deploy.config.local.example.json` (`cp constella.deploy.config.local.example.json constella.deploy.config.local.json`) і заповніть `telegram.bot_token`, `database.database_url`, `storage.s3_access_key_id`/`s3_secret_access_key`, `email.smtp_password`, `vercel.api_token` та `cloudflare.api_token`. Файл ігнорується Git. Основний `constella.deploy.config.json` також локальний/ігнорований; на чистому checkout скрипти беруть безпечні defaults із `constella.deploy.config.example.json`. Запустіть `pnpm config:sync`, щоб локально згенерувати `.env` файли для runtime та синхронізації Vercel; Cloudflare management token у runtime/Vercel не передається. Для browser upload у R2 потрібен Cloudflare Account API token із правом `Workers R2 Storage Write`; R2 S3 `Access Key ID`/`Secret Access Key` або `Workers R2 Storage Bucket Item Write` дають доступ до об'єктів, але не змінюють CORS policy. Запустіть `node scripts/r2-cors.mjs`: скрипт отримує account ID із `S3_ENDPOINT`, зберігає інші CORS rules і перевіряє результат.
 5. Запустіть API: pnpm --filter @constella/api start.
 6. Запустіть web: pnpm --filter @constella/web start.
 7. Запустіть один bot: pnpm --filter @constella/bot start.
@@ -220,7 +220,7 @@ CI повинен виконувати frozen install, build і tests на чи�
 
 - Email verification і password reset реалізовані. Для доставки потрібен SMTP-провайдер із перевіреним доменом; відкликання довготривалих сесій і повноцінне керування пристроями ще не реалізовані.
 - Видалення акаунта доступне з профілю та API; видаляються профільні зв’язки й фото, платіжний ledger анонімізується. Експорт даних та строки зберігання бухгалтерського ledger потребують окремої юридичної політики.
-- Фотозавантаження, перевірка MIME/розміру, WebP, ручна адмін-модерація та опційний AI adapter реалізовані. Для AI потрібен зовнішній CONTENT_MODERATION_URL; без нього фото чекають ручної перевірки. Перевірте bucket policy і CDN доступ лише до approved-фото до публічного трафіку.
+- Фотозавантаження перевіряє MIME/розмір, конвертує зображення у WebP і робить його доступним одразу без попередньої модерації. Адміністратори можуть приховати фото після скарги; перед публічним запуском налаштуйте bucket policy та CDN.
 - Вік перевіряється за введеною датою народження; окремої перевірки особи/віку немає.
 - Чат використовує polling; немає WebSocket/SSE та фонового worker для запланованих задач.
 - Пошук за радіусом потребує координат; інакше відбір працює за містом.

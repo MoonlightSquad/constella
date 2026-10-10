@@ -22,6 +22,10 @@
     "s3_public_base_url": "https://pub-YOUR_BUCKET_ID.r2.dev",
     "s3_force_path_style": false
   },
+  "cloudflare": {
+    "api_token": "",
+    "account_id": ""
+  },
   "monitoring": {
     "sentry_dsn_backend": "https://PUBLIC_KEY@o000000.ingest.sentry.io/0000000",
     "sentry_dsn_frontend": "https://PUBLIC_KEY@o000000.ingest.sentry.io/0000000",
@@ -52,6 +56,7 @@
     "api_public_url": "/api"
   },
   "vercel": {
+    "api_token": "",
     "project_name": "constella",
     "domains": [
       "app-test.constella.pp.ua",

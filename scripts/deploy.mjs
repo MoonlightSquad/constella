@@ -3,33 +3,16 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { loadDeploymentConfig } from './deployment-config.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const require = createRequire(path.join(rootDir, 'apps/api/package.json'));
-
-const readEnv = (relativePath) => {
-  try {
-    return require('dotenv').parse(fs.readFileSync(path.join(rootDir, relativePath)));
-  } catch (err) {
-    if (err.code === 'ENOENT') return {};
-    throw err;
-  }
-};
-const existingRuntimeEnv = { ...readEnv('.env'), ...readEnv('apps/api/.env') };
-const existingDeploymentEnv = readEnv('.env.vercel');
-const configPath = path.join(rootDir, 'constella.deploy.config.json');
-
-if (!fs.existsSync(configPath)) {
-  console.error('❌ Config file constella.deploy.config.json not found in project root!');
-  process.exit(1);
-}
-
 let config;
 try {
-  config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config = loadDeploymentConfig(rootDir);
 } catch (err) {
-  console.error('❌ Invalid JSON in constella.deploy.config.json:', err.message);
+  console.error('❌ Could not load deployment config:', err.message);
   process.exit(1);
 }
 
@@ -63,9 +46,32 @@ if (!config.security.payments_internal_token || isPlaceholder(config.security.pa
 }
 
 if (configModified) {
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-  console.log('💾 Saved generated secrets to constella.deploy.config.json');
+  const localConfigPath = path.join(rootDir, 'constella.deploy.config.local.json');
+  let localConfig = {};
+  try {
+    localConfig = JSON.parse(fs.readFileSync(localConfigPath, 'utf8'));
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  localConfig.security = {
+    ...localConfig.security,
+    jwt_secret: config.security.jwt_secret,
+    payments_internal_token: config.security.payments_internal_token
+  };
+  fs.writeFileSync(localConfigPath, JSON.stringify(localConfig, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  fs.chmodSync(localConfigPath, 0o600);
+  console.log('💾 Saved generated secrets to ignored constella.deploy.config.local.json');
 }
+
+const existingRuntimeEnv = {};
+for (const relativePath of ['.env', 'apps/api/.env']) {
+  try {
+    Object.assign(existingRuntimeEnv, require('dotenv').parse(fs.readFileSync(path.join(rootDir, relativePath))));
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+const webhookSecret = config.telegram?.webhook_secret || existingRuntimeEnv.TELEGRAM_WEBHOOK_SECRET || '';
 
 // 2. Preflight checks
 const issues = [];
@@ -132,12 +138,14 @@ const envLines = [
   `DATABASE_URL=${config.database?.database_url || ''}`,
   `BOT_TOKEN=${config.telegram?.bot_token || ''}`,
   `BOT_USERNAME=${config.telegram?.bot_username || ''}`,
+  `TELEGRAM_WEBHOOK_SECRET=${webhookSecret}`,
   `ADMIN_TELEGRAM_IDS=${(config.telegram?.admin_telegram_ids || []).join(',')}`,
   `WEB_APP_URL=${appUrl}`,
   `NUXT_PUBLIC_BOT_USERNAME=${config.telegram?.bot_username || ''}`,
   `NUXT_PUBLIC_APP_URL=${appUrl}`,
   `NUXT_PUBLIC_API_URL=${apiUrl}`,
   `API_PROXY_TARGET=${apiUrl}`,
+  `API_INTERNAL_URL=${apiUrl}`,
   `JWT_SECRET=${config.security?.jwt_secret || ''}`,
   `PAYMENTS_INTERNAL_TOKEN=${config.security?.payments_internal_token || ''}`,
   `PHOTO_BUCKET=${config.storage?.photo_bucket || 'constella-media'}`,
@@ -157,10 +165,34 @@ const envLines = [
   `NUXT_PUBLIC_SENTRY_DSN=${config.monitoring?.sentry_dsn_frontend || ''}`,
   `SENTRY_ENVIRONMENT=${config.monitoring?.environment || 'production'}`
 ].join('\n');
+
+const deploymentEnvPath = path.join(rootDir, '.env.vercel');
+let existingDeploymentEnv = {};
+try {
+  existingDeploymentEnv = require('dotenv').parse(fs.readFileSync(deploymentEnvPath));
+} catch (err) {
+  if (err.code !== 'ENOENT') throw err;
+}
 const adminCredentialsEnvLines = [
   `ADMIN_EMAIL=${existingRuntimeEnv.ADMIN_EMAIL || existingDeploymentEnv.ADMIN_EMAIL || ''}`,
   `ADMIN_PASSWORD=${existingRuntimeEnv.ADMIN_PASSWORD || existingDeploymentEnv.ADMIN_PASSWORD || ''}`,
 ];
+const deploymentOnlyKeys = [
+  'VERCEL_TEAM_ID',
+  'VERCEL_SCOPE',
+  'VERCEL_API_PROJECT',
+  'VERCEL_WEB_PROJECT',
+  'VERCEL_API_DOMAIN',
+  'VERCEL_WEB_DOMAIN'
+];
+const deploymentEnvLines = [
+  envLines,
+  ...adminCredentialsEnvLines,
+  `VERCEL_TOKEN=${isPlaceholder(config.vercel?.api_token) ? '' : config.vercel?.api_token || ''}`,
+  ...deploymentOnlyKeys
+    .filter((name) => existingDeploymentEnv[name])
+    .map((name) => `${name}=${existingDeploymentEnv[name]}`)
+].join('\n');
 
 // 4. Sync .env to root, apps/web, apps/api, apps/bot
 const targetPaths = [
@@ -174,13 +206,14 @@ for (const { path: targetPath, includeAdminCredentials } of targetPaths) {
   const targetEnvLines = includeAdminCredentials
     ? [envLines, ...adminCredentialsEnvLines].join('\n')
     : envLines;
-  fs.writeFileSync(targetPath, targetEnvLines + '\n', 'utf8');
+  fs.writeFileSync(targetPath, targetEnvLines + '\n', { encoding: 'utf8', mode: 0o600 });
+  fs.chmodSync(targetPath, 0o600);
   console.log(`✅ Synced: ${path.relative(rootDir, targetPath)}`);
 }
 
 // 5. Generate vercel env helper file (.env.vercel)
-const vercelEnvPath = path.join(rootDir, '.env.vercel');
-fs.writeFileSync(vercelEnvPath, [envLines, ...adminCredentialsEnvLines].join('\n') + '\n', 'utf8');
+fs.writeFileSync(deploymentEnvPath, deploymentEnvLines + '\n', { encoding: 'utf8', mode: 0o600 });
+fs.chmodSync(deploymentEnvPath, 0o600);
 console.log(`✅ Generated Vercel Environment file: .env.vercel`);
 
 console.log('\n✨ Configuration synchronization complete!');
