@@ -1,10 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
+const require = createRequire(path.join(rootDir, 'apps/api/package.json'));
+
+const readEnv = (relativePath) => {
+  try {
+    return require('dotenv').parse(fs.readFileSync(path.join(rootDir, relativePath)));
+  } catch (err) {
+    if (err.code === 'ENOENT') return {};
+    throw err;
+  }
+};
+const existingRuntimeEnv = { ...readEnv('.env'), ...readEnv('apps/api/.env') };
+const existingDeploymentEnv = readEnv('.env.vercel');
 const configPath = path.join(rootDir, 'constella.deploy.config.json');
 
 if (!fs.existsSync(configPath)) {
@@ -144,23 +157,30 @@ const envLines = [
   `NUXT_PUBLIC_SENTRY_DSN=${config.monitoring?.sentry_dsn_frontend || ''}`,
   `SENTRY_ENVIRONMENT=${config.monitoring?.environment || 'production'}`
 ].join('\n');
+const adminCredentialsEnvLines = [
+  `ADMIN_EMAIL=${existingRuntimeEnv.ADMIN_EMAIL || existingDeploymentEnv.ADMIN_EMAIL || ''}`,
+  `ADMIN_PASSWORD=${existingRuntimeEnv.ADMIN_PASSWORD || existingDeploymentEnv.ADMIN_PASSWORD || ''}`,
+];
 
 // 4. Sync .env to root, apps/web, apps/api, apps/bot
 const targetPaths = [
-  path.join(rootDir, '.env'),
-  path.join(rootDir, 'apps/web/.env'),
-  path.join(rootDir, 'apps/api/.env'),
-  path.join(rootDir, 'apps/bot/.env')
+  { path: path.join(rootDir, '.env'), includeAdminCredentials: true },
+  { path: path.join(rootDir, 'apps/web/.env'), includeAdminCredentials: false },
+  { path: path.join(rootDir, 'apps/api/.env'), includeAdminCredentials: true },
+  { path: path.join(rootDir, 'apps/bot/.env'), includeAdminCredentials: false }
 ];
 
-for (const targetPath of targetPaths) {
-  fs.writeFileSync(targetPath, envLines + '\n', 'utf8');
+for (const { path: targetPath, includeAdminCredentials } of targetPaths) {
+  const targetEnvLines = includeAdminCredentials
+    ? [envLines, ...adminCredentialsEnvLines].join('\n')
+    : envLines;
+  fs.writeFileSync(targetPath, targetEnvLines + '\n', 'utf8');
   console.log(`✅ Synced: ${path.relative(rootDir, targetPath)}`);
 }
 
 // 5. Generate vercel env helper file (.env.vercel)
 const vercelEnvPath = path.join(rootDir, '.env.vercel');
-fs.writeFileSync(vercelEnvPath, envLines + '\n', 'utf8');
+fs.writeFileSync(vercelEnvPath, [envLines, ...adminCredentialsEnvLines].join('\n') + '\n', 'utf8');
 console.log(`✅ Generated Vercel Environment file: .env.vercel`);
 
 console.log('\n✨ Configuration synchronization complete!');

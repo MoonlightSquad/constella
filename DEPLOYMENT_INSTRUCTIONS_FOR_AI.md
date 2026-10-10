@@ -82,6 +82,8 @@ NUXT_PUBLIC_SENTRY_DSN=<monitoring.sentry_dsn_frontend>
 ```bash
 pnpm config:sync
 ```
+ADMIN_EMAIL=<admin.email>
+ADMIN_PASSWORD=<long-random-admin-password>
 Ця команда автоматично згенерує `JWT_SECRET` та `PAYMENTS_INTERNAL_TOKEN`, перевірить коректність параметрів та оновить усі `.env` файли у проєкті, а також створить `.env.vercel`.
 
 ### Крок 2. Застосування міграцій до бази даних (Aiven)
