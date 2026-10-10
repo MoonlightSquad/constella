@@ -23,7 +23,7 @@ const apiBase = () => (config.public.apiBase || '/api').replace(/\/$/, '')
 const loadAccount = async () => {
   account.value = await $trpc.me.query()
   isAdmin.value = (await $trpc.admin.access.query().catch(() => ({ isAdmin: false }))).isAdmin
-  needsProfileSetup.value = !account.value?.onboardingComplete
+  needsProfileSetup.value = !isAdmin.value && !account.value?.onboardingComplete
 }
 
 onMounted(async () => {
@@ -98,8 +98,42 @@ const saveProfile = async (profile: Record<string, unknown>) => {
 const logout = () => {
   localStorage.removeItem('constella_token')
   account.value = null
+  isAdmin.value = false
   needsProfileSetup.value = false
   error.value = ''
+}
+
+const adminLogin = async (credentials: { email: string; password: string }) => {
+  error.value = ''
+  isSaving.value = true
+  try {
+    const response = await fetch(`${apiBase()}/auth/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      if (response.status === 429) throw new Error(t('auth.rateLimited'))
+      throw new Error(result?.error || 'Не вдалося увійти до адмінки.')
+    }
+    if (!result?.token) throw new Error(t('app.tokenMissing'))
+
+    localStorage.setItem('constella_token', result.token)
+    try {
+      await loadAccount()
+      if (!isAdmin.value) throw new Error('Доступ до адмінки не надано.')
+    } catch (cause) {
+      localStorage.removeItem('constella_token')
+      account.value = null
+      isAdmin.value = false
+      throw cause
+    }
+  } catch (cause: any) {
+    error.value = cause?.message || 'Не вдалося увійти до адмінки.'
+  } finally {
+    isSaving.value = false
+  }
 }
 
 const webAuth = async (credentials: {
@@ -203,6 +237,14 @@ const retry = () => window.location.reload()
     </div>
 
     <AuthAction v-else-if="route.path.startsWith('/auth/')" />
+    <AdminAuth
+      v-else-if="route.path === '/admin' && !isAdmin"
+      :busy="isSaving"
+      :error="error"
+      @submit="adminLogin"
+      @exit="navigateTo('/')"
+    />
+    <AdminConsole v-else-if="route.path === '/admin' && isAdmin" @exit="navigateTo('/')" />
     <WebAuth
       v-else-if="!account"
       :busy="isSaving"
@@ -215,8 +257,6 @@ const retry = () => window.location.reload()
       @resend-verification="resendVerification"
       @telegram="retry"
     />
-
-    <AdminConsole v-else-if="account && route.path === '/admin'" @exit="navigateTo('/')" />
 
     <ProfileSetup
       v-else-if="account && (needsProfileSetup || isEditingProfile)"

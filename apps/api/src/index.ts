@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -22,6 +22,7 @@ import { isPhotoStorageConfigured, removePhotoObjects } from './photos/storage.j
 import { startBackgroundScheduler } from './engine/scheduler.js';
 import { bot as telegramBot } from '@constella/bot';
 import { isConfiguredTelegramWebhookSecret, isValidTelegramWebhookSecret } from './utils/telegram-webhook.js';
+import { z } from 'zod';
 
 declare module 'fastify' {
   interface FastifySchema {
@@ -351,6 +352,95 @@ async function initialize() {
         }
         throw error;
       }
+    }
+  );
+
+  fastify.post(
+    '/auth/admin/login',
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Sign in to the admin console',
+        body: {
+          type: 'object',
+          required: ['email', 'password'],
+          properties: {
+            email: { type: 'string', format: 'email', maxLength: 254 },
+            password: { type: 'string', minLength: 1, maxLength: 1024 },
+          },
+          additionalProperties: false,
+        },
+      },
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const parsed = z.object({
+        email: z.string().trim().email().max(254).transform((email) => email.toLowerCase()),
+        password: z.string().min(1).max(1024),
+      }).safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: 'Invalid email or password.' });
+
+      const configuredEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+      const configuredPassword = process.env.ADMIN_PASSWORD;
+      if (!configuredEmail || !configuredPassword) {
+        request.log.error({ requestId: request.id }, 'Admin login credentials are not configured.');
+        return reply.status(503).send({ error: 'Admin login is not configured.' });
+      }
+
+      const matchesConfiguredValue = (provided: string, configured: string) =>
+        timingSafeEqual(
+          createHash('sha256').update(provided).digest(),
+          createHash('sha256').update(configured).digest()
+        );
+      const emailMatches = matchesConfiguredValue(parsed.data.email, configuredEmail);
+      const passwordMatches = matchesConfiguredValue(parsed.data.password, configuredPassword);
+      if (!emailMatches || !passwordMatches) {
+        return reply.status(401).send({ error: 'Email or password is incorrect.' });
+      }
+
+      const findAdminAccount = async () => {
+        const [account] = await db.select({
+          userId: webCredentials.userId,
+          sessionVersion: users.sessionVersion,
+        }).from(webCredentials)
+          .innerJoin(users, eq(users.id, webCredentials.userId))
+          .where(eq(webCredentials.email, configuredEmail))
+          .limit(1);
+        return account;
+      };
+
+      let account = await findAdminAccount();
+      if (!account) {
+        const unusablePasswordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
+        try {
+          account = await db.transaction(async (tx) => {
+            const [user] = await tx.insert(users)
+              .values({ birthdate: new Date('2000-01-01'), gender: 'none', lookingFor: [] })
+              .returning({ userId: users.id, sessionVersion: users.sessionVersion });
+            await tx.insert(webCredentials).values({
+              userId: user.userId,
+              email: configuredEmail,
+              passwordHash: unusablePasswordHash,
+              emailVerifiedAt: new Date(),
+            });
+            return user;
+          });
+        } catch (error: any) {
+          if (error?.code !== '23505') throw error;
+          account = await findAdminAccount();
+          if (!account) throw error;
+        }
+      }
+      if (!account) throw new Error('Admin account resolution failed after successful credential validation.');
+
+      const token = fastify.jwt.sign({
+        id: account.userId,
+        telegramId: null,
+        email: configuredEmail,
+        authProvider: 'admin',
+        sessionVersion: account.sessionVersion,
+      }, { expiresIn: '8h' });
+      return reply.send({ token, userId: account.userId });
     }
   );
 

@@ -1,0 +1,62 @@
+{
+  "telegram": {
+    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN_FROM_BOTFATHER",
+    "bot_username": "YOUR_BOT_USERNAME",
+    "admin_telegram_ids": [
+      "YOUR_NUMERIC_TELEGRAM_ID"
+    ]
+  },
+  "database": {
+    "provider": "aiven",
+    "database_url": "postgres://avnadmin:YOUR_PASSWORD@pg-service.aivencloud.com:15432/defaultdb?sslmode=require",
+    "pool_size": 10,
+    "require_postgis": true
+  },
+  "storage": {
+    "provider": "cloudflare_r2",
+    "photo_bucket": "constella-media",
+    "s3_endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com",
+    "s3_region": "auto",
+    "s3_access_key_id": "YOUR_R2_ACCESS_KEY_ID",
+    "s3_secret_access_key": "YOUR_R2_SECRET_ACCESS_KEY",
+    "s3_public_base_url": "https://pub-YOUR_BUCKET_ID.r2.dev",
+    "s3_force_path_style": false
+  },
+  "monitoring": {
+    "sentry_dsn_backend": "https://PUBLIC_KEY@o000000.ingest.sentry.io/0000000",
+    "sentry_dsn_frontend": "https://PUBLIC_KEY@o000000.ingest.sentry.io/0000000",
+    "environment": "production"
+  },
+  "email": {
+    "provider": "resend",
+    "smtp_host": "smtp.resend.com",
+    "smtp_port": 587,
+    "smtp_secure": false,
+    "smtp_user": "resend",
+    "smtp_password": "re_YOUR_RESEND_API_KEY",
+    "smtp_from": "Constella Support <support@test.constella.pp.ua>"
+  },
+  "security": {
+    "jwt_secret": "6d91a703e6ce4599d7b2f370764e8abd6a67fe8f16f22df01d0417e5fb3326bb",
+    "payments_internal_token": "91848c1da14a2b50cde35868704c0d86c0f0969ff26c73facdb6715e77b18620",
+    "rate_limit_max": 120
+  },
+  "domains": {
+    "web_app_url": "https://app-test.constella.pp.ua",
+    "api_url": "https://api-test.constella.pp.ua"
+  },
+  "urls": {
+    "app_url": "https://app-test.constella.pp.ua",
+    "frontend_web_app_url": "https://app-test.constella.pp.ua",
+    "backend_api_url": "https://api-test.constella.pp.ua",
+    "api_public_url": "/api"
+  },
+  "vercel": {
+    "project_name": "constella",
+    "domains": [
+      "app-test.constella.pp.ua",
+      "api-test.constella.pp.ua"
+    ],
+    "cron_schedule": "0 0 * * *"
+  }
+}

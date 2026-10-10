@@ -82,6 +82,8 @@ BOT_TOKEN=<telegram.bot_token>
 TELEGRAM_WEBHOOK_SECRET=<random-32+-character-secret>
 BOT_USERNAME=<telegram.bot_username>
 ADMIN_TELEGRAM_IDS=<telegram.admin_telegram_ids>
+ADMIN_EMAIL=<admin.email>
+ADMIN_PASSWORD=<long-random-admin-password>
 
 # Домени та маршрутизація
 WEB_APP_URL=https://app-test.constella.pp.ua

@@ -64,7 +64,7 @@ if (configModified) {
 }
 
 const existingRuntimeEnv = {};
-for (const relativePath of ['.env', 'apps/api/.env', 'apps/bot/.env']) {
+for (const relativePath of ['.env', 'apps/api/.env']) {
   try {
     Object.assign(existingRuntimeEnv, require('dotenv').parse(fs.readFileSync(path.join(rootDir, relativePath))));
   } catch (err) {
@@ -173,6 +173,10 @@ try {
 } catch (err) {
   if (err.code !== 'ENOENT') throw err;
 }
+const adminCredentialsEnvLines = [
+  `ADMIN_EMAIL=${existingRuntimeEnv.ADMIN_EMAIL || existingDeploymentEnv.ADMIN_EMAIL || ''}`,
+  `ADMIN_PASSWORD=${existingRuntimeEnv.ADMIN_PASSWORD || existingDeploymentEnv.ADMIN_PASSWORD || ''}`,
+];
 const deploymentOnlyKeys = [
   'VERCEL_TEAM_ID',
   'VERCEL_SCOPE',
@@ -183,6 +187,7 @@ const deploymentOnlyKeys = [
 ];
 const deploymentEnvLines = [
   envLines,
+  ...adminCredentialsEnvLines,
   `VERCEL_TOKEN=${isPlaceholder(config.vercel?.api_token) ? '' : config.vercel?.api_token || ''}`,
   ...deploymentOnlyKeys
     .filter((name) => existingDeploymentEnv[name])
@@ -191,14 +196,17 @@ const deploymentEnvLines = [
 
 // 4. Sync .env to root, apps/web, apps/api, apps/bot
 const targetPaths = [
-  path.join(rootDir, '.env'),
-  path.join(rootDir, 'apps/web/.env'),
-  path.join(rootDir, 'apps/api/.env'),
-  path.join(rootDir, 'apps/bot/.env')
+  { path: path.join(rootDir, '.env'), includeAdminCredentials: true },
+  { path: path.join(rootDir, 'apps/web/.env'), includeAdminCredentials: false },
+  { path: path.join(rootDir, 'apps/api/.env'), includeAdminCredentials: true },
+  { path: path.join(rootDir, 'apps/bot/.env'), includeAdminCredentials: false }
 ];
 
-for (const targetPath of targetPaths) {
-  fs.writeFileSync(targetPath, envLines + '\n', { encoding: 'utf8', mode: 0o600 });
+for (const { path: targetPath, includeAdminCredentials } of targetPaths) {
+  const targetEnvLines = includeAdminCredentials
+    ? [envLines, ...adminCredentialsEnvLines].join('\n')
+    : envLines;
+  fs.writeFileSync(targetPath, targetEnvLines + '\n', { encoding: 'utf8', mode: 0o600 });
   fs.chmodSync(targetPath, 0o600);
   console.log(`✅ Synced: ${path.relative(rootDir, targetPath)}`);
 }

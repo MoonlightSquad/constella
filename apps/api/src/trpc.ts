@@ -7,7 +7,8 @@ import { eq } from 'drizzle-orm';
 export interface UserPayload {
   id: string;
   telegramId: number | null;
-  authProvider?: 'telegram' | 'web';
+  authProvider?: 'telegram' | 'web' | 'admin';
+  email?: string;
   sessionVersion?: number;
 }
 
@@ -71,7 +72,11 @@ export const isConfiguredAdmin = (user: UserPayload | null) => {
   if (!user) return false;
   const userIds = configuredAdminIds('ADMIN_USER_IDS');
   const telegramIds = configuredAdminIds('ADMIN_TELEGRAM_IDS');
-  return userIds.has(user.id) || (user.telegramId !== null && telegramIds.has(String(user.telegramId)));
+  const configuredAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  return userIds.has(user.id) ||
+    (user.telegramId !== null && telegramIds.has(String(user.telegramId))) ||
+    (user.authProvider === 'admin' && Boolean(configuredAdminEmail) &&
+      user.email?.trim().toLowerCase() === configuredAdminEmail);
 };
 
 export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
