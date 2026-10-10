@@ -17,12 +17,12 @@
 ## 📁 Структура конфігурації (`constella.deploy.config.json`)
 
 Файл містить наступні секції:
-1. `infrastructure` — перелік обраних провайдерів (Vercel, Railway/Render, Aiven, Cloudflare, Resend, Sentry).
+1. `infrastructure` — перелік обраних провайдерів (Vercel, Railway/Render, Aiven, Cloudflare, Brevo, Sentry).
 2. `telegram` — токен бота від `@BotFather`, юзернейм бота та ID адміністраторів.
 3. `database` — рядок підключення до Aiven PostgreSQL з підтримкою розширення `postgis`.
 4. `storage` — налаштування S3-сумісного сховища Cloudflare R2 (бакет, ключі доступу, публічний URL).
 5. `monitoring` — DSN ключі Sentry для бекенду та фронтенду.
-6. `email` — параметри SMTP-сервера (Resend або Brevo).
+6. `email` — параметри SMTP-сервера Brevo.
 7. `security` — криптографічні ключі `JWT_SECRET` та `PAYMENTS_INTERNAL_TOKEN` (мінімум 32 символи).
 8. `urls` — публічні адреси фронтенду (Vercel) та бекенду (Railway/Render).
 9. `vercel` — параметри для деплою Nuxt 3 веб-додатка.
