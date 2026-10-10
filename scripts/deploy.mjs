@@ -174,8 +174,8 @@ try {
   if (err.code !== 'ENOENT') throw err;
 }
 const adminCredentialsEnvLines = [
-  `ADMIN_EMAIL=${existingRuntimeEnv.ADMIN_EMAIL || existingDeploymentEnv.ADMIN_EMAIL || ''}`,
-  `ADMIN_PASSWORD=${existingRuntimeEnv.ADMIN_PASSWORD || existingDeploymentEnv.ADMIN_PASSWORD || ''}`,
+  `ADMIN_EMAIL=${existingDeploymentEnv.ADMIN_EMAIL || existingRuntimeEnv.ADMIN_EMAIL || ''}`,
+  `ADMIN_PASSWORD=${existingDeploymentEnv.ADMIN_PASSWORD || existingRuntimeEnv.ADMIN_PASSWORD || ''}`,
 ];
 const deploymentOnlyKeys = [
   'VERCEL_TEAM_ID',
