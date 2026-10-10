@@ -92,9 +92,9 @@ Bot потребує справжній BOT_TOKEN. Не використовуй
 | TRUST_PROXY | false за замовчуванням; задавайте лише довірені IP/CIDR proxy |
 | RATE_LIMIT_MAX | Межа API запитів на IP |
 
-Для безкоштовного старту рекомендований Resend: Free-план наразі має 3 000 листів на місяць із лімітом 100 на день. Перевірте власний домен у Resend і створіть API key, потім задайте SMTP_HOST=smtp.resend.com, SMTP_PORT=587, SMTP_SECURE=false, SMTP_USER=resend, SMTP_PASSWORD=<API key> і адресу відправника з перевіреного домену в SMTP_FROM. Код вже надсилає через SMTP/Nodemailer; окремий Resend SDK не потрібен. Без перевіреного домену відправлення недоступне.
+Для безкоштовної відправки транзакційних листів налаштуйте Brevo Free (до 300 листів на день). У Brevo створіть SMTP key у розділі SMTP & API, підтвердьте адресу відправника, а потім задайте SMTP_HOST=smtp-relay.brevo.com, SMTP_PORT=587, SMTP_SECURE=false, SMTP_USER=<SMTP login>, SMTP_PASSWORD=<SMTP key> та SMTP_FROM із підтвердженою адресою. Потрібні саме SMTP login і SMTP key — не API key. Код уже надсилає через SMTP/Nodemailer; окремий Brevo SDK не потрібен. Без підтвердженого sender Brevo не дозволить надсилання; власний домен рекомендується для кращої доставлюваності.
 
-Альтернатива — Brevo Free: до 300 листів на день через SMTP relay smtp-relay.brevo.com; у SMTP_USER та SMTP_PASSWORD використовуйте саме SMTP credentials/key з Brevo. Безкоштовний план додає брендинг до листів. AWS SES коштує від $0.10 за 1 000 листів; актуальний Free Tier — кредити для нових акаунтів, а не постійна квота. Тарифи перевірені 8 жовтня 2026 року; перед підключенням звірте умови провайдера.
+У безкоштовному плані Brevo додає брендинг до листів. AWS SES — альтернатива з оплатою за використання; перед підключенням звірте актуальні квоти та умови провайдера.
 
 Створіть окремі випадкові JWT_SECRET і PAYMENTS_INTERNAL_TOKEN. Узгодьте DB_POOL_SIZE із кількістю API реплік та лімітом БД.
 
