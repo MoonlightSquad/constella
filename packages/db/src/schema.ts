@@ -341,7 +341,7 @@ export const photoAssets = pgTable(
     publicUrl: text('public_url').notNull(),
     width: integer('width').notNull(),
     height: integer('height').notNull(),
-    moderationStatus: text('moderation_status').$type<'pending' | 'approved' | 'rejected'>().default('pending').notNull(),
+    moderationStatus: text('moderation_status').$type<'pending' | 'approved' | 'rejected'>().default('approved').notNull(),
     moderationScore: doublePrecision('moderation_score'),
     moderationProvider: text('moderation_provider'),
     moderatedByUserId: uuid('moderated_by_user_id').references(() => users.id, { onDelete: 'set null' }),

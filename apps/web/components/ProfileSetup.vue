@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useLocale, type TranslationKey } from '~/composables/useLocale'
 
 const props = defineProps<{
@@ -15,6 +15,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useLocale()
+const validationError = ref('')
 
 const genderOptions = [
   { value: 'woman', label: 'profile.women' as TranslationKey },
@@ -63,6 +64,13 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => form.photos.length,
+  () => {
+    validationError.value = ''
+  }
+)
+
 const latestBirthdate = computed(() => {
   const date = new Date()
   date.setFullYear(date.getFullYear() - 18)
@@ -73,11 +81,22 @@ const toggleInterest = (value: string) => {
   form.lookingFor = form.lookingFor.includes(value)
     ? form.lookingFor.filter((item) => item !== value)
     : [...form.lookingFor, value]
+  validationError.value = ''
 }
 
 const submit = () => {
-  const photos = form.photos
+  if (form.lookingFor.length === 0) {
+    validationError.value = t('profile.requiredLookingFor')
+    return
+  }
 
+  const photos = form.photos
+  if (photos.length === 0) {
+    validationError.value = t('profile.requiredPhoto')
+    return
+  }
+
+  validationError.value = ''
   emit('save', {
     ...form,
     radiusKm: Number(form.radiusKm),
@@ -103,22 +122,22 @@ const submit = () => {
         <div class="section-title"><span>01</span><h2>{{ t('profile.about') }}</h2></div>
         <div class="field-grid">
           <label class="field">
-            <span>{{ t('profile.name') }}</span>
+            <span>{{ t('profile.name') }} <small>{{ t('profile.required') }}</small></span>
             <input v-model.trim="form.displayName" type="text" maxlength="40" autocomplete="given-name" required>
           </label>
           <label class="field">
-            <span>{{ t('profile.birthdate') }} <small>{{ t('profile.age18') }}</small></span>
+            <span>{{ t('profile.birthdate') }} <small>{{ t('profile.age18') }} · {{ t('profile.required') }}</small></span>
             <input v-model="form.birthdate" type="date" :max="latestBirthdate" required>
           </label>
           <label class="field">
-            <span>{{ t('profile.gender') }}</span>
+            <span>{{ t('profile.gender') }} <small>{{ t('profile.required') }}</small></span>
             <select v-model="form.gender" required>
               <option v-for="option in genderOptions" :key="option.value" :value="option.value">{{ t(option.label) }}</option>
             </select>
           </label>
         </div>
         <label class="field">
-          <span>{{ t('profile.lookingFor') }}</span>
+          <span>{{ t('profile.lookingFor') }} <small>{{ t('profile.required') }}</small></span>
           <div class="choice-list">
             <button
               v-for="option in genderOptions"
@@ -134,12 +153,12 @@ const submit = () => {
         </label>
         <div class="field-grid">
           <label class="field">
-            <span>{{ t('profile.city') }}</span>
+            <span>{{ t('profile.city') }} <small>{{ t('profile.required') }}</small></span>
             <input v-model.trim="form.city" type="text" maxlength="80" :placeholder="t('profile.cityPlaceholder')" autocomplete="address-level2" required>
           </label>
           <label class="field">
-            <span>{{ t('profile.radius') }} <small>{{ form.radiusKm }} km</small></span>
-            <input v-model.number="form.radiusKm" type="range" min="10" max="250" step="10">
+            <span>{{ t('profile.radius') }} <small>{{ form.radiusKm }} km · {{ t('profile.required') }}</small></span>
+            <input v-model.number="form.radiusKm" type="range" min="10" max="250" step="10" required>
           </label>
         </div>
       </section>
@@ -148,36 +167,36 @@ const submit = () => {
         <div class="section-title"><span>02</span><h2>{{ t('profile.story') }}</h2></div>
         <label class="field">
           <span>{{ t('profile.bio') }}</span>
-          <textarea v-model.trim="form.bio" minlength="20" maxlength="500" rows="3" :placeholder="t('profile.bioPlaceholder')" required />
+          <textarea v-model.trim="form.bio" maxlength="500" rows="3" :placeholder="t('profile.bioPlaceholder')" />
           <small>{{ form.bio.length }}/500</small>
         </label>
         <label class="field">
           <span>{{ t('profile.idealEvening') }}</span>
-          <textarea v-model.trim="form.promptOne" minlength="10" maxlength="180" rows="2" :placeholder="t('profile.idealEveningPlaceholder')" required />
+          <textarea v-model.trim="form.promptOne" maxlength="180" rows="2" :placeholder="t('profile.idealEveningPlaceholder')" />
         </label>
         <label class="field">
           <span>{{ t('profile.smallJoy') }}</span>
-          <textarea v-model.trim="form.promptTwo" minlength="10" maxlength="180" rows="2" :placeholder="t('profile.smallJoyPlaceholder')" required />
+          <textarea v-model.trim="form.promptTwo" maxlength="180" rows="2" :placeholder="t('profile.smallJoyPlaceholder')" />
         </label>
         <label class="field">
           <span>{{ t('profile.talkAbout') }}</span>
-          <textarea v-model.trim="form.promptThree" minlength="10" maxlength="180" rows="2" :placeholder="t('profile.talkPlaceholder')" required />
+          <textarea v-model.trim="form.promptThree" maxlength="180" rows="2" :placeholder="t('profile.talkPlaceholder')" />
         </label>
       </section>
 
       <label class="consent-row">
-        <input v-model="form.acceptedTerms" type="checkbox" required>
+        <input v-model="form.acceptedTerms" type="checkbox">
         <span>{{ t('profile.consent') }}</span>
       </label>
 
       <section class="form-section">
-        <div class="section-title"><span>03</span><h2>{{ t('profile.photos') }}</h2></div>
+        <div class="section-title"><span>03</span><h2>{{ t('profile.photos') }} <small>{{ t('profile.required') }}</small></h2></div>
         <PhotoUploader v-model="form.photos" />
-        <p class="form-note">{{ t('profile.photoNote') }}</p>
       </section>
 
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-      <button class="submit-button" type="submit" :disabled="busy || form.lookingFor.length === 0">
+      <p v-if="validationError" class="form-error" role="alert">{{ validationError }}</p>
+      <button class="submit-button" type="submit" :disabled="busy">
         {{ busy ? t('profile.saving') : t(initial?.onboardingComplete ? 'profile.save' : 'profile.openOrbit') }}
       </button>
       <p class="form-footnote">{{ t('profile.privacy') }}</p>
