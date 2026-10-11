@@ -23,7 +23,7 @@ const procedures = [
   { name: 'healthcheck', method: 'get', summary: 'API health via tRPC', description: 'Returns the API status.', auth: false },
   { name: 'me', method: 'get', summary: 'Current account', description: 'Returns the authenticated account and profile.' },
   { name: 'completeProfile', method: 'post', summary: 'Complete profile', description: 'Saves the onboarding profile. Requires an 18+ birthdate.' },
-  { name: 'social.orbit', method: 'get', summary: 'Daily Orbit', description: 'Returns up to eight profiles from the daily local-time Orbit after 19:00.' },
+  { name: 'social.orbit', method: 'get', summary: 'Daily Orbit', description: 'Returns up to eight compatible profiles at any time of day. VIP users can filter results by age, city, and gender.' },
   { name: 'social.incomingSparks', method: 'get', summary: 'Incoming Sparks count', description: 'Counts profiles who liked the current user and have not yet been reviewed.' },
   { name: 'social.deck', method: 'get', summary: 'Discovery deck', description: 'Returns card or grid discovery profiles, remaining like allowance, VIP and streak state.' },
   { name: 'social.swipe', method: 'post', summary: 'React to profile', description: 'Creates a Spark, pass, or Superlike and creates a mutual match when applicable.' },

@@ -29,7 +29,6 @@ import {
   effectivePoint,
   getAge,
   getLocalDate,
-  getLocalHour,
   getMatchForUser,
   hasVip,
   notifyTelegram,
@@ -84,8 +83,11 @@ const candidateWhere = (
   const point = effectivePoint(profile);
   const radiusM = Math.max(1, profile.preferredRadiusKm ?? 50) * 1000;
   const geoFilter = point
-    ? sql`${users.geo} IS NOT NULL AND ST_DWithin(${users.geo}, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${radiusM})`
-    : sql`${users.city} = ${profile.city}`;
+    ? sql`(
+        (${users.geo} IS NOT NULL AND ST_DWithin(${users.geo}, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${radiusM}))
+        OR (${users.geo} IS NULL AND COALESCE(${users.locationOverrideCity}, ${users.city}) = ${profile.locationOverrideCity || profile.city})
+      )`
+    : sql`COALESCE(${users.locationOverrideCity}, ${users.city}) = ${profile.locationOverrideCity || profile.city}`;
   const ageExpr = sql`EXTRACT(YEAR FROM AGE(${users.birthdate}))`;
   const minAge = Math.max(profile.ageMin ?? 18, filters.minAge ?? 18);
   const maxAge = Math.min(profile.ageMax ?? 99, filters.maxAge ?? 99);
@@ -193,9 +195,6 @@ export const socialRouter = router({
   orbit: protectedProcedure.input(orbitFilterSchema.default({})).query(async ({ ctx, input }) => {
     const profile = await touchStreakAndPresence(ctx.db, await requireCompleteProfile(ctx.db, ctx.user.id));
     const today = getLocalDate(profile.timeZone);
-    if (getLocalHour(profile.timeZone) < 19) {
-      return { profiles: [], remaining: 0, date: today, releasePending: true };
-    }
 
     const excluded = [
       ...(await blockedIds(ctx.db, ctx.user.id)),
