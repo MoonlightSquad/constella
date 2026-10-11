@@ -1,9 +1,11 @@
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
-import { adminAuditLogs, paymentIntents, photoAssets, reports, telegramStarPayments, users } from '@constella/db';
+import { adminAuditLogs, paymentIntents, photoAssets, reports, telegramStarPayments, userEntitlements, users } from '@constella/db';
 import { z } from 'zod';
+import { isVipPlan } from '@constella/shared';
 import { adminProcedure, isConfiguredAdmin, protectedProcedure, router } from '../trpc.js';
 import { removePhotoObjects } from '../photos/storage.js';
+import { grantVipSchema } from './admin.schemas.js';
 
 const pageInput = z.object({ limit: z.number().int().min(1).max(100).default(25), offset: z.number().int().min(0).default(0) });
 const ageSql = sql<number>`EXTRACT(YEAR FROM AGE(CURRENT_DATE, ${users.birthdate}))::int`;
@@ -46,7 +48,10 @@ export const adminRouter = router({
       createdAt: users.createdAt, lastActiveAt: users.lastActiveAt,
       onboardingCompletedAt: users.onboardingCompletedAt, verifiedAt: users.verifiedAt,
       bannedAt: users.bannedAt, shadowbannedAt: users.shadowbannedAt,
-    }).from(users).where(filter).orderBy(desc(users.createdAt)).limit(input.limit).offset(input.offset);
+      vip: sql<boolean>`${userEntitlements.expiresAt} > NOW() AND ${userEntitlements.status} <> 'expired' AND ${userEntitlements.plan} IN ('vip', 'plus', 'prime')`,
+      vipExpiresAt: userEntitlements.expiresAt,
+    }).from(users).leftJoin(userEntitlements, eq(userEntitlements.userId, users.id))
+      .where(filter).orderBy(desc(users.createdAt)).limit(input.limit).offset(input.offset);
     return { total: total.count, rows };
   }),
 
@@ -102,6 +107,58 @@ export const adminRouter = router({
       });
     });
     return { ok: true };
+  }),
+
+  grantVip: adminProcedure.input(grantVipSchema).mutation(async ({ ctx, input }) => {
+    if (ctx.user.id === input.userId) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'You cannot grant VIP to your own account.' });
+    }
+
+    const now = new Date();
+    const expiresAt = await ctx.db.transaction(async (tx: any) => {
+      const [target] = await tx.select({ id: users.id }).from(users)
+        .where(eq(users.id, input.userId)).for('update').limit(1);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found.' });
+
+      const [current] = await tx.select().from(userEntitlements)
+        .where(eq(userEntitlements.userId, input.userId)).limit(1);
+      const startsAt = current?.startsAt ?? now;
+      const grantStartsAt = current?.expiresAt && current.expiresAt > now ? current.expiresAt : now;
+      const grantExpiresAt = new Date(grantStartsAt.getTime() + input.days * 24 * 60 * 60 * 1000);
+
+      await tx.insert(userEntitlements).values({
+        userId: input.userId,
+        plan: 'vip',
+        source: 'admin',
+        status: 'active',
+        startsAt,
+        expiresAt: grantExpiresAt,
+        telegramSubscriptionChargeId: current?.telegramSubscriptionChargeId ?? null,
+        cancelledAt: null,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: userEntitlements.userId,
+        set: {
+          plan: 'vip',
+          source: 'admin',
+          status: 'active',
+          expiresAt: grantExpiresAt,
+          cancelledAt: null,
+          updatedAt: now,
+        },
+      });
+
+      await tx.insert(adminAuditLogs).values({
+        actorUserId: ctx.user.id,
+        targetUserId: input.userId,
+        action: 'user.vip.grant',
+        reason: input.reason,
+        metadata: { days: input.days, expiresAt: grantExpiresAt.toISOString(), previousExpiresAt: current?.expiresAt?.toISOString() ?? null },
+      });
+      return grantExpiresAt;
+    });
+
+    return { ok: true, expiresAt };
   }),
 
 
