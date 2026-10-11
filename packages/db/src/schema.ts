@@ -191,7 +191,7 @@ export const telegramStarPayments = pgTable(
 export const userEntitlements = pgTable('user_entitlements', {
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).primaryKey(),
   plan: text('plan').$type<'vip' | 'plus' | 'prime'>().notNull(),
-  source: text('source').$type<'stars'>().notNull(),
+  source: text('source').$type<'stars' | 'admin'>().notNull(),
   status: text('status').$type<'active' | 'cancelled' | 'expired'>().default('active').notNull(),
   startsAt: timestamp('starts_at', { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
