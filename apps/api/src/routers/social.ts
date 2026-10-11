@@ -19,6 +19,7 @@ import {
 import { ACHIEVEMENTS, DAILY_QUESTS, FREE_DAILY_LIKES, STAR_PRODUCTS } from '@constella/shared';
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc.js';
+import { orbitFilterSchema, hasOrbitFilters } from './social.schemas.js';
 import {
   awardAchievement,
   blockedIds,
@@ -74,22 +75,33 @@ const loadBadges = async (db: any, userIds: string[]) => {
   return map;
 };
 
-const candidateWhere = (profile: any, excludedIds: string[], vipViewer: boolean) => {
+const candidateWhere = (
+  profile: any,
+  excludedIds: string[],
+  vipViewer: boolean,
+  filters: z.infer<typeof orbitFilterSchema> = {},
+) => {
   const point = effectivePoint(profile);
   const radiusM = Math.max(1, profile.preferredRadiusKm ?? 50) * 1000;
   const geoFilter = point
     ? sql`${users.geo} IS NOT NULL AND ST_DWithin(${users.geo}, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${radiusM})`
     : sql`${users.city} = ${profile.city}`;
   const ageExpr = sql`EXTRACT(YEAR FROM AGE(${users.birthdate}))`;
+  const minAge = Math.max(profile.ageMin ?? 18, filters.minAge ?? 18);
+  const maxAge = Math.min(profile.ageMax ?? 99, filters.maxAge ?? 99);
+  const cityPattern = filters.city?.replace(/[\\%_]/g, '\\$&');
   return and(
     ne(users.id, profile.id),
     isNotNull(users.onboardingCompletedAt),
     isNull(users.bannedAt),
     isNull(users.shadowbannedAt),
-    inArray(users.gender, profile.lookingFor),
+    inArray(users.gender, filters.gender ? [filters.gender].filter((gender) => profile.lookingFor.includes(gender)) : profile.lookingFor),
     sql`${profile.gender} = ANY(${users.lookingFor})`,
-    sql`${ageExpr} BETWEEN ${profile.ageMin ?? 18} AND ${profile.ageMax ?? 99}`,
-    geoFilter,
+    sql`${ageExpr} BETWEEN ${minAge} AND ${maxAge}`,
+    cityPattern
+      ? sql`COALESCE(${users.locationOverrideCity}, ${users.city}) ILIKE ${`%${cityPattern}%`}`
+      : undefined,
+    cityPattern ? sql`true` : geoFilter,
     excludedIds.length > 0
       ? sql`${users.id} NOT IN (${sql.join(excludedIds.map((id: string) => sql`${id}::uuid`), sql`, `)})`
       : sql`true`,
@@ -178,7 +190,7 @@ const createMatchIfMutual = async (db: any, userId: string, profileId: string, k
 };
 
 export const socialRouter = router({
-  orbit: protectedProcedure.query(async ({ ctx }) => {
+  orbit: protectedProcedure.input(orbitFilterSchema.default({})).query(async ({ ctx, input }) => {
     const profile = await touchStreakAndPresence(ctx.db, await requireCompleteProfile(ctx.db, ctx.user.id));
     const today = getLocalDate(profile.timeZone);
     if (getLocalHour(profile.timeZone) < 19) {
@@ -189,6 +201,33 @@ export const socialRouter = router({
       ...(await blockedIds(ctx.db, ctx.user.id)),
       ...(await ctx.db.select({ id: swipes.toId }).from(swipes).where(eq(swipes.fromId, ctx.user.id))).map((row: { id: string }) => row.id),
     ];
+    const filtersActive = hasOrbitFilters(input);
+    if (filtersActive) {
+      if (!(await hasVip(ctx.db, ctx.user.id))) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'VIP is required to filter profiles.' });
+      }
+      const rows = await ctx.db
+        .select({
+          ...publicProfileFields,
+          latitude: users.latitude,
+          longitude: users.longitude,
+          locationOverrideLat: users.locationOverrideLat,
+          locationOverrideLng: users.locationOverrideLng,
+          createdAt: users.createdAt,
+          xp: users.xp,
+        })
+        .from(users)
+        .where(candidateWhere(profile, excluded, true, input))
+        .orderBy(scoreOrder)
+        .limit(8);
+      return {
+        profiles: await attachMeta(ctx.db, profile, rows),
+        remaining: rows.length,
+        date: today,
+        releasePending: false,
+      };
+    }
+
     let slots = await ctx.db
       .select({ profileId: dailyOrbitProfiles.profileId, position: dailyOrbitProfiles.position })
       .from(dailyOrbitProfiles)

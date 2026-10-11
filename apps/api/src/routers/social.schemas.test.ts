@@ -1,0 +1,19 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { hasOrbitFilters, orbitFilterSchema } from './social.schemas.js';
+
+describe('VIP orbit filters', () => {
+  it('accepts bounded age, city and gender filters', () => {
+    const filters = orbitFilterSchema.parse({ minAge: 25, maxAge: 40, city: '  Kyiv  ', gender: 'woman' });
+    assert.deepEqual(filters, { minAge: 25, maxAge: 40, city: 'Kyiv', gender: 'woman' });
+    assert.equal(hasOrbitFilters(filters), true);
+  });
+
+  it('allows empty filters and rejects invalid ranges and values', () => {
+    assert.equal(hasOrbitFilters(orbitFilterSchema.parse({})), false);
+    assert.equal(orbitFilterSchema.safeParse({ minAge: 40, maxAge: 25 }).success, false);
+    assert.equal(orbitFilterSchema.safeParse({ minAge: 17 }).success, false);
+    assert.equal(orbitFilterSchema.safeParse({ city: 'x' }).success, false);
+    assert.equal(orbitFilterSchema.safeParse({ gender: 'invalid' }).success, false);
+  });
+});

@@ -42,6 +42,13 @@ const orbitProfiles = ref<Profile[]>([])
 const matches = ref<Match[]>([])
 const quests = ref<{ xp: number; level: number; achievements: any[]; daily: any[] } | null>(null)
 const billingStatus = ref<any>(null)
+const orbitFilterDraft = ref<{ minAge: number | ''; maxAge: number | ''; city: string; gender: string }>({
+  minAge: '',
+  maxAge: '',
+  city: '',
+  gender: '',
+})
+const appliedOrbitFilters = ref<Record<string, string | number>>({})
 const isBuying = ref<string | null>(null)
 const isLinkingTelegram = ref(false)
 const telegramLinkError = ref('')
@@ -79,12 +86,44 @@ const showError = (error: any) => {
   issue.value = error?.message || t('dashboard.loadError')
 }
 
-const loadOrbit = async () => {
-  const result = await $trpc.social.orbit.query()
+const loadOrbit = async (filters = appliedOrbitFilters.value) => {
+  const result = await $trpc.social.orbit.query(filters)
   orbitProfiles.value = result.profiles
   orbitRemaining.value = result.remaining
   orbitDate.value = result.date
   releasePending.value = result.releasePending
+}
+
+const applyOrbitFilters = async () => {
+  const filters: Record<string, string | number> = {}
+  if (orbitFilterDraft.value.minAge !== '') filters.minAge = Number(orbitFilterDraft.value.minAge)
+  if (orbitFilterDraft.value.maxAge !== '') filters.maxAge = Number(orbitFilterDraft.value.maxAge)
+  if (orbitFilterDraft.value.city.trim()) filters.city = orbitFilterDraft.value.city.trim()
+  if (orbitFilterDraft.value.gender) filters.gender = orbitFilterDraft.value.gender
+  appliedOrbitFilters.value = filters
+  isLoading.value = true
+  issue.value = ''
+  try {
+    await loadOrbit()
+  } catch (error) {
+    showError(error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const clearOrbitFilters = async () => {
+  orbitFilterDraft.value = { minAge: '', maxAge: '', city: '', gender: '' }
+  appliedOrbitFilters.value = {}
+  isLoading.value = true
+  issue.value = ''
+  try {
+    await loadOrbit()
+  } catch (error) {
+    showError(error)
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const loadMatches = async () => {
@@ -537,6 +576,23 @@ onUnmounted(() => {
       <div v-if="toast" class="notice success-notice" role="status">{{ toast }}</div>
 
       <section v-if="activeTab === 'orbit'" class="view orbit-view">
+        <form v-if="billingStatus?.vip" class="orbit-filters" @submit.prevent="applyOrbitFilters">
+          <div class="orbit-filter-heading">
+            <div><strong>Фільтри пошуку · VIP</strong><small>Вік і стать уточнюють твої налаштування пошуку.</small></div>
+            <button v-if="Object.keys(appliedOrbitFilters).length" type="button" class="filter-reset" @click="clearOrbitFilters">Скинути</button>
+          </div>
+          <div class="orbit-filter-fields">
+            <label>Вік від<input v-model.number="orbitFilterDraft.minAge" type="number" min="18" max="99" placeholder="18"></label>
+            <label>до<input v-model.number="orbitFilterDraft.maxAge" type="number" min="18" max="99" placeholder="99"></label>
+            <label>Місто<input v-model="orbitFilterDraft.city" type="search" maxlength="80" placeholder="Будь-яке місто"></label>
+            <label>Стать<select v-model="orbitFilterDraft.gender"><option value="">Усі</option><option value="woman">Жінка</option><option value="man">Чоловік</option><option value="nonbinary">Небінарна</option><option value="other">Інша</option></select></label>
+            <button class="filter-apply" type="submit">Застосувати</button>
+          </div>
+        </form>
+        <div v-else-if="billingStatus && !billingStatus.vip" class="orbit-filter-locked">
+          <span>Фільтри за віком, містом і статтю доступні з VIP.</span>
+          <button type="button" @click="activeTab = 'sky'">Переглянути VIP</button>
+        </div>
         <div class="view-heading">
           <div>
             <p class="eyebrow">{{ t('dashboard.orbitEyebrow') }}</p>
@@ -790,6 +846,18 @@ onUnmounted(() => {
 .avatar-button { width: 34px; height: 34px; }
 .main-content { width: min(100%, 900px); min-height: calc(100svh - 144px); margin: 0 auto; padding: 34px 20px 24px; }
 .view { width: min(100%, 720px); margin: 0 auto; }
+.orbit-filters { display: grid; gap: 13px; margin-bottom: 20px; border: 1px solid #334744; border-radius: 10px; padding: 14px; background: #12201f; }
+.orbit-filter-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.orbit-filter-heading div { display: grid; gap: 4px; }
+.orbit-filter-heading strong { color: #e4b46c; font-size: 13px; }
+.orbit-filter-heading small { color: #9aaba7; font-size: 11px; }
+.orbit-filter-fields { display: grid; grid-template-columns: .65fr .65fr 1.3fr 1fr auto; gap: 8px; align-items: end; }
+.orbit-filter-fields label { display: grid; gap: 5px; color: #aab9b6; font-size: 10px; }
+.orbit-filter-fields input,.orbit-filter-fields select { width: 100%; min-width: 0; border: 1px solid #344748; border-radius: 7px; padding: 9px; background: #0b1516; color: #f3f5f2; font: inherit; }
+.filter-apply,.filter-reset,.orbit-filter-locked button { border: 1px solid #c89d60; border-radius: 7px; padding: 9px 12px; background: #d9ad6d; color: #18211e; font-size: 11px; font-weight: 700; cursor: pointer; }
+.filter-reset { padding: 7px 10px; }
+.orbit-filter-locked { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; border: 1px solid #334545; border-radius: 9px; padding: 12px; color: #aab9b6; font-size: 11px; }
+.orbit-filter-locked button { flex: 0 0 auto; }
 .eyebrow { margin: 0 0 10px; color: #85c9b9; font-size: 10px; font-weight: 750; letter-spacing: .14em; }
 .view-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
 h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
@@ -931,5 +999,6 @@ h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
 .cancel-button { border: 1px solid #475756; background: transparent; color: #c5d0cc; }
 .send-report { border: 0; background: #d9ad6d; color: #18211e; }
 @media (min-width: 760px) { .main-content { padding-top: 45px; } .profile-card { display: grid; grid-template-columns: 1.05fr .95fr; } .profile-photo { grid-row: span 2; min-height: 480px; aspect-ratio: auto; } .profile-copy { align-self: end; padding: 28px 24px 8px; } .profile-actions { align-self: start; } }
+@media (max-width: 600px) { .orbit-filter-fields { grid-template-columns: 1fr 1fr; } .orbit-filter-fields label:nth-child(3),.orbit-filter-fields label:nth-child(4) { grid-column: span 2; } .filter-apply { grid-column: span 2; } }
 @media (max-width: 450px) { .main-content { padding: 23px 14px; } .topbar { padding: 0 15px; } .orbit-date { font-size: 10px; } .profile-photo { min-height: 250px; } .xp-heading { align-items: start; flex-direction: column; gap: 4px; } }
 </style>
