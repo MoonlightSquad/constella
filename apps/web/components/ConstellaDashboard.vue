@@ -34,6 +34,7 @@ const emit = defineEmits<{
 }>()
 
 const { $trpc } = useNuxtApp() as any
+const runtimeConfig = useRuntimeConfig()
 const { locale, t } = useLocale()
 const activeTab = ref<Tab>('orbit')
 const supportOpen = ref(false)
@@ -42,6 +43,9 @@ const matches = ref<Match[]>([])
 const quests = ref<{ xp: number; level: number; achievements: any[]; daily: any[] } | null>(null)
 const billingStatus = ref<any>(null)
 const isBuying = ref<string | null>(null)
+const isLinkingTelegram = ref(false)
+const telegramLinkError = ref('')
+const awaitingBrowserPayment = ref(false)
 const incomingSparks = ref(0)
 const orbitRemaining = ref(0)
 const orbitDate = ref('')
@@ -95,6 +99,21 @@ const loadBilling = async () => {
   billingStatus.value = await $trpc.billing.status.query()
 }
 
+const linkTelegramAccount = async (payload: Record<string, string | number | boolean>) => {
+  isLinkingTelegram.value = true
+  telegramLinkError.value = ''
+  issue.value = ''
+  try {
+    await $trpc.billing.linkTelegram.mutate(payload)
+    await loadBilling()
+    toast.value = 'Telegram-акаунт прив’язано. Тепер можна сплачувати Telegram Stars.'
+  } catch (error: any) {
+    telegramLinkError.value = error?.message || 'Не вдалося прив’язати Telegram-акаунт.'
+  } finally {
+    isLinkingTelegram.value = false
+  }
+}
+
 const cancelVip = async () => {
   if (!(await requestConfirmation('Скасувати автоматичне поновлення VIP? Доступ залишиться до кінця оплаченого періоду.'))) return
   try {
@@ -106,11 +125,13 @@ const cancelVip = async () => {
   }
 }
 const buyProduct = async (sku: string) => {
-  if (isBuying.value) return
+  if (isBuying.value || !billingStatus.value?.telegramAvailable) return
+  const telegram = (window as any).Telegram?.WebApp
+  const invoiceWindow = telegram?.openInvoice ? null : window.open('about:blank', '_blank')
+  if (invoiceWindow) invoiceWindow.opener = null
   isBuying.value = sku
   try {
     const invoice = await $trpc.billing.createInvoice.mutate({ sku })
-    const telegram = (window as any).Telegram?.WebApp
     if (telegram?.openInvoice) {
       telegram.openInvoice(invoice.invoiceLink, async (status: string) => {
         if (status === 'paid') {
@@ -123,14 +144,31 @@ const buyProduct = async (sku: string) => {
           showError(new Error('Не вдалося завершити оплату. Спробуй ще раз.'))
         }
       })
+    } else if (invoiceWindow) {
+      invoiceWindow.location.href = invoice.invoiceLink
+      awaitingBrowserPayment.value = true
     } else {
-      window.open(invoice.invoiceLink, '_blank', 'noopener,noreferrer')
+      window.location.assign(invoice.invoiceLink)
     }
   } catch (error) {
+    invoiceWindow?.close()
     showError(error)
   } finally {
     isBuying.value = null
   }
+}
+
+const refreshAfterBrowserPayment = () => {
+  if (!awaitingBrowserPayment.value || document.visibilityState !== 'visible') return
+  awaitingBrowserPayment.value = false
+  window.setTimeout(async () => {
+    try {
+      await Promise.all([loadBilling(), loadOrbit()])
+      toast.value = 'Статус покупки оновлено.'
+    } catch (error) {
+      showError(error)
+    }
+  }, 1500)
 }
 
 const loadSparks = async () => {
@@ -462,12 +500,16 @@ const currentLevelProgress = computed(() => (quests.value ? quests.value.xp % 25
 let refreshTimer: number | undefined
 onMounted(() => {
   void refreshAll()
+  window.addEventListener('focus', refreshAfterBrowserPayment)
+  document.addEventListener('visibilitychange', refreshAfterBrowserPayment)
   refreshTimer = window.setInterval(() => {
     if (activeTab.value === 'chats' && selectedMatch.value) void loadChatMessages()
   }, 5000)
 })
 onUnmounted(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
+  window.removeEventListener('focus', refreshAfterBrowserPayment)
+  document.removeEventListener('visibilitychange', refreshAfterBrowserPayment)
 })
 </script>
 
@@ -657,12 +699,21 @@ onUnmounted(() => {
         <section class="sky-section"><h2>{{ t('dashboard.prompts') }}</h2><blockquote v-for="(prompt, index) in [account.profile?.promptOne, account.profile?.promptTwo, account.profile?.promptThree].filter(Boolean)" :key="index">{{ prompt }}</blockquote></section>
         <section class="sky-section premium-card">
           <h2>Constella VIP · 499 ⭐ / 30 днів</h2>
+          <div v-if="!billingStatus?.telegramAvailable" class="telegram-payment-link">
+            <p>Щоб купувати у вебверсії, спочатку прив’яжи свій Telegram-акаунт. Оплата відкриється в Telegram, а покупка зарахується до цього профілю.</p>
+            <TelegramAccountLink
+              :bot-username="runtimeConfig.public.telegramBotUsername"
+              :busy="isLinkingTelegram"
+              :error="telegramLinkError"
+              @authenticate="linkTelegramAccount"
+            />
+          </div>
           <p v-if="billingStatus?.vip">VIP активний до {{ billingStatus.entitlement?.expiresAt ? new Date(billingStatus.entitlement.expiresAt).toLocaleDateString() : '—' }}</p>
           <p v-if="billingStatus?.entitlement?.renews === false">Автоматичне поновлення вимкнене.</p>
           <button v-if="billingStatus?.vip && billingStatus?.entitlement?.renews" class="text-button" type="button" @click="cancelVip">Скасувати поновлення</button>
           <p v-else>Безлімітні лайки, хто вподобав тебе, повернення анкети, режим інкогніто та паспорт.</p>
           <button v-if="!billingStatus?.vip" class="secondary-button wide-button" type="button" :disabled="isBuying || !billingStatus?.telegramAvailable" @click="buyProduct('vip')">
-            {{ isBuying === 'vip' ? 'Готуємо рахунок…' : billingStatus?.telegramAvailable ? 'Оформити за Telegram Stars ⭐' : 'Оплата доступна в Telegram' }}
+            {{ isBuying === 'vip' ? 'Готуємо рахунок…' : 'Оформити за Telegram Stars ⭐' }}
           </button>
           <button v-else class="secondary-button wide-button" type="button" @click="activeTab = 'orbit'">Повернутися до знайомств</button>
         </section>
@@ -863,6 +914,8 @@ h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
 .sky-section { border-top: 1px solid #2b3c3d; padding: 16px 0; }
 .sky-section h2 { margin: 0 0 9px; color: #e4b46c; font-size: 13px; }
 .sky-section p, .sky-section blockquote { margin: 0; color: #c5d0cc; font-size: 13px; line-height: 1.55; }
+.telegram-payment-link { display: grid; gap: 12px; margin: 12px 0; border: 1px solid #344748; border-radius: 9px; padding: 13px; background: #0d1718; }
+.telegram-payment-link p { color: #aab9b6; font-size: 12px; }
 .sky-section blockquote { margin-top: 8px; border-left: 2px solid #59897b; padding-left: 10px; }
 .wide-button { width: 100%; margin-top: 8px; }
 .shop-actions { display: grid; gap: 8px; margin-top: 12px; }

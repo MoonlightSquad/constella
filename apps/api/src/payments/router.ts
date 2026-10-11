@@ -3,29 +3,32 @@ import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
 import { identities, paymentIntents, userBoosts, userEntitlements, users } from '@constella/db';
 import { CreateStarInvoiceSchema, STAR_PRODUCTS, isVipPlan } from '@constella/shared';
+import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc.js';
 import { hasVip } from '../engine/core.js';
 import { cancelTelegramStarSubscription, createTelegramStarInvoiceLink } from './telegramStars.js';
+import { verifyTelegramLoginWidget } from '../utils/telegram-login-widget.js';
 
-const requireTelegramIdentity = async (db: any, userId: string, telegramId: number | null) => {
+const linkedTelegramId = async (db: any, userId: string) => {
+  const [identity] = await db
+    .select({ providerUid: identities.providerUid })
+    .from(identities)
+    .where(and(eq(identities.provider, 'telegram'), eq(identities.userId, userId)))
+    .limit(1);
+  if (!identity || !/^\d+$/.test(identity.providerUid)) return null;
+  const telegramId = Number(identity.providerUid);
+  return Number.isSafeInteger(telegramId) && telegramId > 0 ? telegramId : null;
+};
+
+const requireTelegramIdentity = async (db: any, userId: string, tokenTelegramId: number | null) => {
+  const telegramId = await linkedTelegramId(db, userId);
   if (!telegramId) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
-      message: 'Open Constella in Telegram to purchase with Stars.',
+      message: 'Link a Telegram account before purchasing with Stars.',
     });
   }
-  const [identity] = await db
-    .select({ userId: identities.userId })
-    .from(identities)
-    .where(
-      and(
-        eq(identities.provider, 'telegram'),
-        eq(identities.providerUid, String(telegramId)),
-        eq(identities.userId, userId)
-      )
-    )
-    .limit(1);
-  if (!identity) {
+  if (tokenTelegramId !== null && tokenTelegramId !== telegramId) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Telegram identity is not linked to this account.' });
   }
   return telegramId;
@@ -59,9 +62,11 @@ export const billingRouter = router({
       .from(users)
       .where(eq(users.id, ctx.user.id))
       .limit(1);
+    const telegramId = await linkedTelegramId(ctx.db, ctx.user.id);
     const now = new Date();
     return {
-      telegramAvailable: Boolean(ctx.user.telegramId),
+      telegramAvailable: Boolean(telegramId),
+      telegramLinked: Boolean(telegramId),
       products: Object.values(STAR_PRODUCTS),
       vip,
       entitlement:
@@ -80,6 +85,64 @@ export const billingRouter = router({
       incognito: Boolean(me?.incognitoUntil && me.incognitoUntil > now),
       passportCity: me?.locationOverrideCity ?? null,
     };
+  }),
+
+  linkTelegram: protectedProcedure.input(
+    z.object({
+      id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      first_name: z.string().min(1).max(256),
+      last_name: z.string().max(256).optional(),
+      username: z.string().max(64).optional(),
+      photo_url: z.string().url().max(2048).optional(),
+      auth_date: z.number().int().positive(),
+      hash: z.string().regex(/^[a-f\d]{64}$/i),
+      allows_write_to_pm: z.boolean().optional(),
+    }).strict()
+  ).mutation(async ({ ctx, input }) => {
+    const botToken = process.env.BOT_TOKEN;
+    if (!botToken) {
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram account linking is not configured.' });
+    }
+
+    let telegramId: number;
+    try {
+      ({ telegramId } = verifyTelegramLoginWidget(input, botToken));
+    } catch (error) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: error instanceof Error ? error.message : 'Telegram account verification failed.',
+      });
+    }
+
+    const providerUid = String(telegramId);
+    const [existingIdentity] = await ctx.db
+      .select({ userId: identities.userId })
+      .from(identities)
+      .where(and(eq(identities.provider, 'telegram'), eq(identities.providerUid, providerUid)))
+      .limit(1);
+    if (existingIdentity) {
+      if (existingIdentity.userId !== ctx.user.id) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'This Telegram account is already linked to another Constella account.' });
+      }
+      return { ok: true, alreadyLinked: true };
+    }
+
+    const [createdIdentity] = await ctx.db
+      .insert(identities)
+      .values({ provider: 'telegram', providerUid, userId: ctx.user.id })
+      .onConflictDoNothing()
+      .returning({ userId: identities.userId });
+    if (createdIdentity) return { ok: true, alreadyLinked: false };
+
+    const [conflictingIdentity] = await ctx.db
+      .select({ userId: identities.userId })
+      .from(identities)
+      .where(and(eq(identities.provider, 'telegram'), eq(identities.providerUid, providerUid)))
+      .limit(1);
+    if (conflictingIdentity?.userId !== ctx.user.id) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'This Telegram account is already linked to another Constella account.' });
+    }
+    return { ok: true, alreadyLinked: true };
   }),
 
   createInvoice: protectedProcedure.input(CreateStarInvoiceSchema).mutation(async ({ ctx, input }) => {
