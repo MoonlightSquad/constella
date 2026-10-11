@@ -30,6 +30,7 @@ export default defineNuxtConfig({
     apiInternalBase: resolveApiInternalBase(process.env),
     public: {
       apiBase: '/api',
+      telegramBotUsername: process.env.NUXT_PUBLIC_BOT_USERNAME || process.env.BOT_USERNAME || '',
     }
   },
 
