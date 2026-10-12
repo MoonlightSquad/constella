@@ -1,0 +1,12 @@
+.vscode
+.idea
+.nuxt
+
+node_modules
+dist
+.turbo
+
+.env
+.output
+.vercel
+.env*
