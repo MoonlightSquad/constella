@@ -26,12 +26,10 @@ describe('resolveTargetGenders', () => {
     assert.deepEqual(resolveTargetGenders(undefined), []);
   });
 
-  it('narrows to the filtered gender when it matches the preference', () => {
+  it('returns the filter gender regardless of preference when a VIP filter is applied', () => {
     assert.deepEqual(resolveTargetGenders(['man', 'woman'], 'woman'), ['woman']);
-  });
-
-  it('returns an empty list when the filter conflicts with the preference', () => {
-    assert.deepEqual(resolveTargetGenders(['man'], 'woman'), []);
-    assert.deepEqual(resolveTargetGenders([], 'man'), []);
+    assert.deepEqual(resolveTargetGenders(['man'], 'woman'), ['woman']);
+    assert.deepEqual(resolveTargetGenders([], 'man'), ['man']);
+    assert.deepEqual(resolveTargetGenders(['woman'], 'man'), ['man']);
   });
 });
