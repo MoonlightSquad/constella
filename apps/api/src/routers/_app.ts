@@ -88,6 +88,15 @@ export const appRouter = router({
         city: input.city,
         timeZone: input.timeZone,
         ...(input.acceptedTerms ? { termsAcceptedAt: new Date() } : {}),
+        // Persist geolocation when the client provides it so Orbit can use the
+        // PostGIS radius filter instead of the city-name fallback.
+        ...(Number.isFinite(input.latitude) && Number.isFinite(input.longitude)
+          ? {
+              latitude: input.latitude,
+              longitude: input.longitude,
+              geo: sql`ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326)::geography`,
+            }
+          : {}),
         bio: input.bio,
         promptOne: input.promptOne,
         promptTwo: input.promptTwo,

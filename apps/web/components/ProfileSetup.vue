@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useLocale, type TranslationKey } from '~/composables/useLocale'
 
 const props = defineProps<{
@@ -101,8 +101,32 @@ const submit = () => {
     ...form,
     radiusKm: Number(form.radiusKm),
     photos,
+    ...(coordinates.latitude != null && coordinates.longitude != null
+      ? { latitude: coordinates.latitude, longitude: coordinates.longitude }
+      : {}),
   })
 }
+
+// Best-effort browser geolocation: Orbit prefers radius-based discovery, and falls
+// back to a city-name match when coordinates are unavailable.
+const coordinates = reactive<{ latitude: number | null; longitude: number | null }>({
+  latitude: null,
+  longitude: null,
+})
+
+onMounted(() => {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      coordinates.latitude = position.coords.latitude
+      coordinates.longitude = position.coords.longitude
+    },
+    () => {
+      // Permission denied or unavailable — city matching still works.
+    },
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600_000 },
+  )
+})
 </script>
 
 <template>
