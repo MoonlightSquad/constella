@@ -29,7 +29,9 @@ export default defineNuxtConfig({
   runtimeConfig: {
     apiInternalBase: resolveApiInternalBase(process.env),
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_URL,
+      // Browser-facing API base: same-origin "/api" proxy by default; set
+      // NUXT_PUBLIC_API_URL to call the API origin directly (CORS is open).
+      apiBase: (process.env.NUXT_PUBLIC_API_URL || '/api').replace(/\/+$/, ''),
       telegramBotUsername: process.env.NUXT_PUBLIC_BOT_USERNAME || process.env.BOT_USERNAME || '',
     }
   },
