@@ -26,3 +26,4 @@ constella.deploy.config.local.json
 volumes/*
 .pnpm-store
 **/.pnpm-store
+.aider*

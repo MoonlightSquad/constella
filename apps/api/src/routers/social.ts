@@ -19,7 +19,7 @@ import {
 import { ACHIEVEMENTS, DAILY_QUESTS, FREE_DAILY_LIKES, STAR_PRODUCTS } from '@constella/shared';
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc.js';
-import { orbitFilterSchema, hasOrbitFilters } from './social.schemas.js';
+import { orbitFilterSchema, hasOrbitFilters, resolveTargetGenders } from './social.schemas.js';
 import {
   awardAchievement,
   blockedIds,
@@ -82,22 +82,36 @@ const candidateWhere = (
 ) => {
   const point = effectivePoint(profile);
   const radiusM = Math.max(1, profile.preferredRadiusKm ?? 50) * 1000;
+  // Case-insensitive city fallback: most accounts never store coordinates, so discovery
+  // degrades to a city comparison. The previous `=` comparison was case-sensitive and
+  // treated "Kyiv" / "kyiv" (or Ukrainian casing) as different cities, leaving Orbit empty.
+  const normalizedCity = (column: any) => sql`lower(btrim(COALESCE(${column.locationOverrideCity}, ${column.city})))`;
+  const viewerCity = String(profile.locationOverrideCity || profile.city || '').trim().toLowerCase();
+  const cityFallback = viewerCity
+    ? sql`(${normalizedCity(users)} = ${viewerCity})`
+    : sql`false`;
   const geoFilter = point
     ? sql`(
         (${users.geo} IS NOT NULL AND ST_DWithin(${users.geo}, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${radiusM}))
-        OR (${users.geo} IS NULL AND COALESCE(${users.locationOverrideCity}, ${users.city}) = ${profile.locationOverrideCity || profile.city})
+        OR (${users.geo} IS NULL AND ${cityFallback})
       )`
-    : sql`COALESCE(${users.locationOverrideCity}, ${users.city}) = ${profile.locationOverrideCity || profile.city}`;
+    : cityFallback;
   const ageExpr = sql`EXTRACT(YEAR FROM AGE(${users.birthdate}))`;
   const minAge = Math.max(profile.ageMin ?? 18, filters.minAge ?? 18);
   const maxAge = Math.min(profile.ageMax ?? 99, filters.maxAge ?? 99);
   const cityPattern = filters.city?.replace(/[\\%_]/g, '\\$&');
+  // `inArray` with an empty list (e.g. a VIP gender filter that intersects nothing with
+  // the viewer's own "looking for" preferences) would generate invalid SQL — short-circuit.
+  const targetGenders = resolveTargetGenders(profile.lookingFor, filters.gender);
+  if (targetGenders.length === 0) {
+    return sql`false`;
+  }
   return and(
     ne(users.id, profile.id),
     isNotNull(users.onboardingCompletedAt),
     isNull(users.bannedAt),
     isNull(users.shadowbannedAt),
-    inArray(users.gender, filters.gender ? [filters.gender].filter((gender) => profile.lookingFor.includes(gender)) : profile.lookingFor),
+    inArray(users.gender, targetGenders),
     sql`${profile.gender} = ANY(${users.lookingFor})`,
     sql`${ageExpr} BETWEEN ${minAge} AND ${maxAge}`,
     cityPattern
@@ -232,6 +246,15 @@ export const socialRouter = router({
       .from(dailyOrbitProfiles)
       .where(and(eq(dailyOrbitProfiles.userId, ctx.user.id), eq(dailyOrbitProfiles.orbitDate, today)))
       .orderBy(dailyOrbitProfiles.position);
+
+    // If today's cached slots are all consumed (swiped/blocked), drop them and refill
+    // from fresh candidates instead of returning an empty Orbit until the next day.
+    if (slots.length > 0 && slots.every((slot: { profileId: string }) => excluded.includes(slot.profileId))) {
+      await ctx.db
+        .delete(dailyOrbitProfiles)
+        .where(and(eq(dailyOrbitProfiles.userId, ctx.user.id), eq(dailyOrbitProfiles.orbitDate, today)));
+      slots = [];
+    }
 
     if (slots.length === 0) {
       const vip = await hasVip(ctx.db, ctx.user.id);

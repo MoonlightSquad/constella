@@ -13,3 +13,17 @@ export const orbitFilterSchema = z.object({
 
 export const hasOrbitFilters = (filters: z.infer<typeof orbitFilterSchema>) =>
   Object.values(filters).some((value) => value !== undefined);
+
+/**
+ * Genders allowed by the viewer's own "looking for" preference, narrowed by an
+ * optional VIP filter. Returns an empty array when nothing matches — callers must
+ * treat that as "no candidates" instead of building an `IN ()` SQL clause.
+ */
+export const resolveTargetGenders = (
+  lookingFor: readonly string[] | null | undefined,
+  filterGender?: z.infer<typeof orbitFilterSchema>['gender'],
+): string[] => {
+  const preference = lookingFor ?? [];
+  if (!filterGender) return [...preference];
+  return preference.includes(filterGender) ? [filterGender] : [];
+};

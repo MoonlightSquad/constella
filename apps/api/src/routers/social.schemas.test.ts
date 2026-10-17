@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { hasOrbitFilters, orbitFilterSchema } from './social.schemas.js';
+import { hasOrbitFilters, orbitFilterSchema, resolveTargetGenders } from './social.schemas.js';
 
 describe('VIP orbit filters', () => {
   it('accepts bounded age, city and gender filters', () => {
@@ -15,5 +15,23 @@ describe('VIP orbit filters', () => {
     assert.equal(orbitFilterSchema.safeParse({ minAge: 17 }).success, false);
     assert.equal(orbitFilterSchema.safeParse({ city: 'x' }).success, false);
     assert.equal(orbitFilterSchema.safeParse({ gender: 'invalid' }).success, false);
+  });
+});
+
+describe('resolveTargetGenders', () => {
+  it('returns the full preference when no VIP filter is applied', () => {
+    assert.deepEqual(resolveTargetGenders(['man', 'nonbinary']), ['man', 'nonbinary']);
+    assert.deepEqual(resolveTargetGenders([]), []);
+    assert.deepEqual(resolveTargetGenders(null), []);
+    assert.deepEqual(resolveTargetGenders(undefined), []);
+  });
+
+  it('narrows to the filtered gender when it matches the preference', () => {
+    assert.deepEqual(resolveTargetGenders(['man', 'woman'], 'woman'), ['woman']);
+  });
+
+  it('returns an empty list when the filter conflicts with the preference', () => {
+    assert.deepEqual(resolveTargetGenders(['man'], 'woman'), []);
+    assert.deepEqual(resolveTargetGenders([], 'man'), []);
   });
 });
