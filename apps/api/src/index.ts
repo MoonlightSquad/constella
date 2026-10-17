@@ -196,7 +196,29 @@ async function initialize() {
   }
 
   const isProduction = process.env.NODE_ENV === 'production';
-  await fastify.register(cors, { origin: isProduction ? allowedOrigins.filter((origin) => origin === process.env.WEB_APP_URL) : allowedOrigins });
+  // Reflect the request origin when it is allowed. `credentials: true` is required so the
+  // browser accepts responses to cross-origin requests that carry the `Authorization` header.
+  // Without `Access-Control-Allow-Credentials: true` on the *actual* response (not just the
+  // preflight), the browser blocks the request with a CORS error even when OPTIONS returns 204.
+  await fastify.register(cors, {
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // non-browser clients (curl, server-to-server)
+      if (isProduction && origin !== process.env.WEB_APP_URL) return cb(null, false);
+      if (!isProduction && !allowedOrigins.includes(origin)) return cb(null, false);
+      return cb(null, origin);
+    },
+    credentials: true,
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'x-telegram-init-data',
+      'x-payments-token',
+      'x-request-id',
+      'Accept',
+    ],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    maxAge: 86400,
+  });
   await fastify.register(rateLimit, { global: true, max: Number(process.env.RATE_LIMIT_MAX) || 120, timeWindow: '1 minute' });
 
   await fastify.register(jwt, {
