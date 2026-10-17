@@ -87,9 +87,11 @@ const candidateWhere = (
   // treated "Kyiv" / "kyiv" (or Ukrainian casing) as different cities, leaving Orbit empty.
   const normalizedCity = (column: any) => sql`lower(btrim(COALESCE(${column.locationOverrideCity}, ${column.city})))`;
   const viewerCity = String(profile.locationOverrideCity || profile.city || '').trim().toLowerCase();
+  // Якщо у переглядача немає міста і немає координат, не обмежувати kandidatів по місту —
+  // інакше орбіта буде порожньою для усіх, хто не вказав місто при реєстрації (наприклад, Telegram-користувачі).
   const cityFallback = viewerCity
     ? sql`(${normalizedCity(users)} = ${viewerCity})`
-    : sql`false`;
+    : sql`true`;
   const geoFilter = point
     ? sql`(
         (${users.geo} IS NOT NULL AND ST_DWithin(${users.geo}, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${radiusM}))
