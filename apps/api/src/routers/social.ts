@@ -87,12 +87,13 @@ const candidateWhere = (
   // кандидатів по місту — інакше орбіта буде порожньою для більшості людей,
   // хто не вказав місто при реєстрації.
   const normalizedCity = (column: any) => sql`lower(btrim(COALESCE(${column.locationOverrideCity}, ${column.city})))`;
-  const geoFilter = point
-    ? sql`(
-        (${users.geo} IS NOT NULL AND ST_DWithin(${users.geo}, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${radiusM}))
-        OR (${users.geo} IS NULL AND ${normalizedCity(users)} = ${String(profile.locationOverrideCity || profile.city || '').trim().toLowerCase()})
-      )`
-    : sql`true`;
+  // const geoFilter = point
+  //   ? sql`(
+  //       (${users.geo} IS NOT NULL AND ST_DWithin(${users.geo}, ST_SetSRID(ST_MakePoint(${point.lng}, ${point.lat}), 4326)::geography, ${radiusM}))
+  //       OR (${users.geo} IS NULL AND ${normalizedCity(users)} = ${String(profile.locationOverrideCity || profile.city || '').trim().toLowerCase()})
+  //     )`
+  //   : sql`true`;
+  const geoFilter = sql`true`;
   const ageExpr = sql`EXTRACT(YEAR FROM AGE(${users.birthdate}))`;
   const minAge = Math.max(profile.ageMin ?? 18, filters.minAge ?? 18);
   const maxAge = Math.min(profile.ageMax ?? 99, filters.maxAge ?? 99);
