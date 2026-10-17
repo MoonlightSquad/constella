@@ -3,11 +3,12 @@ import type { AppRouter } from '@constella/api';
 
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig();
+  const apiBase = (config.public.apiBase || '/api').replace(/\/+$/, '');
 
   const trpc = createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `${config.public.apiBase}/trpc`,
+        url: `${apiBase}/trpc`,
         headers: () => {
           const token = localStorage.getItem('constella_token');
           return token ? { Authorization: `Bearer ${token}` } : {};
