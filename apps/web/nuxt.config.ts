@@ -29,7 +29,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     apiInternalBase: resolveApiInternalBase(process.env),
     public: {
-      apiBase: '/api',
+      apiBase: process.env.NUXT_PUBLIC_API_URL,
       telegramBotUsername: process.env.NUXT_PUBLIC_BOT_USERNAME || process.env.BOT_USERNAME || '',
     }
   },
