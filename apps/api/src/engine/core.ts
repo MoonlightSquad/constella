@@ -130,7 +130,7 @@ export const grantXp = async (db: any, userId: string, amount: number) => {
     .update(users)
     .set({
       xp: sql`${users.xp} + ${amount}`,
-      level: sql`GREATEST(1, floor((${users.xp} + ${amount}) / ${XP_PER_LEVEL}.0)::int + 1)`,
+      level: sql`GREATEST(1, floor((${users.xp} + ${amount}) / ${XP_PER_LEVEL})::int + 1)`,
     })
     .where(eq(users.id, userId));
 };
