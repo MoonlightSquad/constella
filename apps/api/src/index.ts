@@ -5,17 +5,19 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+import fastifyWebsocket from '@fastify/websocket';
 import * as dotenv from 'dotenv';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { eq, and, gt, isNull, or, sql } from 'drizzle-orm';
-import { AuthRequestSchema, AuthTokenSchema, WebLoginSchema, WebPasswordResetSchema, WebRegisterSchema, createLogger } from '@constella/shared';
+import { eq, and, gt, isNull, ne, or, sql } from 'drizzle-orm';
+import { AuthRequestSchema, AuthTokenSchema, WebLoginSchema, WebPasswordResetSchema, WebRegisterSchema, createLogger, notifyClient, type ClientPayload } from '@constella/shared';
 import { verifyTelegramInitData } from './utils/telegram.js';
+import { registerConnection, unregisterConnection, broadcastToMatch } from './realtime.js';
 import { appRouter } from './routers/_app.js';
-import { createContext } from './trpc.js';
+import { createContext, isConfiguredAdmin } from './trpc.js';
 import { registerTelegramPaymentRoutes } from './payments/routes.js';
-import { authTokens, closeDb, db, users, identities, webCredentials, photoAssets, swipes, events, userAchievements, paymentIntents, supportMessages } from '@constella/db';
+import { authTokens, closeDb, db, users, identities, webCredentials, photoAssets, swipes, events, userAchievements, paymentIntents, supportMessages, matches, messages } from '@constella/db';
 import { appendTrpcOpenApiPaths } from './openapi.js';
 import { isEmailDeliveryConfigured, sendTransactionalEmail } from './utils/email.js';
 import { isPhotoStorageConfigured, removePhotoObjects } from './photos/storage.js';
@@ -37,6 +39,17 @@ dotenv.config();
 dotenv.config({ path: resolve(process.cwd(), '../../.env') });
 
 const logger = createLogger('api');
+/** Parses a JSON object, returning `{}` for malformed or non-object payloads. */
+const parseJsonObject = (raw: string): Record<string, unknown> => {
+  try {
+    const value: unknown = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+};
 const configuredTrustProxy = process.env.TRUST_PROXY;
 const trustProxy = configuredTrustProxy === 'true'
   ? true
@@ -226,12 +239,249 @@ async function initialize() {
     sign: { expiresIn: '30d' },
   });
 
-  await fastify.register(fastifyTRPCPlugin, {
-    prefix: '/trpc',
-    trpcOptions: {
-      router: appRouter,
-      createContext,
+  // `@fastify/websocket` v10 is the fastify-4 line. Newer majors declare
+  // `fastify: '5.x'` and fastify refuses to load them (FST_ERR_PLUGIN_VERSION_MISMATCH).
+  await fastify.register(fastifyWebsocket, {
+    options: {
+      maxPayload: 1024 * 1024,
+      perMessageDeflate: true,
+      handshakeTimeout: 10000,
     },
+  });
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const MAX_WS_MESSAGE_LENGTH = 1000;
+  const WS_SEND_WINDOW_MS = 60_000;
+  const WS_MAX_SENDS_PER_WINDOW = 12;
+
+  /**
+   * Resolves the caller for a chat socket.
+   *
+   * The web client keeps its JWT in localStorage, and the browser cannot set
+   * headers on a WebSocket handshake, so the token arrives as `?token=`.
+   * A `token=` cookie is accepted as a fallback for non-browser clients.
+   */
+  const authenticateChatSocket = async (req: any): Promise<{ id: string } | null> => {
+    const url = new URL(req.url!, `http://${req.headers.host}`);
+    const cookieToken = typeof req.headers.cookie === 'string'
+      ? req.headers.cookie.split(';').map((c: string) => c.trim()).find((c: string) => c.startsWith('token='))?.slice('token='.length)
+      : undefined;
+    const token = url.searchParams.get('token') || cookieToken;
+    if (!token) return null;
+
+    let claims: { id: string; sessionVersion?: number };
+    try {
+      claims = fastify.jwt.verify<{ id: string; sessionVersion?: number }>(token);
+    } catch {
+      return null;
+    }
+    if (!claims?.id) return null;
+
+    // Mirror the tRPC `protectedProcedure` guard: reject revoked sessions and
+    // banned accounts so a socket cannot outlive its credentials.
+    const [account] = await db
+      .select({ sessionVersion: users.sessionVersion, bannedAt: users.bannedAt })
+      .from(users)
+      .where(eq(users.id, claims.id))
+      .limit(1);
+    if (!account) return null;
+    if ((claims.sessionVersion ?? 0) !== account.sessionVersion) return null;
+    if (account.bannedAt && !isConfiguredAdmin({ id: claims.id, telegramId: null })) return null;
+
+    return { id: claims.id };
+  };
+
+  fastify.get('/api/chat/ws', { websocket: true }, (socket: any, req: any) => {
+    const url = new URL(req.url!, `http://${req.headers.host}`);
+    const requestedMatchId = url.searchParams.get('matchId') ?? '';
+
+    // Resolve the handshake once; every inbound frame and the registration step
+    // await the same promise, so ordering stays deterministic without dropping
+    // frames that arrive while auth/DB work is in flight.
+    type Handshake =
+      | { ok: true; userId: string; matchId: string }
+      | { ok: false; close: readonly [number, string] };
+
+    const session: Promise<Handshake> =
+      requestedMatchId && UUID_RE.test(requestedMatchId)
+        ? (async (): Promise<Handshake> => {
+            const user = await authenticateChatSocket(req);
+            if (!user) return { ok: false, close: [4003, 'Unauthorized'] };
+            // Only the two participants of the match may attach to its room.
+            const [participant] = await db
+              .select({ id: matches.id })
+              .from(matches)
+              .where(
+                and(
+                  eq(matches.id, requestedMatchId),
+                  or(eq(matches.userOneId, user.id), eq(matches.userTwoId, user.id)),
+                ),
+              )
+              .limit(1);
+            if (!participant) return { ok: false, close: [4002, 'Match not found or not a participant'] };
+            return { ok: true, userId: user.id, matchId: requestedMatchId };
+          })()
+        : Promise.resolve({ ok: false, close: [4001, 'Missing or invalid matchId'] });
+    // Per-connection write budget. The HTTP rate limiter does not see WS frames,
+    // so inbound sends are capped to the same 12/min the tRPC path enforces.
+    let sendWindowStart = 0;
+    let sendWindowCount = 0;
+    const withinSendBudget = () => {
+      const now = Date.now();
+      if (now - sendWindowStart >= WS_SEND_WINDOW_MS) {
+        sendWindowStart = now;
+        sendWindowCount = 0;
+      }
+      sendWindowCount += 1;
+      return sendWindowCount <= WS_MAX_SENDS_PER_WINDOW;
+    };
+    const replyError = (code: string, message: string) =>
+      notifyClient({ conn: socket }, { type: 'error', code, message });
+
+    socket.on('message', async (raw: Buffer | string) => {
+      const auth = await session;
+      if (!auth.ok) return;
+      const { userId, matchId } = auth;
+
+      let data: ClientPayload;
+      try {
+        data = JSON.parse(typeof raw === 'string' ? raw : raw.toString()) as ClientPayload;
+      } catch {
+        replyError('bad_frame', 'Malformed JSON frame.');
+        return;
+      }
+      if (!data || typeof data !== 'object') return;
+      // Frames are always scoped to the room the socket attached to, so a
+      // client cannot address another match by spoofing `matchId`.
+      if (data.matchId !== matchId) {
+        replyError('wrong_match', 'Frame does not match this room.');
+        return;
+      }
+
+      try {
+        switch (data.type) {
+          case 'send.message': {
+            const body = typeof data.body === 'string' ? data.body.trim() : '';
+            if (!body || body.length > MAX_WS_MESSAGE_LENGTH) {
+              replyError('invalid_body', 'Message body is empty or too long.');
+              return;
+            }
+            if (!withinSendBudget()) {
+              replyError('rate_limited', 'Please slow down before sending more messages.');
+              return;
+            }
+            // senderId always comes from the verified token, never the frame.
+            const [m] = await db
+              .insert(messages)
+              .values({ matchId, senderId: userId, body, kind: 'text', deliveredAt: new Date() })
+              .returning();
+            if (m) broadcastToMatch(matchId, { type: 'chat.message', message: m });
+            break;
+          }
+          case 'send.typing': {
+            // Exclude the author: `chat.typing` drives the *peer's* indicator.
+            broadcastToMatch(matchId, { type: 'chat.typing' }, userId);
+            break;
+          }
+          case 'send.read': {
+            const messageId = Number(data.messageId);
+            if (!Number.isSafeInteger(messageId) || messageId <= 0) return;
+            const [updated] = await db
+              .update(messages)
+              .set({ readAt: new Date() })
+              .where(
+                and(
+                  eq(messages.id, messageId),
+                  eq(messages.matchId, matchId),
+                  // You may only acknowledge the other side's messages.
+                  ne(messages.senderId, userId),
+                ),
+              )
+              .returning();
+            if (updated) {
+              broadcastToMatch(matchId, {
+                type: 'presence.read',
+                messageId: updated.id,
+                readAt: updated.readAt,
+                matchId,
+              });
+            }
+            break;
+          }
+          case 'send.linked':
+          case 'send.pin': {
+            const messageId = Number(data.messageId);
+            if (!Number.isSafeInteger(messageId) || messageId <= 0 || typeof data.body !== 'string') return;
+            const nextBody = data.type === 'send.pin'
+              ? JSON.stringify({ ...parseJsonObject(data.body), pinned: true })
+              : data.body;
+            const [m] = await db
+              .update(messages)
+              .set({ body: nextBody })
+              .where(and(eq(messages.id, messageId), eq(messages.matchId, matchId)))
+              .returning();
+            if (m) broadcastToMatch(matchId, { type: 'chat.message', message: m });
+            break;
+          }
+          case 'send.media': {
+            if (!withinSendBudget()) {
+              replyError('rate_limited', 'Please slow down before sending more messages.');
+              return;
+            }
+            if (typeof data.url !== 'string' || !data.url || data.url.length > 4096) {
+              replyError('invalid_body', 'Media frame is missing a valid url.');
+              return;
+            }
+            const mediaKind = data.kind === 'video' ? 'video' : 'image';
+            const [m] = await db
+              .insert(messages)
+              .values({
+                matchId,
+                senderId: userId,
+                body: JSON.stringify({ kind: mediaKind, url: data.url, fileName: data.fileName, size: data.size, localPath: data.localPath, icon: data.icon }),
+                deliveredAt: new Date(),
+              })
+              .returning();
+            if (m) broadcastToMatch(matchId, { type: 'chat.message', message: m });
+            break;
+          }
+          default:
+            replyError('unknown_type', 'Unsupported frame type.');
+        }
+      } catch (err) {
+        logger.error('WebSocket message handler failed', { err, userId, matchId });
+        replyError('internal', 'Server failed to process the frame.');
+      }
+    });
+
+    socket.on('close', () => {
+      void session.then((auth) => {
+        if (auth.ok) unregisterConnection({ conn: socket, userId: auth.userId, matchId: auth.matchId });
+      });
+      logger.info('WebSocket chat client disconnected', { matchId: requestedMatchId });
+    });
+
+    socket.on('error', (err: Error) => {
+      logger.error('WebSocket chat error', { err, matchId: requestedMatchId });
+    });
+
+    // Registration happens once the handshake resolves. If auth or the match
+    // lookup failed, close with the matching RFC-style application code.
+    void session
+      .then((auth) => {
+        if (!auth.ok) {
+          const [code, reason] = auth.close;
+          logger.info('WebSocket chat handshake rejected', { code, reason, matchId: requestedMatchId });
+          socket.close(code, reason);
+          return;
+        }
+        registerConnection({ conn: socket, userId: auth.userId, matchId: auth.matchId });
+        logger.info('WebSocket chat client connected', { userId: auth.userId, matchId: auth.matchId });
+      })
+      .catch((err) => {
+        logger.error('WebSocket chat handshake failed', { err, matchId: requestedMatchId });
+        socket.close(1011, 'Handshake failed');
+      });
   });
 
   registerTelegramPaymentRoutes(fastify);

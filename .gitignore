@@ -27,3 +27,4 @@ volumes/*
 .pnpm-store
 **/.pnpm-store
 .aider*
+!.aider.conf.yml

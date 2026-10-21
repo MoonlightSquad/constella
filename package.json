@@ -26,6 +26,7 @@
   },
   "packageManager": "pnpm@9.0.0",
   "dependencies": {
+    "@fastify/websocket": "^10.0.1",
     "winston": "^3.19.0"
   }
 }

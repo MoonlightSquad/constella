@@ -57,14 +57,43 @@ const incomingSparks = ref(0)
 const orbitRemaining = ref(0)
 const orbitDate = ref('')
 const releasePending = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
 const selectedMatch = ref<Match | null>(null)
 const chatMessages = ref<any[]>([])
 const chatDraft = ref('')
 const isLoading = ref(true)
 const isSending = ref(false)
+const isRecording = ref(false)
+const isRecordingVideo = ref(false)
+const recordingDuration = ref(0)
+const recordingVideoDuration = ref(0)
 const dragX = ref(0)
 const dragY = ref(0)
 const isDragging = ref(false)
+
+// Chat connection & realtime
+let chatWs: WebSocket | null = null
+let wsReconnectTimer: number | null = null
+const wsConnected = ref(false)
+const peerTyping = ref(false)
+
+// Notifications
+const notificationPermission = ref<'default' | 'granted' | 'denied'>('default')
+const notificationsEnabled = ref(false)
+
+// Audio playback (per-message)
+const audioPlayers = new Map<string, { audio: HTMLAudioElement; speed: number; playing: boolean; duration: number; currentTime: number }>()
+const activeVoiceMessageId = ref<string | null>(null)
+const playbackSpeed = ref(1)
+
+// Media
+const pinnedMedia = ref<any[]>([])
+const attachMenuOpen = ref(false)
+
+// Calls
+const incomingCall = ref<{ roomId: string; callType: 'audio' | 'video'; fromId: string; fromName: string; token: string } | null>(null)
+const callTimer = ref(0)
+let callTimerInterval: number | null = null
 let pointerStartX = 0
 let pointerStartY = 0
 const toast = ref('')
@@ -273,15 +302,24 @@ const openChat = async (match: Match) => {
   selectedMatch.value = match
   activeTab.value = 'chats'
   await loadChatMessages()
+  if (match.id) void connectChatWs(match.id)
+}
+
+const closeChatOnTabLeave = () => {
+  closeChatWs()
+  incomingCall.value = null
+  stopAllVoices()
 }
 
 const contactInfo = ref<{ offeredByMe: boolean; mutual: boolean; usernames: string[] } | null>(null)
 const isSharingContact = ref(false)
 
-const isRecording = ref(false)
-const recordingDuration = ref(0)
+// `isRecording` / `recordingDuration` are declared with the rest of the chat
+// state near the top of this setup block; only recorder-local state lives here.
 let mediaRecorder: MediaRecorder | null = null
 let audioChunks: Blob[] = []
+let videoChunks: Blob[] = []
+let recordingVideoTimer: number | null = null
 let recordingTimer: number | null = null
 
 const activeCall = ref<{ roomId: string; callType: 'audio' | 'video'; peerName: string } | null>(null)
@@ -414,6 +452,16 @@ const parseVoice = (body: string) => {
   return { audioUrl: body, durationSec: 0 }
 }
 
+const parseMedia = (body: string) => {
+  try {
+    const parsed = JSON.parse(body)
+    if (parsed && typeof parsed === 'object' && parsed.url) {
+      return { url: parsed.url, fileName: parsed.fileName, size: parsed.size, kind: parsed.kind }
+    }
+  } catch {}
+  return { url: body, fileName: '', size: 0, kind: 'image' }
+}
+
 const shareContact = async () => {
   if (!selectedMatch.value || isSharingContact.value) return
   isSharingContact.value = true
@@ -536,17 +584,327 @@ const genderLabel = (gender: string) => t(({
 
 const currentLevelProgress = computed(() => (quests.value ? quests.value.xp % 250 : 0))
 
+const formatDuration = (sec: number) => {
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+// ---------- WebSocket chat ----------
+const apiBase = runtimeConfig.public?.apiUrl ?? runtimeConfig.apiBase ?? ''
+const wsUrl = (apiBase || window.location.origin).replace(/^http/, 'ws')
+
+const closeChatWs = () => {
+  if (wsReconnectTimer) { window.clearInterval(wsReconnectTimer); wsReconnectTimer = null }
+  if (chatWs) { chatWs.close(); chatWs = null }
+  wsConnected.value = false
+}
+
+const connectChatWs = (matchId: string) => {
+  closeChatWs()
+  wsConnected.value = false
+  try {
+    // The browser cannot set headers on a WS handshake and the JWT lives in
+    // localStorage, so it travels as a query parameter (see authenticateChatSocket).
+    const token = localStorage.getItem('constella_token') || ''
+    const params = new URLSearchParams({ matchId })
+    if (token) params.set('token', token)
+    chatWs = new WebSocket(`${wsUrl}/api/chat/ws?${params.toString()}`)
+    chatWs.binaryType = 'arraybuffer'
+    chatWs.onopen = () => {
+      wsConnected.value = true
+      if (wsReconnectTimer) { window.clearInterval(wsReconnectTimer); wsReconnectTimer = null }
+      toast.value = ''
+    }
+    chatWs.onmessage = (event) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : null
+        if (!data) return
+        if (data.type === 'error') {
+          // The API rejects bad/rate-limited frames with a machine-readable code.
+          if (data.code === 'rate_limited') showError({ message: data.message })
+          return
+        }
+        if (data.type === 'chat.message') {
+          appendMessage(data.message)
+          // Acknowledge the peer's message while this chat is open and focused,
+          // so the sender sees a read receipt without a manual refresh.
+          const incoming = data.message
+          if (
+            incoming &&
+            incoming.senderId !== account.userId &&
+            selectedMatch.value &&
+            incoming.matchId === selectedMatch.value.id &&
+            document.visibilityState === 'visible'
+          ) {
+            sendWs({ type: 'send.read', matchId: selectedMatch.value.id, messageId: incoming.id })
+          }
+        }
+        else if (data.type === 'chat.typing') { peerTyping.value = true; window.setTimeout(() => { peerTyping.value = false }, 3000) }
+        else if (data.type === 'call.incoming') { incomingCall.value = { roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName, token: data.token }; toast.value = t('dashboard.callIncoming') }
+        else if (data.type === 'call.ended') { endCallUI(); toast.value = t('dashboard.callEnded') }
+        else if (data.type === 'presence.read') {
+          const m = chatMessages.value.find((x: any) => x.id === data.messageId)
+          if (m) m.readAt = data.readAt
+        }
+        if (notificationsEnabled.value && data.type === 'chat.message' && data.message.senderId !== account.userId && document.visibilityState !== 'visible') {
+          void showNewMessageNotification(data.message, selectedMatch.value)
+        }
+      } catch {}
+    }
+    chatWs.onclose = () => {
+      wsConnected.value = false
+      toast.value = t('dashboard.connecting')
+      wsReconnectTimer = window.setInterval(() => { void connectChatWs(matchId) }, 3000)
+    }
+    chatWs.onerror = () => { wsConnected.value = false }
+  } catch { wsConnected.value = false }
+}
+
+const sendWs = (payload: any) => {
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) chatWs.send(JSON.stringify(payload))
+}
+
+// Throttled "typing…" notifier: at most one frame every 1.5s while the user
+// types, so a burst of keystrokes does not flood the socket.
+let lastTypingSentAt = 0
+const onComposerInput = () => {
+  if (!selectedMatch.value || !wsConnected.value) return
+  const now = Date.now()
+  if (now - lastTypingSentAt < 1500) return
+  lastTypingSentAt = now
+  sendWs({ type: 'send.typing', matchId: selectedMatch.value.id })
+}
+
+// ---------- Notifications ----------
+const requestNotificationPermission = async () => {
+  if (typeof window === 'undefined' || !('Notification' in window)) return
+  const perm = await Notification.requestPermission()
+  notificationPermission.value = perm as any
+  notificationsEnabled.value = perm === 'granted'
+  toast.value = notificationsEnabled.value ? t('dashboard.notificationsOn') : t('dashboard.notificationsOff')
+}
+
+const toggleNotifications = async () => {
+  if (notificationsEnabled.value) { notificationsEnabled.value = false; toast.value = t('dashboard.notificationsOff'); return }
+  await requestNotificationPermission()
+}
+
+const showNewMessageNotification = async (message: any, match: Match | null) => {
+  if (!('Notification' in window) || notificationPermission.value !== 'granted') return
+  const sender = match?.profile?.displayName || t('dashboard.newMessage')
+  const body = message.kind === 'voice' ? t('dashboard.voiceMessage') : message.kind === 'video' ? t('dashboard.videoMessage') : message.body
+  try {
+    const n = new Notification(t('dashboard.newMessage'), { body, icon: '/favicon.ico', tag: `constella-msg-${match?.id}`, data: { matchId: match?.id } })
+    n.onclick = () => { window.focus(); if (match) selectedMatch.value = match }
+  } catch {}
+}
+
+// ---------- Messages ----------
+const appendMessage = (message: any) => {
+  const exists = chatMessages.value.some((m: any) => m.id === message.id)
+  if (exists) return
+  chatMessages.value = [...chatMessages.value, message].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+}
+
+const messageStatus = (message: any) => {
+  if (message.senderId === account.userId) {
+    if (message.readAt) return t('dashboard.messageRead')
+    if (message.deliveredAt) return t('dashboard.messageSent')
+  }
+  return ''
+}
+
+// ---------- Audio playback ----------
+const getPlayer = (messageId: string, audioUrl: string, durationSec: number) => {
+  let p = audioPlayers.get(messageId)
+  if (!p) {
+    const audio = new Audio(audioUrl)
+    p = { audio, speed: 1, playing: false, duration: durationSec, currentTime: 0 }
+    audio.playbackRate = p.speed
+    audio.addEventListener('play', () => { p.playing = true; activeVoiceMessageId.value = messageId })
+    audio.addEventListener('pause', () => { p.playing = false; if (activeVoiceMessageId.value === messageId) activeVoiceMessageId.value = null })
+    audio.addEventListener('ended', () => { p.playing = false; p.currentTime = p.duration; if (activeVoiceMessageId.value === messageId) activeVoiceMessageId.value = null })
+    audio.addEventListener('timeupdate', () => { p.currentTime = audio.currentTime })
+    audio.addEventListener('error', () => { p.playing = false; if (activeVoiceMessageId.value === messageId) activeVoiceMessageId.value = null })
+    audioPlayers.set(messageId, p)
+  }
+  return p
+}
+
+const stopAllVoices = () => {
+  audioPlayers.forEach((p) => { p.audio.pause(); p.audio.currentTime = 0; p.playing = false })
+  activeVoiceMessageId.value = null
+}
+
+const playVoice = (messageId: string, audioUrl: string, durationSec: number) => {
+  stopAllVoices()
+  const p = getPlayer(messageId, audioUrl, durationSec)
+  p.audio.playbackRate = p.speed
+  void p.audio.play()
+}
+
+const pauseVoice = (messageId: string) => {
+  const p = audioPlayers.get(messageId)
+  if (p) { p.audio.pause(); p.playing = false; if (activeVoiceMessageId.value === messageId) activeVoiceMessageId.value = null }
+}
+
+const togglePlaybackSpeed = (messageId: string) => {
+  const p = audioPlayers.get(messageId)
+  if (!p) return
+  const speeds = [0.5, 1, 1.5, 2]
+  const i = speeds.indexOf(p.speed)
+  p.speed = speeds[(i + 1) % speeds.length]
+  p.audio.playbackRate = p.speed
+  playbackSpeed.value = p.speed
+  toast.value = `${t('dashboard.playbackSpeed')}: ${p.speed}×`
+}
+
+const isVoicePlaying = (messageId: string) => {
+  const p = audioPlayers.get(messageId)
+  return Boolean(p && p.playing)
+}
+
+// ---------- Media ----------
+const toggleAttachMenu = () => { attachMenuOpen.value = !attachMenuOpen.value }
+
+const sendMediaMessage = async (file: File) => {
+  if (!selectedMatch.value || isSending.value) return
+  isSending.value = true
+  try {
+    const uploadMeta = await $trpc.photos.createUpload.mutate({ contentType: file.type as any, fileName: file.name })
+    await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+    const processed = await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: file.type as any })
+    await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind: file.type.startsWith('video/') ? 'video' : 'image', url: processed.publicUrl, fileName: file.name, size: file.size }) })
+    attachMenuOpen.value = false
+    await loadChatMessages()
+  } catch (err) { showError(err) } finally { isSending.value = false }
+}
+
+const onFileSelected = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+  await sendMediaMessage(input.files[0])
+  input.value = ''
+}
+
+const startVideoRecording = async () => {
+  if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+    toast.value = t('dashboard.voiceUnsupported')
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm')
+      ? 'video/webm'
+      : 'video/mp4'
+    mediaRecorder = new MediaRecorder(stream, { mimeType })
+    videoChunks = []
+    recordingVideoDuration.value = 0
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) videoChunks.push(e.data)
+    }
+    mediaRecorder.start(100)
+    isRecordingVideo.value = true
+    recordingVideoTimer = window.setInterval(() => {
+      recordingVideoDuration.value += 1
+      if (recordingVideoDuration.value >= 300) {
+        void stopVideoRecording(true)
+      }
+    }, 1000)
+  } catch (error) {
+    showError(error)
+  }
+}
+
+const stopVideoRecording = async (send = true) => {
+  if (!mediaRecorder || !isRecordingVideo.value) return
+  if (recordingVideoTimer) clearInterval(recordingVideoTimer)
+  isRecordingVideo.value = false
+  const duration = recordingVideoDuration.value || 1
+
+  mediaRecorder.onstop = async () => {
+    const stream = mediaRecorder?.stream
+    stream?.getTracks().forEach((track) => track.stop())
+    if (!send || videoChunks.length === 0 || !selectedMatch.value) return
+    const mime = mediaRecorder?.mimeType || 'video/webm'
+    const blob = new Blob(videoChunks, { type: mime })
+
+    isSending.value = true
+    try {
+      const uploadMeta = await $trpc.photos.createUpload.mutate({ contentType: mime as any, fileName: `video-${Date.now()}.webm` })
+      await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': mime } })
+      const processed = await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: mime as any })
+      await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind: 'video', url: processed.publicUrl, fileName: processed.fileName ?? 'video.webm', size: blob.size }) })
+      await Promise.all([loadChatMessages(), loadMatches(), loadQuests()])
+    } catch (err) { showError(err) } finally { isSending.value = false }
+  }
+  mediaRecorder.stop()
+}
+
+const cancelVideoRecording = () => {
+  void stopVideoRecording(false)
+}
+
+// ---------- Pinned media ----------
+const isPinned = (messageId: string) => pinnedMedia.value.some((m: any) => m.id === messageId)
+const togglePinMedia = (message: any) => {
+  if (isPinned(message.id)) { pinnedMedia.value = pinnedMedia.value.filter((m: any) => m.id !== message.id); toast.value = t('dashboard.unpin') }
+  else { pinnedMedia.value = [...pinnedMedia.value, message]; toast.value = t('dashboard.pinnedMedia') }
+}
+
+// ---------- Calls ----------
+const startCallUI = async (callType: 'audio' | 'video') => {
+  if (!selectedMatch.value || isCalling.value) return
+  isCalling.value = true
+  try {
+    const callSession = await $trpc.social.startCall.mutate({ matchId: selectedMatch.value.id, callType })
+    incomingCall.value = { roomId: callSession.roomId, callType, fromId: account.userId, fromName: 'Ти', token: callSession.token }
+    activeCall.value = { roomId: callSession.roomId, callType, initiatorId: callSession.initiatorId, peerId: callSession.peerId, iceServers: callSession.iceServers }
+    callTimer.value = 0
+    callTimerInterval = window.setInterval(() => { callTimer.value += 1 }, 1000)
+    await loadChatMessages()
+  } catch (err) { showError(err) } finally { isCalling.value = false }
+}
+
+const acceptIncomingCall = async () => {
+  if (!incomingCall.value) return
+  activeCall.value = { roomId: incomingCall.value.roomId, callType: incomingCall.value.callType, initiatorId: incomingCall.value.fromId, peerId: selectedMatch?.profile?.id ?? '', iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
+  callTimer.value = 0
+  callTimerInterval = window.setInterval(() => { callTimer.value += 1 }, 1000)
+  incomingCall.value = null
+  toast.value = t('dashboard.callConnected')
+}
+
+const declineIncomingCall = () => { incomingCall.value = null; toast.value = '' }
+
+const endCallUI = () => {
+  if (callTimerInterval) { window.clearInterval(callTimerInterval); callTimerInterval = null }
+  activeCall.value = null
+  incomingCall.value = null
+  callTimer.value = 0
+}
+
+const formatCallTime = (sec: number) => formatDuration(sec)
+
 let refreshTimer: number | undefined
 onMounted(() => {
   void refreshAll()
+  if (typeof window !== 'undefined' && 'Notification' in window && notificationPermission.value === 'default') {
+    void requestNotificationPermission()
+  }
   window.addEventListener('focus', refreshAfterBrowserPayment)
   document.addEventListener('visibilitychange', refreshAfterBrowserPayment)
   refreshTimer = window.setInterval(() => {
-    if (activeTab.value === 'chats' && selectedMatch.value) void loadChatMessages()
+    if (activeTab.value === 'chats' && selectedMatch.value && wsConnected.value === false) void loadChatMessages()
   }, 5000)
 })
 onUnmounted(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
+  if (wsReconnectTimer) window.clearInterval(wsReconnectTimer)
+  if (callTimerInterval) window.clearInterval(callTimerInterval)
+  closeChatWs()
+  stopAllVoices()
   window.removeEventListener('focus', refreshAfterBrowserPayment)
   document.removeEventListener('visibilitychange', refreshAfterBrowserPayment)
 })
@@ -656,8 +1014,14 @@ onUnmounted(() => {
               <p>{{ selectedMatch.profile?.age }} {{ t('dashboard.years') }} · {{ selectedMatch.profile?.city }}</p>
             </div>
             <div class="chat-header-actions">
-              <button class="call-icon-button" type="button" :title="t('dashboard.audioCall')" @click="startCall('audio')">📞</button>
-              <button class="call-icon-button" type="button" :title="t('dashboard.videoCall')" @click="startCall('video')">📹</button>
+              <button class="chip-button" type="button" :title="wsConnected ? t('dashboard.reconnected') : t('dashboard.connecting')" :class="{ active: wsConnected }" @click="wsConnected ? null : (selectedMatch.value && connectChatWs(selectedMatch.value.id))">
+                {{ wsConnected ? '●' : '○' }}
+              </button>
+              <button class="chip-button" type="button" :title="notificationsEnabled ? t('dashboard.notificationsOn') : t('dashboard.notificationsOff')" @click="toggleNotifications">
+                {{ notificationsEnabled ? '🔔' : '🔕' }}
+              </button>
+              <button class="call-icon-button" type="button" :title="t('dashboard.audioCall')" @click="startCallUI('audio')">📞</button>
+              <button class="call-icon-button" type="button" :title="t('dashboard.videoCall')" @click="startCallUI('video')">📹</button>
               <button v-if="contactInfo?.mutual" class="contact-pill" type="button">
                 ✈️ {{ contactInfo.usernames.map(u => `@${u}`).join(', ') }}
               </button>
@@ -671,10 +1035,35 @@ onUnmounted(() => {
           </header>
           <div class="message-list" aria-live="polite">
             <p class="chat-date">{{ t('dashboard.chatDate') }} · {{ formatOrbitDate(selectedMatch.createdAt.slice(0, 10)) }}</p>
-            <article v-for="message in chatMessages" :key="message.id" class="message" :class="{ mine: message.senderId === account.userId }">
+            <article v-for="message in chatMessages" :key="message.id" class="message" :class="{ mine: message.senderId === account.userId, pinned: isPinned(message.id) }">
               <div v-if="message.kind === 'voice'" class="voice-bubble">
-                <audio :src="parseVoice(message.body).audioUrl" controls preload="none" class="voice-player" />
+                <button type="button" class="pin-btn" @click.stop="togglePinMedia(message)">📌</button>
+                <div class="voice-player-wrap">
+                  <button type="button" class="voice-play-btn" :class="{ playing: isVoicePlaying(message.id) }" @click="isVoicePlaying(message.id) ? pauseVoice(message.id) : playVoice(message.id, parseVoice(message.body).audioUrl, parseVoice(message.body).durationSec || 0)">
+                    {{ isVoicePlaying(message.id) ? '⏸' : '▶' }}
+                  </button>
+                  <div class="voice-progress-wrap">
+                    <input type="range" min="0" :max="parseVoice(message.body).durationSec || 100" class="voice-progress" disabled />
+                    <span class="voice-time">{{ formatDuration(parseVoice(message.body).durationSec || 0) }}</span>
+                  </div>
+                  <div class="voice-speed">
+                    <button type="button" class="speed-btn" @click="togglePlaybackSpeed(message.id)">{{ playbackSpeed === 1 ? '1×' : playbackSpeed + '×' }}</button>
+                  </div>
+                </div>
                 <span v-if="parseVoice(message.body).durationSec" class="voice-duration">{{ parseVoice(message.body).durationSec }}s</span>
+                <span v-if="message.senderId !== account.userId" class="msg-status">{{ messageStatus(message) }}</span>
+              </div>
+              <div v-else-if="message.kind === 'video'" class="media-bubble">
+                <button type="button" class="pin-btn" @click.stop="togglePinMedia(message)">📌</button>
+                <video :src="parseMedia(message.body).url" class="media-preview" poster="" playsinline></video>
+                <span class="media-label">{{ t('dashboard.videoMessage') }}</span>
+                <span v-if="message.senderId !== account.userId" class="msg-status">{{ messageStatus(message) }}</span>
+              </div>
+              <div v-else-if="message.kind === 'image'" class="media-bubble">
+                <button type="button" class="pin-btn" @click.stop="togglePinMedia(message)">📌</button>
+                <img :src="parseMedia(message.body).url" class="media-preview" />
+                <span class="media-label">{{ t('dashboard.photoVideo') }}</span>
+                <span v-if="message.senderId !== account.userId" class="msg-status">{{ messageStatus(message) }}</span>
               </div>
               <p v-else-if="message.kind === 'call'" class="call-banner">
                 📞 {{ message.body.includes('video') ? t('dashboard.videoCall') : t('dashboard.audioCall') }}
@@ -685,19 +1074,27 @@ onUnmounted(() => {
             <p v-if="chatMessages.length === 0" class="chat-start">{{ t('dashboard.chatStart') }}</p>
           </div>
           <form class="composer" @submit.prevent="sendMessage">
-            <div v-if="isRecording" class="recording-bar">
+            <div v-if="isRecording || isRecordingVideo" class="recording-bar">
               <span class="recording-dot">●</span>
-              <span>{{ t('dashboard.recording') }} {{ recordingDuration }}s</span>
+              <span>{{ isRecordingVideo ? t('dashboard.videoMessage') : t('dashboard.recording') }} {{ (isRecordingVideo ? recordingVideoDuration : recordingDuration) }}s</span>
               <button type="button" class="cancel-rec-button" @click="cancelVoiceRecording">✕</button>
               <button type="button" class="send-rec-button" @click="() => stopVoiceRecording(true)">✓</button>
             </div>
             <template v-else>
-              <input v-model="chatDraft" maxlength="1000" :placeholder="t('dashboard.messagePlaceholder')" autocomplete="off">
-              <button type="button" class="voice-rec-button" :aria-label="t('dashboard.recordVoice')" @click="startVoiceRecording">🎙️</button>
-              <button type="submit" :disabled="isSending || !chatDraft.trim()" :aria-label="t('dashboard.send')">{{ isSending ? '…' : t('dashboard.send') }}</button>
+              <div class="composer-attach">
+                <input type="file" ref="fileInput" accept="image/*,video/*" @change="onFileSelected" class="hidden-file-input" />
+                <button type="button" class="attach-button" :aria-label="t('dashboard.attachMedia')" @click="toggleAttachMenu">📎</button>
+                <div v-if="attachMenuOpen" class="attach-menu">
+                  <button type="button" class="attach-item" @click="() => { attachMenuOpen = false; fileInput.click() }">{{ t('dashboard.photoVideo') }}</button>
+                  <button type="button" class="attach-item" @click="startVideoRecording">{{ t('dashboard.videoMessage') }}</button>
+                </div>
+                <input v-model="chatDraft" maxlength="1000" :placeholder="t('dashboard.messagePlaceholder')" autocomplete="off" @input="onComposerInput">
+                <button type="button" class="voice-rec-button" :aria-label="t('dashboard.recordVoice')" @click="startVoiceRecording">🎙️</button>
+                <button type="submit" :disabled="isSending || !chatDraft.trim()" :aria-label="t('dashboard.send')">{{ isSending ? '…' : t('dashboard.send') }}</button>
+              </div>
             </template>
           </form>
-          <p class="chat-footnote">{{ t('dashboard.chatPolling') }}</p>
+          <p class="chat-footnote">{{ wsConnected ? t('dashboard.reconnected') : t('dashboard.chatPolling') }}</p>
         </div>
         <template v-else>
           <p class="eyebrow">{{ t('dashboard.mutualEyebrow') }}</p>

@@ -1,0 +1,6 @@
+openai-api-base: http://localhost:11434/v1
+openai-api-key: not-needed
+model: openai/qwen2.5-coder:7b
+edit-format: diff
+auto-commits: true
+gui: false

@@ -19,6 +19,7 @@ import {
 import { ACHIEVEMENTS, DAILY_QUESTS, FREE_DAILY_LIKES, STAR_PRODUCTS } from '@constella/shared';
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc.js';
+import { broadcastToMatch } from '../realtime.js';
 import { orbitFilterSchema, hasOrbitFilters, resolveTargetGenders } from './social.schemas.js';
 import {
   awardAchievement,
@@ -582,10 +583,19 @@ export const socialRouter = router({
       )
       .orderBy(desc(messages.createdAt))
       .limit(100);
-    await ctx.db
+    // Mark incoming messages read and tell any live peer sockets, so read
+    // receipts arrive in realtime even though this path is a tRPC query.
+    const readAt = new Date();
+    const markedRead = await ctx.db
       .update(messages)
-      .set({ readAt: new Date(), deliveredAt: sql`COALESCE(${messages.deliveredAt}, NOW())` })
-      .where(and(eq(messages.matchId, input.matchId), ne(messages.senderId, ctx.user.id), isNull(messages.readAt)));
+      .set({ readAt, deliveredAt: sql`COALESCE(${messages.deliveredAt}, NOW())` })
+      .where(and(eq(messages.matchId, input.matchId), ne(messages.senderId, ctx.user.id), isNull(messages.readAt)))
+      .returning({ id: messages.id });
+    if (markedRead.length > 0) {
+      for (const row of markedRead) {
+        broadcastToMatch(input.matchId, { type: 'presence.read', messageId: row.id, readAt, matchId: input.matchId });
+      }
+    }
     const shares = await ctx.db.select().from(contactShares).where(eq(contactShares.matchId, input.matchId));
     return {
       messages: history.reverse(),
@@ -612,6 +622,9 @@ export const socialRouter = router({
         .insert(messages)
         .values({ matchId: input.matchId, senderId: ctx.user.id, body: input.body, deliveredAt: new Date() })
         .returning();
+      // The web client writes over tRPC, so push to any live sockets on this
+      // match (including the author's other tabs) instead of relying on polling.
+      broadcastToMatch(input.matchId, { type: 'chat.message', message });
       await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
       const counts = await ctx.db
         .select({ matchId: messages.matchId, count: sql<number>`count(*)::int` })
@@ -656,6 +669,7 @@ export const socialRouter = router({
         .insert(messages)
         .values({ matchId: input.matchId, senderId: ctx.user.id, kind: 'voice', body, deliveredAt: new Date() })
         .returning();
+      broadcastToMatch(input.matchId, { type: 'chat.message', message });
       await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
       return message;
     }),
@@ -686,6 +700,26 @@ export const socialRouter = router({
           roomId,
         }),
       });
+
+      // Ring the peer if it has a live socket on this match.
+      const [caller] = await ctx.db
+        .select({ displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+      broadcastToMatch(
+        input.matchId,
+        {
+          type: 'call.incoming',
+          roomId,
+          callType: input.callType,
+          fromId: ctx.user.id,
+          fromName: caller?.displayName ?? '',
+          token,
+          matchId: input.matchId,
+        },
+        ctx.user.id,
+      );
 
       return {
         roomId,
