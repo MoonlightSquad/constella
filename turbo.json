@@ -36,7 +36,9 @@
         "NUXT_API_INTERNAL_BASE",
         "NUXT_PUBLIC_API_URL",
         "NUXT_PUBLIC_APP_URL",
+        "NUXT_PUBLIC_SITE_URL",
         "NUXT_PUBLIC_BOT_USERNAME",
+        "BOT_USERNAME",
         "NUXT_PUBLIC_SENTRY_DSN"
       ]
     },

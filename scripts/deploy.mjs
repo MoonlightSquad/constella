@@ -117,6 +117,8 @@ if (!s3PublicUrl || isPlaceholder(s3PublicUrl)) {
 // URLs check
 const appUrl = config.domains?.web_app_url || config.urls?.app_url || config.urls?.frontend_web_app_url || 'https://app-test.constella.pp.ua';
 const apiUrl = config.domains?.api_url || config.urls?.backend_api_url || 'https://api-test.constella.pp.ua';
+// Without an explicit host the landing would silently keep its build-time default.
+const landingUrl = config.domains?.landing_url || config.urls?.landing_url || 'https://constella.pp.ua';
 
 if (warnings.length > 0) {
   console.warn('\n⚠️  Preflight Warnings:');
@@ -146,6 +148,8 @@ const envLines = [
   `NUXT_PUBLIC_API_URL=${apiUrl}`,
   `API_PROXY_TARGET=${apiUrl}`,
   `API_INTERNAL_URL=${apiUrl}`,
+  `NUXT_API_INTERNAL_BASE=${apiUrl}`,
+  `NUXT_PUBLIC_SITE_URL=${landingUrl}`,
   `JWT_SECRET=${config.security?.jwt_secret || ''}`,
   `PAYMENTS_INTERNAL_TOKEN=${config.security?.payments_internal_token || ''}`,
   `PHOTO_BUCKET=${config.storage?.photo_bucket || 'constella-media'}`,
@@ -182,8 +186,10 @@ const deploymentOnlyKeys = [
   'VERCEL_SCOPE',
   'VERCEL_API_PROJECT',
   'VERCEL_WEB_PROJECT',
+  'VERCEL_LANDING_PROJECT',
   'VERCEL_API_DOMAIN',
-  'VERCEL_WEB_DOMAIN'
+  'VERCEL_WEB_DOMAIN',
+  'VERCEL_LANDING_DOMAIN'
 ];
 const deploymentEnvLines = [
   envLines,
@@ -194,10 +200,11 @@ const deploymentEnvLines = [
     .map((name) => `${name}=${existingDeploymentEnv[name]}`)
 ].join('\n');
 
-// 4. Sync .env to root, apps/web, apps/api, apps/bot
+// 4. Sync .env to root, apps/web, apps/landing, apps/api, apps/bot
 const targetPaths = [
   { path: path.join(rootDir, '.env'), includeAdminCredentials: true },
   { path: path.join(rootDir, 'apps/web/.env'), includeAdminCredentials: false },
+  { path: path.join(rootDir, 'apps/landing/.env'), includeAdminCredentials: false },
   { path: path.join(rootDir, 'apps/api/.env'), includeAdminCredentials: true },
   { path: path.join(rootDir, 'apps/bot/.env'), includeAdminCredentials: false }
 ];

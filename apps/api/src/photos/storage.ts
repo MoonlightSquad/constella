@@ -33,7 +33,7 @@ export const isPhotoStorageConfigured = () => Boolean(
   process.env.S3_PUBLIC_BASE_URL
 );
 
-const getClient = () => {
+export const getClient = () => {
   if (!isPhotoStorageConfigured()) throw new Error('S3 photo storage is not configured.');
   const endpoint = process.env.S3_ENDPOINT;
   return new S3Client({
@@ -46,7 +46,7 @@ const getClient = () => {
   });
 };
 
-const bucket = () => {
+export const bucket = () => {
   if (!process.env.PHOTO_BUCKET) throw new Error('PHOTO_BUCKET is not configured.');
   return process.env.PHOTO_BUCKET;
 };

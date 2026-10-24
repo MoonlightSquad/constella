@@ -1,0 +1,279 @@
+{
+  "landing": {
+    "nav": {
+      "features": "Features",
+      "ai": "AI Assistant",
+      "pricing": "Pricing & VIP",
+      "download": "Download",
+      "blog": "Blog",
+      "faq": "FAQ",
+      "launchApp": "Launch WebApp",
+      "openBot": "Telegram Bot"
+    },
+    "hero": {
+      "badge": "✨ Dating guided by shared interests",
+      "title1": "Find people who share your",
+      "titleGradient": "cosmic resonance",
+      "title2": "and life rhythm",
+      "subtitle": "Constella is a next-generation dating platform. Find real connections through shared interest constellations, instant chat and voice messages.",
+      "ctaTg": "Launch in Telegram",
+      "ctaWeb": "Open Web Version",
+      "trustBadge": "🔒 100% Privacy · No contact sharing without mutual consent · 18+",
+      "statsFact1": "up to 8 profiles a day",
+      "statsFact2": "20 free sparks a day",
+      "statsFact3": "VIP: 499★ for 30 days"
+    },
+    "ai": {
+      "badge": "🕐 Coming soon · Constella AI",
+      "title": "Smart AI Dialogue Assistant",
+      "subtitle": "No more awkward “Hey, what’s up?”. The assistant will read shared interests, profile details and chat context to suggest an icebreaker that actually fits, and to pick the conversation back up.",
+      "soonNote": "This feature is in development. The mock above is a design prototype, not a live chat.",
+      "feat1Title": "Personalized Icebreakers",
+      "feat1Desc": "Instant, tailored conversation starters based on hobbies and profile prompts.",
+      "feat2Title": "Vibe & Tone Analysis",
+      "feat2Desc": "AI highlights common ground and suggests topics proven to spark genuine excitement.",
+      "feat3Title": "In-Chat Realtime Hints",
+      "feat3Desc": "When a chat slows down, get seamless one-tap suggestions and witty banter ideas.",
+      "feat4Title": "Strict Zero-Leak Privacy",
+      "feat4Desc": "All prompts are anonymized with zero data retention by third-party processors.",
+      "demoHeader": "Interface concept · Constella AI",
+      "demoProfileName": "Sophia, 24",
+      "demoProfileBio": "\"Loves jazz, vintage photography, and midnight walks. Looking for deep conversations over flat white.\"",
+      "demoPromptTitle": "✨ AI assistant suggestion:",
+      "demoPromptText": "\"Hey Sophia! Loved your photo prompt — which vintage camera do you shoot with, and what is your favorite golden-hour spot?\"",
+      "demoBadge": "VIP Plan"
+    },
+    "features": {
+      "badge": "🚀 Next-Level Experience",
+      "title": "Why People Choose Constella",
+      "subtitle": "We combined cosmic aesthetics, state-of-the-art privacy, and playful gamification for unforgettable dating.",
+      "orbitTitle": "Daily Orbit",
+      "orbitDesc": "Ultra-smooth gesture card deck optimized for mobile browsers and Telegram Mini App.",
+      "postgisTitle": "Precise PostGIS Geolocation",
+      "postgisDesc": "Instant nearby matching with strict coordinate privacy — showing only city and approximate distance.",
+      "chatTitle": "Real-Time Instant Chat",
+      "chatDesc": "Text and voice arrive instantly over a secure channel — your personal Telegram account stays yours.",
+      "voiceTitle": "HD Voice Messages",
+      "voiceDesc": "Share authentic emotions with crystal-clear voice notes and a sleek audio waveform player.",
+      "safeTitle": "Dual Moderation & 18+ Guard",
+      "safeDesc": "Automated AI content moderation paired with human review ensures a safe, authentic community.",
+      "starsTitle": "Gamification & Telegram Stars",
+      "starsDesc": "Earn XP for great conversations, unlock badges, level up, and upgrade with Telegram Stars."
+    },
+    "how": {
+      "badge": "✨ Simple 3-Step Journey",
+      "title": "How Constella Works",
+      "subtitle": "Only three simple steps separate you from your first celestial connection.",
+      "step1Num": "01",
+      "step1Title": "Instant Seamless Sign-In",
+      "step1Desc": "Launch inside Telegram in one tap without passwords, or sign in via email in your browser.",
+      "step2Num": "02",
+      "step2Title": "Tune Your Constellation",
+      "step2Desc": "Add your best photos, choose your city, and select topics you are excited to chat about.",
+      "step3Num": "03",
+      "step3Title": "Mutual sparks and chat",
+      "step3Desc": "Get your daily Orbit of compatible profiles, chat in real time and send voice messages."
+    },
+    "pricing": {
+      "badge": "💎 Transparent Plans",
+      "title": "Choose Your Constellation Tier",
+      "subtitle": "Core features stay free. VIP unlocks the full swipe limit, Who Liked You, Incognito and Passport — paid with Telegram Stars.",
+      "freeTitle": "Standard Explorer",
+      "freePrice": "Free",
+      "freePeriod": "forever",
+      "freeFeat1": "Up to 20 daily Orbit swipes",
+      "freeFeat2": "Secure text chats after mutual match",
+      "freeFeat3": "Voice messages in chat",
+      "freeFeat4": "City-level geolocation search",
+      "freeCta": "Start for Free",
+      "vipTitle": "VIP Constella",
+      "vipBadge": "MOST POPULAR",
+      "vipPeriod": "via Telegram Stars",
+      "vipFeat2": "👀 See Who Liked You instantly",
+      "vipFeat3": "♾️ Unlimited swipes & undo previous pass",
+      "vipFeat4": "🕵️ Stealth Incognito mode",
+      "vipFeat5": "🌍 Global Passport (explore any city worldwide)",
+      "vipCta": "Upgrade to VIP"
+    },
+    "platforms": {
+      "badge": "📱 Available Everywhere",
+      "title": "Experience Constella Anywhere",
+      "subtitle": "Seamlessly works across iOS, Android, desktop browsers, and directly inside Telegram.",
+      "tgTitle": "Telegram Mini App & Bot",
+      "tgDesc": "Launches instantly with no extra app to install. Notifications arrive right in your messenger.",
+      "tgCta": "Open Bot",
+      "iosTitle": "iOS (in Safari)",
+      "iosDesc": "Open it in Safari and add it to your Home Screen — one tap to launch from any iPhone.",
+      "iosCta": "iOS Quick Setup",
+      "androidTitle": "Android (in Chrome)",
+      "androidDesc": "The same interface as on desktop. Add a home-screen shortcut from the Chrome menu.",
+      "androidCta": "Android Setup",
+      "webTitle": "Web Browser (Desktop)",
+      "webDesc": "Comfortable full-screen interface designed for laptops and desktop setups.",
+      "webCta": "Launch Web Version"
+    },
+    "modal": {
+      "title": "Constella on your home screen",
+      "desc": "Constella runs in your browser or opens with one tap in Telegram. Adding a home-screen shortcut takes seconds:",
+      "pwaStep1": "1. Open the link in Safari (iOS) or Chrome (Android)",
+      "pwaStep2": "2. Tap \"Share\" (arrow icon) or the menu (⋮)",
+      "pwaStep3": "3. Choose “Add to Home Screen” (iOS) or “Add to Home screen” (Android)",
+      "close": "Close"
+    },
+    "faq": {
+      "badge": "❓ Frequently Asked Questions",
+      "title": "Everything You Need to Know",
+      "subtitle": "The essentials on privacy, pricing and community rules.",
+      "q1": "When does the AI assistant arrive?",
+      "a1": "It is in development. The idea: read shared interests, both profiles and the conversation context, then suggest topics and questions that actually fit. We will announce the launch in the app and on the blog.",
+      "q2": "Do other users see my phone number or Telegram handle?",
+      "a2": "No. Everything (swipes, text chat and voice messages) happens inside the platform without exposing your number. Sharing a direct Telegram contact is possible only when both people opt in via “Share contact”.",
+      "q3": "Is a paid subscription required to use Constella?",
+      "a3": "No. The core of Constella — daily Orbit swipes, messaging, voice notes, quests and achievements — is completely free. VIP adds unlimited swipes, Who Liked You, Incognito and Passport.",
+      "q4": "How does photo and 18+ verification work?",
+      "a4": "Uploaded photos are processed through AI moderation filters and human review. Constella is strictly 18+ to maintain community integrity.",
+      "q5": "How do I pay for VIP and in-app items?",
+      "a5": "Payments are made seamlessly through Telegram Stars via Apple Pay, Google Pay, or bank cards directly in the Telegram client.",
+      "q6": "Can I use Constella on desktop or laptop?",
+      "a6": "Yes! Constella works beautifully in desktop web browsers where you can log in with email or Telegram."
+    },
+    "footer": {
+      "brandDesc": "A cosmic dating platform with honest profiles, photo moderation and private communication.",
+      "rights": "All rights reserved.",
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Service",
+      "support": "Support",
+      "community": "Community Guidelines",
+      "legal18": "Strictly for adults aged 18 and over."
+    }
+  },
+  "common": {
+    "language": "Language",
+    "skipToContent": "Skip to content",
+    "notFound": "Page not found",
+    "notFoundHint": "The link may be out of date, or the page was renamed.",
+    "backHome": "Back to home",
+    "errorTitle": "Something went wrong",
+    "errorHint": "Try reloading the page in a few minutes."
+  },
+  "blog":   {
+    "title": "Blog",
+    "subtitle": "What changes in the product and how to date safely.",
+    "topics": "Topics",
+    "allTopics": "All",
+    "empty": "The first articles will appear here soon.",
+    "loadMore": "Older articles",
+    "minutes": "min read",
+    "rss": "RSS feed",
+    "backToBlog": "Back to the blog",
+    "toc": "Contents",
+    "teaserBadge": "News",
+    "teaserTitle": "What’s new at Constella",
+    "teaserSubtitle": "Product updates and practical advice for dating safely.",
+    "teaserCta": "All articles"
+  },
+  "meta": {
+    "home": {
+      "title": "Constella — dating built on shared interests",
+      "desc": "18+ dating in Telegram and the browser: a daily Orbit of profiles, real-time chat, voice messages, photo moderation and VIP paid in Telegram Stars.",
+      "ogTitle": "Constella — dating under your constellation"
+    },
+    "blog": {
+      "title": "The Constella blog",
+      "desc": "Product changes and dating-safety notes — in Ukrainian, English, German and French."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "desc": "The link may be out of date, or the page was renamed."
+    },
+    "legal": {
+      "privacy": "Privacy policy",
+      "privacyDesc": "What data Constella stores, why it is stored, how long it is kept and how to delete it.",
+      "terms": "Terms of use",
+      "termsDesc": "Rules for using Constella, the age requirement, the VIP subscription and termination.",
+      "community": "Community guidelines",
+      "communityDesc": "What is allowed on Constella, and how moderation and reports work."
+    }
+  },
+  "legal": {
+    "note": "This page describes how the service is actually built. It is not legal advice — have it reviewed before publishing.",
+    "privacy": [
+      {
+        "h": "What we store",
+        "p": "A Telegram id or an email with a password hash, birthdate, gender, city, interests, photos, voice and text messages, swipes, matches, progress and active entitlements."
+      },
+      {
+        "h": "Why",
+        "p": "Nearby matching, the daily Orbit, safety and moderation, and delivering VIP. We do not sell your data to advertisers."
+      },
+      {
+        "h": "Location",
+        "p": "A profile shows the city and an approximate distance, never an exact address. VIP adds Passport, which lets you deliberately pick another city."
+      },
+      {
+        "h": "Age and moderation",
+        "p": "Registration is 18+: the birthdate is checked when the profile is created. Every photo goes through an automatic check and a human review."
+      },
+      {
+        "h": "Payments",
+        "p": "Purchases run on Telegram Stars, processed by Telegram. We keep only the order and the resulting entitlement — no card data reaches us."
+      },
+      {
+        "h": "Deletion",
+        "p": "Deleting your account from the settings removes the profile, photos, chats and progress. Privacy questions go to support from the bot."
+      }
+    ],
+    "terms": [
+      {
+        "h": "18+ only",
+        "p": "The service is for adults; registering means you confirm you are 18 or older."
+      },
+      {
+        "h": "One account",
+        "p": "One profile per person. Access is not transferable and stays your responsibility."
+      },
+      {
+        "h": "Not allowed",
+        "p": "Stalking, threats, scams, other people's photos, spam and any illegal content are grounds for a ban."
+      },
+      {
+        "h": "VIP",
+        "p": "VIP costs 499★ and lasts 30 days with no auto-renewal. The perk list can change; the pricing table shows what is current."
+      },
+      {
+        "h": "Termination",
+        "p": "We can restrict access for rule violations; you can delete your account at any time."
+      },
+      {
+        "h": "Liability",
+        "p": "The service is provided as is. We do not guarantee mutual interest and we are not responsible for meetings outside the platform."
+      }
+    ],
+    "community": [
+      {
+        "h": "Honest profile",
+        "p": "Your own photos, age and interests. Using someone else's pictures is the fastest route to a ban."
+      },
+      {
+        "h": "Consent",
+        "p": "Respect a no. Contacts are exchanged only when both people agree."
+      },
+      {
+        "h": "No scams",
+        "p": "Do not ask for transfers or steer conversations off-platform for money."
+      },
+      {
+        "h": "Content limits",
+        "p": "This is an adults' service, but public pornography, violence and anything involving minors is removed immediately."
+      },
+      {
+        "h": "Moderation",
+        "p": "Photos are checked automatically and by a person; reports and blocks are read by a moderator."
+      },
+      {
+        "h": "Report freely",
+        "p": "Every chat and profile has a report button. Reporting speeds things up; it does not make you the problem."
+      }
+    ]
+  }
+}
