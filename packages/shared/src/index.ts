@@ -4,3 +4,4 @@ export * from './profile.js';
 export * from './auth.js';
 export * from './billing.js';
 export * from './gamification.js';
+export * from './websocket/index.js';
