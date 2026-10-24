@@ -417,3 +417,44 @@ export const supportMessages = pgTable('support_messages', {
 }, (table) => ({
   ticketIdx: index('support_messages_ticket_created_idx').on(table.ticketId, table.createdAt),
 }));
+
+export const BLOG_LOCALES = ['uk', 'en', 'de', 'fr'] as const;
+export type BlogLocale = (typeof BLOG_LOCALES)[number];
+
+export const blogPostGroups = pgTable('blog_post_groups', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// One row per language: each locale needs its own slug, its own SEO strings and its
+// own publish lifecycle, which is what makes hreflang exact instead of approximate.
+export const blogPosts = pgTable('blog_posts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  groupId: uuid('group_id').references(() => blogPostGroups.id, { onDelete: 'cascade' }).notNull(),
+  locale: text('locale').$type<BlogLocale>().notNull(),
+  slug: text('slug').notNull(),
+  title: text('title').notNull(),
+  excerpt: text('excerpt').notNull(),
+  bodyMarkdown: text('body_markdown').notNull(),
+  tags: text('tags').array().default(sql`'{}'::text[]`),
+  coverUrl: text('cover_url'),
+  coverAlt: text('cover_alt'),
+  status: text('status').$type<'draft' | 'published' | 'archived'>().default('draft').notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  readingMinutes: integer('reading_minutes').default(1).notNull(),
+  seoTitle: text('seo_title'),
+  seoDescription: text('seo_description'),
+  ogImageUrl: text('og_image_url'),
+  canonicalUrl: text('canonical_url'),
+  noindex: boolean('noindex').default(false).notNull(),
+  authorUserId: uuid('author_user_id').references(() => users.id, { onDelete: 'set null' }),
+  authorName: text('author_name').default('Constella').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  slugLocaleIdx: uniqueIndex('blog_posts_slug_locale_unique').on(table.slug, table.locale),
+  // Two English rows of the same article would produce a self-conflicting hreflang set.
+  groupLocaleIdx: uniqueIndex('blog_posts_group_locale_unique').on(table.groupId, table.locale),
+  listIdx: index('blog_posts_locale_status_published_idx').on(table.locale, table.status, table.publishedAt),
+  groupIdx: index('blog_posts_group_idx').on(table.groupId),
+}));

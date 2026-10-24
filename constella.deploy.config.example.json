@@ -47,7 +47,8 @@
   },
   "domains": {
     "web_app_url": "https://app-test.constella.pp.ua",
-    "api_url": "https://api-test.constella.pp.ua"
+    "api_url": "https://api-test.constella.pp.ua",
+    "landing_url": "https://constella.pp.ua"
   },
   "urls": {
     "app_url": "https://app-test.constella.pp.ua",

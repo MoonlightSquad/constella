@@ -71,6 +71,13 @@
       "when": 1791570000000,
       "tag": "0009_photos_without_pre_moderation",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791600000000,
+      "tag": "0010_blog_engine",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nuxt build",
-    "dev": "nuxt dev --port 5173",
+    "dev": "nuxt dev --port 5174",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "start": "node .output/server/index.mjs",
@@ -12,8 +12,15 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
+    "@nuxtjs/i18n": "^10.6.0",
+    "@nuxtjs/sitemap": "^9.1.0",
+    "markdown-it": "^15.0.0",
     "nuxt": "^4.6.2",
     "vue": "^3.5.44",
     "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "typescript": "^5.5.0"
   }
 }

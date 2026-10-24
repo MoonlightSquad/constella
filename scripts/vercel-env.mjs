@@ -31,6 +31,7 @@ const rootEnv = readEnv(['.env']);
 const deploymentEnv = readEnv(['.env.vercel']);
 const apiFileEnv = readEnv(['apps/api/.env']);
 const webFileEnv = readEnv(['apps/web/.env']);
+const landingFileEnv = readEnv(['apps/landing/.env']);
 const botFileEnv = readEnv(['apps/bot/.env']);
 const deploymentConfig = loadDeploymentConfig(rootDir);
 const webhookSecrets = [rootEnv, apiFileEnv, botFileEnv, process.env]
@@ -66,6 +67,7 @@ const writeEnvValue = (relativePath, name, value) => {
 
 const apiEnv = { ...rootEnv, ...apiFileEnv, ...deploymentEnv, ...process.env, TELEGRAM_WEBHOOK_SECRET: webhookSecret };
 const webEnv = { ...rootEnv, ...webFileEnv, ...deploymentEnv, ...process.env };
+const landingEnv = { ...rootEnv, ...landingFileEnv, ...deploymentEnv, ...process.env };
 const configVercelToken = deploymentConfig.vercel?.api_token;
 
 const webUrl = [webEnv.NUXT_PUBLIC_APP_URL, webEnv.WEB_APP_URL]
@@ -78,6 +80,13 @@ const configuredApiUrl = [
 const apiUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configuredApiUrl)
   ? 'https://api-test.constella.pp.ua'
   : configuredApiUrl;
+const configuredLandingUrl = [landingEnv.NUXT_PUBLIC_SITE_URL, landingEnv.SITE_URL]
+  .find((value) => value && !isPlaceholder(value)) || 'https://constella.pp.ua';
+const landingUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configuredLandingUrl)
+  ? 'https://constella.pp.ua'
+  : configuredLandingUrl;
+const landingBotUsername = [landingEnv.NUXT_PUBLIC_BOT_USERNAME, landingEnv.BOT_USERNAME, botFileEnv.BOT_USERNAME]
+  .find((value) => value && !isPlaceholder(value));
 
 const projects = {
   api: {
@@ -131,11 +140,25 @@ const projects = {
       NUXT_PUBLIC_SENTRY_DSN: {},
     },
   },
+  landing: {
+    name: process.env.VERCEL_LANDING_PROJECT || rootEnv.VERCEL_LANDING_PROJECT || 'constella-landing',
+    cwd: path.join(rootDir, 'apps/landing'),
+    env: landingEnv,
+    variables: {
+      // Canonical host for prerendered markup, hreflang, sitemap and RSS.
+      NUXT_PUBLIC_SITE_URL: { value: landingUrl, required: true },
+      // Server-to-server only: the landing bundle never calls the API, so no
+      // NUXT_PUBLIC_API_URL is needed and the API CORS allowlist stays untouched.
+      NUXT_API_INTERNAL_BASE: { value: apiUrl, required: true },
+      NUXT_PUBLIC_APP_URL: { value: webUrl, required: true },
+      NUXT_PUBLIC_BOT_USERNAME: { value: landingBotUsername, required: true },
+    },
+  },
 };
 
-const projectKeys = selectedProject === 'all' ? ['api', 'web'] : [selectedProject];
+const projectKeys = selectedProject === 'all' ? ['api', 'web', 'landing'] : [selectedProject];
 if (projectKeys.some((key) => !Object.hasOwn(projects, key))) {
-  console.error('Usage: pnpm vercel:env [all|api|web] [--dry-run]');
+  console.error('Usage: pnpm vercel:env [all|api|web|landing] [--dry-run]');
   process.exit(2);
 }
 
@@ -199,6 +222,7 @@ const runVercel = (project, command, input) => {
       ...process.env,
       VERCEL_API_PROJECT: process.env.VERCEL_API_PROJECT || deploymentEnv.VERCEL_API_PROJECT || rootEnv.VERCEL_API_PROJECT || projects.api.name,
       VERCEL_WEB_PROJECT: process.env.VERCEL_WEB_PROJECT || deploymentEnv.VERCEL_WEB_PROJECT || rootEnv.VERCEL_WEB_PROJECT || projects.web.name,
+      VERCEL_LANDING_PROJECT: process.env.VERCEL_LANDING_PROJECT || deploymentEnv.VERCEL_LANDING_PROJECT || rootEnv.VERCEL_LANDING_PROJECT || projects.landing.name,
       ...(!process.env.VERCEL_TOKEN && deploymentEnv.VERCEL_TOKEN ? { VERCEL_TOKEN: deploymentEnv.VERCEL_TOKEN } : {}),
     },
     input,

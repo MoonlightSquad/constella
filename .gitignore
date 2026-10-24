@@ -6,6 +6,9 @@
 .cache
 dist
 
+# Turborepo run artifacts (cache/ and the daemon pid + IPC are per-machine)
+.turbo
+
 # Node dependencies
 node_modules
 

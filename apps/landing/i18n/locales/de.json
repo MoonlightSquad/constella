@@ -1,0 +1,279 @@
+{
+  "landing": {
+    "nav": {
+      "features": "Funktionen",
+      "ai": "KI-Assistent",
+      "pricing": "Preise & VIP",
+      "download": "Download",
+      "blog": "Blog",
+      "faq": "FAQ",
+      "launchApp": "WebApp starten",
+      "openBot": "Telegram Bot"
+    },
+    "hero": {
+      "badge": "✨ Dating nach gemeinsamen Interessen",
+      "title1": "Finde Menschen, die deine",
+      "titleGradient": "Sterne teilen",
+      "title2": "und deinen Rhythmus",
+      "subtitle": "Constella ist eine Dating-Plattform der nächsten Generation. Finde echte Verbindungen über gemeinsame Interessen, Instant-Chat und Sprachnachrichten.",
+      "ctaTg": "In Telegram starten",
+      "ctaWeb": "Web-Version öffnen",
+      "trustBadge": "🔒 100% Datenschutz · Kein Kontakt-Sharing ohne Zustimmung · 18+",
+      "statsFact1": "bis zu 8 Profile pro Tag",
+      "statsFact2": "20 kostenlose Funken pro Tag",
+      "statsFact3": "VIP: 499★ für 30 Tage"
+    },
+    "ai": {
+      "badge": "🕐 Demnächst · Constella KI",
+      "title": "Intelligenter KI-Dialogassistent",
+      "subtitle": "Nie wieder peinliches „Hey, wie geht’s?“. Der Assistent wird gemeinsame Interessen, Profilangaben und den Chatverlauf auswerten und passende Gesprächseinstiege vorschlagen.",
+      "soonNote": "Diese Funktion ist in Entwicklung. Das Mockup oben ist ein Designprototyp, kein Live-Chat.",
+      "feat1Title": "Personalisierte Icebreaker",
+      "feat1Desc": "Originelle Starter-Nachrichten basierend auf Hobbys und Antworten im Profil.",
+      "feat2Title": "Vibe- & Tonfall-Analyse",
+      "feat2Desc": "Die KI erkennt Gemeinsamkeiten und empfiehlt Themen, die echte Begeisterung wecken.",
+      "feat3Title": "Echtzeit-Tipps im Chat",
+      "feat3Desc": "Wenn das Gespräch stockt, erhältst du mit einem Klick passende Fragen oder humorvolle Impulse.",
+      "feat4Title": "Strikte Privatsphäre",
+      "feat4Desc": "Alle Anfragen werden anonymisiert verarbeitet, ohne Speicherung durch Dritte.",
+      "demoHeader": "Interface-Konzept · Constella KI",
+      "demoProfileName": "Sophia, 24",
+      "demoProfileBio": "\"Liebt Jazz, analoge Fotografie und lange Spaziergänge. Suche jemanden für tiefgründige Gespräche.\"",
+      "demoPromptTitle": "✨ Vorschlag des KI-Assistenten:",
+      "demoPromptText": "\"Hi Sophia! Tolle analoge Aufnahmen — mit welcher Kamera fotografierst du am liebsten und wo ist dein Lieblings-Spot?\"",
+      "demoBadge": "VIP-Stufe"
+    },
+    "features": {
+      "badge": "🚀 Erlebnis der nächsten Stufe",
+      "title": "Warum Menschen Constella wählen",
+      "subtitle": "Wir vereinen kosmische Ästhetik, modernste Privatsphäre und Gamification für echte Begegnungen.",
+      "orbitTitle": "Tägliche Orbit",
+      "orbitDesc": "Flüssige Swipe-Karten, perfekt abgestimmt auf Smartphones und Telegram Mini Apps.",
+      "postgisTitle": "Präzise PostGIS-Standortsuche",
+      "postgisDesc": "Finde Kontakte in deiner Nähe, während dein genauer Standort stets geheim bleibt.",
+      "chatTitle": "Echtzeit-Chat",
+      "chatDesc": "Text und Sprachnachrichten kommen sofort über einen gesicherten Kanal — dein privater Telegram-Account bleibt deine Sache.",
+      "voiceTitle": "HD-Sprachnachrichten",
+      "voiceDesc": "Teile deine Stimme und Emotionen mit integrierter Sprachaufnahme und stylischem Audioplayer.",
+      "safeTitle": "Duale Moderation & 18+ Schutz",
+      "safeDesc": "Automatische KI-Filterung und Moderatoren-Review sorgen für eine sichere und respektvolle Community.",
+      "starsTitle": "Gamification & Telegram Stars",
+      "starsDesc": "Sammle XP für gute Gespräche, erfülle Quests und schalte VIP bequem mit Telegram Stars frei."
+    },
+    "how": {
+      "badge": "✨ In 3 Schritten starten",
+      "title": "So funktioniert Constella",
+      "subtitle": "Nur drei einfache Schritte trennen dich von deinem ersten himmlischen Match.",
+      "step1Num": "01",
+      "step1Title": "Blitzschneller Einstieg",
+      "step1Desc": "Öffne Constella mit einem Klick in Telegram oder melde dich per E-Mail im Browser an.",
+      "step2Num": "02",
+      "step2Title": "Dein Sternenbild gestalten",
+      "step2Desc": "Lade Fotos hoch, wähle deine Stadt und markiere Themen, über die du stundenlang reden kannst.",
+      "step3Num": "03",
+      "step3Title": "Gegenseitige Funken und Chat",
+      "step3Desc": "Hol dir deine tägliche Orbit passender Profile, chatte in Echtzeit und sende Sprachnachrichten."
+    },
+    "pricing": {
+      "badge": "💎 Transparente Pläne",
+      "title": "Wähle deine Sternenstufe",
+      "subtitle": "Die Kernfunktionen bleiben kostenlos. VIP schaltet das volle Swipe-Limit, Who Liked You, Inkognito und Reisepass frei — bezahlt mit Telegram Stars.",
+      "freeTitle": "Standard Entdecker",
+      "freePrice": "Kostenlos",
+      "freePeriod": "für immer",
+      "freeFeat1": "Bis zu 20 tägliche Swipes in der Orbit",
+      "freeFeat2": "Sichere Text-Chats nach Match",
+      "freeFeat3": "Sprachnachrichten im Chat",
+      "freeFeat4": "Standortsuche in deiner Stadt",
+      "freeCta": "Kostenlos starten",
+      "vipTitle": "VIP Constella",
+      "vipBadge": "BELIEBT",
+      "vipPeriod": "über Telegram Stars",
+      "vipFeat2": "👀 Sofort sehen, wer dich geliked hat",
+      "vipFeat3": "♾️ Unbegrenzte Swipes & Zurück-Funktion",
+      "vipFeat4": "🕵️ Unsichtbarer Inkognito-Modus",
+      "vipFeat5": "🌍 Globaler Reisepass für jede Stadt",
+      "vipCta": "VIP freischalten"
+    },
+    "platforms": {
+      "badge": "📱 Überall verfügbar",
+      "title": "Erlebe Constella überall",
+      "subtitle": "Funktioniert nahtlos auf iOS, Android, im Browser und direkt in Telegram.",
+      "tgTitle": "Telegram Mini App & Bot",
+      "tgDesc": "Sofortstart ohne Zusatz-App. Benachrichtigungen kommen direkt in deinem Messenger.",
+      "tgCta": "Bot öffnen",
+      "iosTitle": "iOS (in Safari)",
+      "iosDesc": "Öffne es in Safari und füge es zum Home-Bildschirm hinzu — Start per Tipp auf jedem iPhone.",
+      "iosCta": "iOS Anleitung",
+      "androidTitle": "Android (in Chrome)",
+      "androidDesc": "Dieselbe Oberfläche wie am Desktop. Verknüpfung über das Chrome-Menü zum Startbildschirm hinzufügen.",
+      "androidCta": "Android Anleitung",
+      "webTitle": "Desktop Browser",
+      "webDesc": "Komfortable Vollbild-Oberfläche, optimiert für Laptops und große Bildschirme.",
+      "webCta": "Im Web öffnen"
+    },
+    "modal": {
+      "title": "Constella auf dem Startbildschirm",
+      "desc": "Constella läuft im Browser oder öffnet sich per Tipp in Telegram. Eine Verknüpfung anzulegen dauert Sekunden:",
+      "pwaStep1": "1. Öffne den Link in Safari (iOS) oder Chrome (Android)",
+      "pwaStep2": "2. Tippe auf „Teilen“ (Pfeilsymbol) oder das Menü (⋮)",
+      "pwaStep3": "3. Wähle „Zum Home-Bildschirm“ (iOS) bzw. „Zum Startbildschirm hinzufügen“ (Android)",
+      "close": "Schließen"
+    },
+    "faq": {
+      "badge": "❓ Häufige Fragen",
+      "title": "Häufig gestellte Fragen",
+      "subtitle": "Das Wichtigste zu Datenschutz, Preisen und Community-Regeln.",
+      "q1": "Wann kommt der KI-Assistent?",
+      "a1": "Die Funktion ist in Entwicklung. Die Idee: gemeinsame Interessen, beide Profile und den Chatverlauf auswerten und passende Themen und Fragen vorschlagen. Der Start wird in der App und im Blog angekündigt.",
+      "q2": "Sehen andere Nutzer meine Telefonnummer oder Telegram?",
+      "a2": "Nein. Alles (Swipes, Text-Chat und Sprachnachrichten) läuft innerhalb der Plattform, ohne dass deine Nummer sichtbar wird. Den direkten Telegram-Kontakt teilt man nur, wenn beide über „Kontakt teilen“ zustimmen.",
+      "q3": "Ist ein kostenpflichtiges Abonnement erforderlich?",
+      "a3": "Nein. Der Kern von Constella — tägliche Orbit-Swipes, Nachrichten, Sprachnotizen, Quests und Erfolge — ist komplett kostenlos. VIP ergänzt unbegrenzte Swipes, Who Liked You, Inkognito und Reisepass.",
+      "q4": "Wie funktioniert die Foto- und 18+-Verifikation?",
+      "a4": "Fotos werden durch KI-Filter und menschliche Moderatoren geprüft. Constella ist ausschließlich für volljährige Nutzer (18+) zugelassen.",
+      "q5": "Wie bezahle ich für VIP und Extras?",
+      "a5": "Zahlungen erfolgen sicher über Telegram Stars mit Apple Pay, Google Pay oder Kreditkarte direkt in Telegram.",
+      "q6": "Kann ich Constella auf dem PC oder Laptop nutzen?",
+      "a6": "Ja! Constella läuft in jedem modernen Desktop-Browser mit E-Mail- oder Telegram-Login."
+    },
+    "footer": {
+      "brandDesc": "Eine kosmische Dating-Plattform mit ehrlichen Profilen, Foto-Moderation und privater Kommunikation.",
+      "rights": "Alle Rechte vorbehalten.",
+      "privacy": "Datenschutz",
+      "terms": "Nutzungsbedingungen",
+      "support": "Hilfe & Support",
+      "community": "Community-Richtlinien",
+      "legal18": "Ausschließlich für Personen ab 18 Jahren."
+    }
+  },
+  "common": {
+    "language": "Sprache",
+    "skipToContent": "Zum Inhalt springen",
+    "notFound": "Seite nicht gefunden",
+    "notFoundHint": "Der Link ist möglicherweise veraltet oder die Seite wurde umbenannt.",
+    "backHome": "Zur Startseite",
+    "errorTitle": "Etwas ist schiefgelaufen",
+    "errorHint": "Versuche die Seite in einigen Minuten neu zu laden."
+  },
+  "blog":   {
+    "title": "Blog",
+    "subtitle": "Was sich im Produkt ändert und wie du sicher daten kannst.",
+    "topics": "Themen",
+    "allTopics": "Alle",
+    "empty": "Die ersten Artikel erscheinen hier in Kürze.",
+    "loadMore": "Ältere Artikel",
+    "minutes": "Min. Lesezeit",
+    "rss": "RSS-Feed",
+    "backToBlog": "Zurück zum Blog",
+    "toc": "Inhalt",
+    "teaserBadge": "Neuigkeiten",
+    "teaserTitle": "Was ist neu bei Constella",
+    "teaserSubtitle": "Produkt-Updates und praktische Tipps für sicheres Dating.",
+    "teaserCta": "Alle Artikel"
+  },
+  "meta": {
+    "home": {
+      "title": "Constella — Dating nach gemeinsamen Interessen",
+      "desc": "18+-Dating in Telegram und im Browser: tägliche Orbit-Profile, Echtzeit-Chat, Sprachnachrichten, Foto-Moderation und VIP mit Telegram Stars.",
+      "ogTitle": "Constella — Dating unter deinem Sternbild"
+    },
+    "blog": {
+      "title": "Constella Blog",
+      "desc": "Produktänderungen und Tipps für sicheres Dating — auf Ukrainisch, Englisch, Deutsch und Französisch."
+    },
+    "notFound": {
+      "title": "Seite nicht gefunden",
+      "desc": "Der Link ist möglicherweise veraltet oder die Seite wurde umbenannt."
+    },
+    "legal": {
+      "privacy": "Datenschutzerklärung",
+      "privacyDesc": "Welche Daten Constella speichert, warum, wie lange und wie du sie löschen lässt.",
+      "terms": "Nutzungsbedingungen",
+      "termsDesc": "Regeln für Constella, Mindestalter, VIP-Abo und Beendigung des Zugangs.",
+      "community": "Community-Regeln",
+      "communityDesc": "Was in Constella erlaubt ist und wie Moderation und Meldungen funktionieren."
+    }
+  },
+  "legal": {
+    "note": "Diese Seite beschreibt, wie der Dienst tatsächlich funktioniert. Das ist keine Rechtsberatung — bitte vor Veröffentlichung prüfen lassen.",
+    "privacy": [
+      {
+        "h": "Was wir speichern",
+        "p": "Telegram-ID oder E-Mail mit Passwort-Hash, Geburtsdatum, Geschlecht, Stadt, Interessen, Fotos, Sprach- und Textnachrichten, Swipes, Matches, Fortschritt und aktive Berechtigungen."
+      },
+      {
+        "h": "Wozu",
+        "p": "Matching in der Nähe, die tägliche Orbit, Sicherheit und Moderation sowie VIP. Wir verkaufen deine Daten nicht an Werbetreibende."
+      },
+      {
+        "h": "Standort",
+        "p": "Ein Profil zeigt Stadt und ungefähre Entfernung, nie eine genaue Adresse. Mit VIP kannst du über Reisepass bewusst eine andere Stadt wählen."
+      },
+      {
+        "h": "Alter und Moderation",
+        "p": "Registration ab 18: Das Geburtsdatum wird beim Anlegen des Profils geprüft. Jedes Foto läuft durch einen Automatik-Check und eine menschliche Prüfung."
+      },
+      {
+        "h": "Zahlungen",
+        "p": "Gekauft wird mit Telegram Stars, abgewickelt von Telegram. Bei uns liegen nur Bestellung und Berechtigung — Kartendaten erreichen uns nicht."
+      },
+      {
+        "h": "Löschen",
+        "p": "Konto löschen in den Einstellungen entfernt Profil, Fotos, Chats und Fortschritt. Datenschutzfragen gehen an den Support im Bot."
+      }
+    ],
+    "terms": [
+      {
+        "h": "Nur 18+",
+        "p": "Der Dienst ist für Erwachsene; mit der Registration bestätigst du dein Alter."
+      },
+      {
+        "h": "Ein Konto",
+        "p": "Ein Profil pro Person. Zugang ist nicht übertragbar und bleibt deine Verantwortung."
+      },
+      {
+        "h": "Verboten",
+        "p": "Stalking, Drohungen, Betrug, fremde Fotos, Spam und illegale Inhalte führen zur Sperre."
+      },
+      {
+        "h": "VIP",
+        "p": "VIP kostet 499★ und gilt 30 Tage ohne automatische Verlängerung. Der Umfang kann sich ändern; die Preistabelle zeigt den Stand."
+      },
+      {
+        "h": "Beendigung",
+        "p": "Bei Regelverstößen können wir den Zugang einschränken; du kannst dein Konto jederzeit löschen."
+      },
+      {
+        "h": "Haftung",
+        "p": "Der Dienst wird wie bereitgestellt. Wir garantieren keine Gegenseitigkeit und haften nicht für Treffen außerhalb der Plattform."
+      }
+    ],
+    "community": [
+      {
+        "h": "Ehrliches Profil",
+        "p": "Eigene Fotos, eigenes Alter, eigene Interessen. Fremde Bilder sind der schnellste Weg zur Sperre."
+      },
+      {
+        "h": "Einverständnis",
+        "p": "Akzeptiere ein Nein. Kontakte werden nur getauscht, wenn beide zustimmen."
+      },
+      {
+        "h": "Kein Betrug",
+        "p": "Keine Geldforderungen und kein Weglocken auf andere Plattformen."
+      },
+      {
+        "h": "Inhaltliche Grenzen",
+        "p": "Ein Dienst für Erwachsene — aber öffentliche Pornografie, Gewalt und alles mit Minderjährigen wird sofort entfernt."
+      },
+      {
+        "h": "Moderation",
+        "p": "Fotos werden automatisch und von Menschen geprüft; Meldungen und Sperren liest die Moderation."
+      },
+      {
+        "h": "Melde dich",
+        "p": "In jedem Chat und Profil gibt es eine Melden-Funktion. Sie beschleunigt die Prüfung, statt dich zum Problem zu machen."
+      }
+    ]
+  }
+}
