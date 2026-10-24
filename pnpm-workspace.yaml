@@ -1,5 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+allowBuilds:
+  esbuild: true
 minimumReleaseAgeExclude:
   - electron-to-chromium@1.5.463
