@@ -117,8 +117,8 @@ const submit = () => {
 
 <style scoped>
 .auth-shell { min-height: 100svh; padding: 17px 20px 38px; background: radial-gradient(ellipse at 50% 0%, #1b3631 0%, #0d1718 56%); color: #f3f5f2; }
-.auth-topline { display: flex; width: min(100%, 960px); height: 43px; align-items: center; justify-content: space-between; margin: 0 auto; }
-.brand { display: inline-flex; align-items: center; gap: 9px; color: #f3f5f2; font-size: 17px; font-weight: 800; text-decoration: none; }
+.auth-topline { display: flex; width: min(100%, 960px); min-height: 44px; align-items: center; justify-content: space-between; margin: 0 auto; }
+.brand { display: inline-flex; min-height: 44px; align-items: center; gap: 9px; color: #f3f5f2; font-size: 17px; font-weight: 800; text-decoration: none; }
 .brand span { color: #e4b46c; font-size: 22px; }
 .auth-panel { width: min(100%, 440px); margin: clamp(34px, 8vh, 75px) auto 0; border: 1px solid #314343; border-radius: 10px; padding: clamp(22px, 6vw, 34px); background: #132122ee; box-shadow: 0 28px 90px #0003; }
 .eyebrow { margin: 0 0 13px; color: #85c9b9; font-size: 9px; font-weight: 750; letter-spacing: .12em; }
@@ -132,17 +132,17 @@ h1 { margin: 0; font-size: 30px; line-height: 1.15; }
 .auth-form { display: grid; gap: 14px; }
 .field { display: grid; gap: 7px; color: #d4dfdc; font-size: 12px; }
 .field small { color: #83938f; font-size: 10px; }
-.field input { width: 100%; min-height: 43px; border: 1px solid #344748; border-radius: 7px; padding: 10px 12px; background: #0d1718; color: #f5f7f6; outline: none; }
+.field input { width: 100%; min-height: 44px; border: 1px solid #344748; border-radius: 7px; padding: 10px 12px; background: #0d1718; color: #f5f7f6; outline: none; }
 .field input:focus { border-color: #82c7b7; box-shadow: 0 0 0 2px #82c7b722; }
-.consent { display: flex; align-items: start; gap: 9px; color: #bdcbc7; font-size: 11px; line-height: 1.45; }
-.consent input { width: 16px; height: 16px; flex: 0 0 auto; margin: 1px 0 0; accent-color: #82c7b7; }
+.consent { display: flex; align-items: start; gap: 9px; min-height: 44px; color: #bdcbc7; font-size: 11px; line-height: 1.45; cursor: pointer; }
+.consent input { width: 20px; height: 20px; flex: 0 0 auto; margin: 0; accent-color: #82c7b7; }
 .form-error { margin: 0; color: #ff9c8f; font-size: 12px; line-height: 1.5; }
 .form-notice { margin: 0; color: #9bd5c5; font-size: 12px; line-height: 1.5; }
 .account-help { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 14px; }
-.account-help button { border: 0; padding: 0; background: transparent; color: #9bd5c5; font-size: 11px; }
+.account-help button { border: 0; background: transparent; color: #9bd5c5; font-size: 11px; cursor: pointer; padding: 14px 8px; margin: -14px -8px; }
 .submit-button { margin-top: 3px; background: #d9ad6d; color: #18211e; }
 .submit-button:disabled { cursor: wait; opacity: .6; }
-.mode-switch { display: block; margin: 17px auto 0; border: 0; background: transparent; color: #9bd5c5; font-size: 11px; }
+.mode-switch { display: block; margin: 1px auto -6px; border: 0; background: transparent; color: #9bd5c5; font-size: 11px; cursor: pointer; padding: 16px 10px; }
 .auth-footnote { max-width: 440px; margin: 16px auto 0; color: #82928e; text-align: center; font-size: 10px; line-height: 1.5; }
 @media (max-width: 420px) { .auth-shell { padding-right: 14px; padding-left: 14px; } .auth-panel { margin-top: 28px; } }
 </style>

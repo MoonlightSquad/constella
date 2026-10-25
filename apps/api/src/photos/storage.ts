@@ -10,6 +10,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
 const uploadMimes = new Map([
   ['image/jpeg', 'jpg'],
   ['image/png', 'png'],
@@ -23,6 +24,11 @@ const voiceMimes = new Map([
   ['audio/mpeg', 'mp3'],
   ['audio/wav', 'wav'],
   ['audio/aac', 'aac'],
+]);
+
+const videoMimes = new Map([
+  ['video/mp4', 'mp4'],
+  ['video/webm', 'webm'],
 ]);
 
 export const isPhotoStorageConfigured = () => Boolean(
@@ -79,6 +85,20 @@ export const createVoiceUpload = async (userId: string, contentType: string) => 
   return { objectKey, uploadUrl, expiresInSeconds: 600, maxBytes: MAX_UPLOAD_BYTES, contentType };
 };
 
+export const createVideoUpload = async (userId: string, contentType: string) => {
+  const extension = videoMimes.get(contentType);
+  if (!extension) throw new Error('Only MP4 or WebM videos are accepted.');
+  const objectKey = `uploads/${userId}/${randomUUID()}.${extension}`;
+  const command = new PutObjectCommand({
+    Bucket: bucket(),
+    Key: objectKey,
+    ContentType: contentType,
+    CacheControl: 'private, no-store',
+  });
+  const uploadUrl = await getSignedUrl(getClient(), command, { expiresIn: 600 });
+  return { objectKey, uploadUrl, expiresInSeconds: 600, maxBytes: MAX_VIDEO_BYTES, contentType };
+};
+
 export const processVoiceUpload = async (userId: string, objectKey: string, contentType: string) => {
   const extension = voiceMimes.get(contentType);
   if (!extension || !objectKey.startsWith(`uploads/${userId}/`) || objectKey.includes('..')) {
@@ -113,6 +133,43 @@ export const processVoiceUpload = async (userId: string, objectKey: string, cont
   }));
 
   return { audioKey, publicUrl, sizeBytes: buffer.length };
+};
+
+export const processVideoUpload = async (userId: string, objectKey: string, contentType: string) => {
+  const extension = videoMimes.get(contentType);
+  if (!extension || !objectKey.startsWith(`uploads/${userId}/`) || objectKey.includes('..')) {
+    throw new Error('Invalid or unauthorized video upload object.');
+  }
+  const client = getClient();
+  const head = await client.send(new HeadObjectCommand({ Bucket: bucket(), Key: objectKey }));
+  if (!head.ContentLength || head.ContentLength > MAX_VIDEO_BYTES || head.ContentLength < 1) {
+    throw new Error('Video file must be between 1 byte and 30 MB.');
+  }
+  if (head.ContentType !== contentType) throw new Error('Uploaded content type does not match the signed request.');
+
+  const videoId = randomUUID();
+  const videoKey = `videos/${userId}/${videoId}.${extension}`;
+  const response = await client.send(new GetObjectCommand({ Bucket: bucket(), Key: objectKey }));
+  if (!response.Body) throw new Error('Uploaded video could not be read.');
+  const buffer = Buffer.from(await response.Body.transformToByteArray());
+
+  await client.send(new PutObjectCommand({
+    Bucket: bucket(),
+    Key: videoKey,
+    Body: buffer,
+    ContentType: contentType,
+    ContentLength: buffer.length,
+    CacheControl: 'public, max-age=31536000, immutable',
+  }));
+
+  const baseUrl = process.env.S3_PUBLIC_BASE_URL!.replace(/\/$/, '');
+  const publicUrl = `${baseUrl}/${videoKey.split('/').map(encodeURIComponent).join('/')}`;
+  await client.send(new DeleteObjectsCommand({
+    Bucket: bucket(),
+    Delete: { Objects: [{ Key: objectKey }], Quiet: true },
+  }));
+
+  return { videoKey, publicUrl, sizeBytes: buffer.length };
 };
 
 export const processPhotoUpload = async (userId: string, objectKey: string, contentType: string) => {

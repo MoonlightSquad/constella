@@ -1,14 +1,26 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, eq } from 'drizzle-orm';
-import { identities, paymentIntents, telegramStarPayments, userEntitlements } from '@constella/db';
+import { identities, paymentIntents, telegramStarPayments, userEntitlements, users } from '@constella/db';
 import { PreCheckoutSchema, SuccessfulStarPaymentSchema, TELEGRAM_SUBSCRIPTION_PERIOD_SECONDS } from '@constella/shared';
 import { db } from '@constella/db';
 import { createLogger } from '@constella/shared';
+import { z } from 'zod';
 import { applyPurchase, notifyTelegram } from '../engine/core.js';
+import { notifyUser } from '../push/notify.js';
+import { consumeAuthToken } from '../utils/auth-tokens.js';
 
 const logger = createLogger('payments');
 const telegramDateToDate = (timestamp: number) => new Date(timestamp * 1000);
+
+const TelegramLinkCompleteSchema = z
+  .object({
+    // Код — base64url-хеш 32 байтів, який видає `billing.beginTelegramLink`.
+    code: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    telegramUserId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    telegramUsername: z.string().min(1).max(32).optional(),
+  })
+  .strict();
 
 const hasInternalPaymentToken = (request: FastifyRequest) => {
   const expected = process.env.PAYMENTS_INTERNAL_TOKEN;
@@ -116,7 +128,11 @@ export const registerTelegramPaymentRoutes = (fastify: FastifyInstance) => {
 
       logger.info('Telegram Stars payment recorded', result);
       if (!result.duplicate) {
-        await notifyTelegram(String(payment.telegramUserId), `Оплату ${result.sku} підтверджено. Дякуємо! ⭐`);
+        const receiptText = `Оплату ${result.sku} підтверджено. Дякуємо! ⭐`;
+        await notifyTelegram(String(payment.telegramUserId), receiptText);
+        if (result.userId) {
+          await notifyUser(db, result.userId, { title: 'Constella', body: receiptText, data: { route: 'sky' } });
+        }
       }
       return reply.send({ ok: true, duplicate: result.duplicate });
     } catch (error) {
@@ -125,6 +141,45 @@ export const registerTelegramPaymentRoutes = (fastify: FastifyInstance) => {
       });
       return reply.status(409).send({ error: 'Payment could not be matched to a valid Constella invoice.' });
     }
+  });
+
+  fastify.post('/internal/telegram-link/complete', { schema: { tags: ['Payments'], summary: 'Finish mobile Telegram account linking', security: [{ paymentsToken: [] }], body: { type: 'object', required: ['code', 'telegramUserId'], properties: { code: { type: 'string' }, telegramUserId: { type: 'integer' }, telegramUsername: { type: 'string' } }, additionalProperties: false } } }, async (request, reply) => {
+    if (!hasInternalPaymentToken(request)) return reply.status(401).send({ error: 'Unauthorized.' });
+    const parsed = TelegramLinkCompleteSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send(paymentError('Invalid link details.'));
+    const { code, telegramUserId, telegramUsername } = parsed.data;
+
+    const consumer = await consumeAuthToken(db, code, 'telegram_link');
+    if (!consumer) return reply.send(paymentError('Це посилання прострочене. Створи нове у Constella.'));
+
+    const providerUid = String(telegramUserId);
+    const [existingIdentity] = await db
+      .select({ userId: identities.userId })
+      .from(identities)
+      .where(and(eq(identities.provider, 'telegram'), eq(identities.providerUid, providerUid)))
+      .limit(1);
+    if (existingIdentity && existingIdentity.userId !== consumer.userId) {
+      return reply.send(paymentError('Цей Telegram уже прив’язаний до іншого акаунта Constella.'));
+    }
+    if (!existingIdentity) {
+      const [created] = await db
+        .insert(identities)
+        .values({ provider: 'telegram', providerUid, userId: consumer.userId })
+        .onConflictDoNothing()
+        .returning({ userId: identities.userId });
+      if (!created) return reply.send(paymentError('Цей Telegram уже прив’язаний до іншого акаунта Constella.'));
+    }
+
+    // `users.telegramUsername` читається `shareContact` — без прив'язки з мобільного він лишався порожнім.
+    if (telegramUsername) {
+      await db.update(users).set({ telegramUsername }).where(eq(users.id, consumer.userId));
+    }
+
+    await notifyTelegram(
+      providerUid,
+      'Telegram прив’язано до акаунта Constella. Тепер доступні покупки за ⭐ та нагадування.',
+    );
+    return reply.send({ ok: true });
   });
 
   fastify.get('/internal/users/:telegramUserId/status', { schema: { tags: ['Payments'], summary: 'Get Telegram-linked account entitlements', security: [{ paymentsToken: [] }], params: { type: 'object', required: ['telegramUserId'], properties: { telegramUserId: { type: 'string' } } } } }, async (request, reply) => {
@@ -137,7 +192,6 @@ export const registerTelegramPaymentRoutes = (fastify: FastifyInstance) => {
       .limit(1);
     if (!identity) return reply.send({ linked: false });
     const [entitlement] = await db.select().from(userEntitlements).where(eq(userEntitlements.userId, identity.userId)).limit(1);
-    const { users } = await import('@constella/db');
     const [me] = await db
       .select({
         superlikeBalance: users.superlikeBalance,

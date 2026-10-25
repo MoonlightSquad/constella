@@ -1,0 +1,244 @@
+<script setup lang="ts">
+import { onUnmounted, ref } from 'vue'
+import { useLocale } from '~/composables/useLocale'
+import { useChat } from '~/composables/useChat'
+import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
+import ChatRoomHeader from './ChatRoomHeader.vue'
+import ChatMessageList from './ChatMessageList.vue'
+import ChatComposer from './ChatComposer.vue'
+import CallOverlay from './CallOverlay.vue'
+
+type Match = {
+  id: string
+  createdAt: string
+  profile: { id: string; displayName: string; age: number; city: string | null } | null
+  lastMessage: { body: string; kind: string | null; sentByMe: boolean; createdAt: string } | null
+}
+
+const props = defineProps<{
+  matches: Match[]
+  account: Record<string, any>
+  isLoading: boolean
+}>()
+
+const emit = defineEmits<{
+  toast: [msg: string]
+  refresh: []
+  report: [profile: any, matchId?: string]
+  backToOrbit: []
+}>()
+
+const { $trpc } = useNuxtApp() as any
+const { locale, t } = useLocale()
+const localeTag: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', de: 'de-DE', fr: 'fr-FR' }
+const formatTime = (date: string | Date) =>
+  new Intl.DateTimeFormat(localeTag[locale.value], { hour: '2-digit', minute: '2-digit' }).format(new Date(date))
+
+const getUserId = () => props.account?.userId as string | undefined
+
+// ---------- Chat (WS, messages, media, audio) ----------
+const chat = useChat({
+  onToast: (msg) => emit('toast', msg),
+  onMatchRefresh: async () => { emit('refresh') },
+  onQuestRefresh: async () => { emit('refresh') },
+  getUserId,
+  onCallIncoming: (payload) => {
+    incomingCall.value = payload
+    emit('toast', t('dashboard.callIncoming'))
+  },
+  onCallEnded: () => {
+    endCallUI()
+    emit('toast', t('dashboard.callEnded'))
+  },
+})
+
+const closeRoom = () => chat.closeChat()
+
+// ---------- Voice / note recorder ----------
+const recorder = useVoiceRecorder({
+  onToast: (msg) => emit('toast', msg),
+  getSelectedMatchId: () => chat.selectedMatch.value?.id ?? null,
+  onSend: async (type, payload) => {
+    if (type === 'voice') {
+      await $trpc.social.sendVoiceMessage.mutate({ matchId: payload.matchId, audioUrl: payload.audioUrl, durationSec: payload.durationSec })
+    } else {
+      await $trpc.social.sendMessage.mutate({ matchId: payload.matchId, body: payload.body })
+    }
+    await chat.loadChatMessages()
+    emit('refresh')
+  },
+})
+
+// ---------- Calls ----------
+const activeCall = ref<{ roomId: string; callType: 'audio' | 'video'; peerName: string } | null>(null)
+const incomingCall = ref<{ roomId: string; callType: 'audio' | 'video'; fromId: string; fromName: string; token: string } | null>(null)
+const callTimer = ref(0)
+const isCalling = ref(false)
+let callTimerInterval: number | null = null
+
+const startCallUI = async (callType: 'audio' | 'video') => {
+  if (!chat.selectedMatch.value || isCalling.value) return
+  isCalling.value = true
+  try {
+    const s = await $trpc.social.startCall.mutate({ matchId: chat.selectedMatch.value.id, callType })
+    activeCall.value = { roomId: s.roomId, callType, peerName: chat.selectedMatch.value.profile?.displayName || t('dashboard.traveler') }
+    callTimer.value = 0
+    callTimerInterval = window.setInterval(() => { callTimer.value += 1 }, 1000)
+    await chat.loadChatMessages()
+  } catch (err: any) { emit('toast', err?.message || t('dashboard.loadError')) } finally { isCalling.value = false }
+}
+
+const acceptIncomingCall = () => {
+  if (!incomingCall.value) return
+  activeCall.value = { roomId: incomingCall.value.roomId, callType: incomingCall.value.callType, peerName: incomingCall.value.fromName }
+  incomingCall.value = null
+  callTimer.value = 0
+  callTimerInterval = window.setInterval(() => { callTimer.value += 1 }, 1000)
+}
+
+const declineIncomingCall = () => { incomingCall.value = null }
+
+const endCallUI = () => {
+  if (callTimerInterval) { window.clearInterval(callTimerInterval); callTimerInterval = null }
+  activeCall.value = null
+  incomingCall.value = null
+  callTimer.value = 0
+}
+
+// ---------- Safety ----------
+const requestConfirmation = (message: string) => new Promise<boolean>((resolve) => {
+  const telegram = (window as any).Telegram?.WebApp
+  if (telegram?.showConfirm) telegram.showConfirm(message, resolve)
+  else resolve(window.confirm(message))
+})
+
+const blockProfile = async (profileId: string, matchId?: string) => {
+  if (!(await requestConfirmation(t('dashboard.blockConfirm')))) return
+  try {
+    await $trpc.social.blockProfile.mutate({ profileId })
+    emit('toast', t('dashboard.blocked'))
+    if (matchId && chat.selectedMatch.value?.id === matchId) closeRoom()
+    emit('refresh')
+  } catch (err: any) { emit('toast', err?.message || t('dashboard.loadError')) }
+}
+
+const onPickFile = (file: File) => { void chat.sendMediaMessage(file) }
+
+onUnmounted(() => {
+  chat.closeChatWs()
+  chat.stopAllVoices()
+  endCallUI()
+})
+</script>
+
+<template>
+  <section class="view chats-view">
+    <div v-if="chat.selectedMatch.value" class="chat-panel">
+      <ChatRoomHeader
+        :match="chat.selectedMatch.value"
+        :ws-connected="chat.wsConnected.value"
+        :contact-info="chat.contactInfo.value"
+        :is-sharing-contact="chat.isSharingContact.value"
+        :notifications-enabled="chat.notificationsEnabled.value"
+        @back="closeRoom"
+        @start-call="startCallUI"
+        @share-contact="chat.shareContact()"
+        @block="(pid: string, mid: string) => blockProfile(pid, mid)"
+        @report="(p: any, mid: string) => emit('report', p, mid)"
+        @refresh="chat.loadChatMessages()"
+        @toggle-notifications="chat.toggleNotifications()"
+        @reconnect="(mid: string) => chat.connectChatWs(mid)"
+      />
+      <ChatMessageList
+        :entries="chat.renderedMessages.value"
+        :user-id="getUserId()"
+        :created-at="chat.selectedMatch.value.createdAt"
+        :date-label="t('dashboard.chatDate')"
+        :empty-text="t('dashboard.chatStart')"
+        :parse-voice="chat.parseVoice"
+        :is-voice-playing="chat.isVoicePlaying"
+        :voice-progress-percent="chat.voiceProgressPercent"
+        :message-speed="chat.messageSpeed"
+        :is-pinned="chat.isPinned"
+        @play-voice="(id, url, dur) => chat.playVoice(id, url, dur)"
+        @pause-voice="(id) => chat.pauseVoice(id)"
+        @toggle-speed="(id) => chat.togglePlaybackSpeed(id)"
+        @toggle-pin="(m) => chat.togglePinMedia(m)"
+      />
+      <ChatComposer
+        :chat-mode="recorder.chatMode.value"
+        :chat-draft="chat.chatDraft.value"
+        :is-recording="recorder.isRecording.value"
+        :is-recording-video="recorder.isRecordingVideo.value"
+        :is-sending="chat.isSending.value"
+        :hold-label="recorder.holdLabel.value"
+        :note-stream="recorder.noteStream.value"
+        @update:chat-draft="(v: string) => chat.chatDraft.value = v"
+        @send="chat.sendMessage()"
+        @composer-input="chat.onComposerInput()"
+        @pick-file="onPickFile"
+        @record-down="recorder.onRecordPointerDown"
+        @record-move="recorder.onHoldMove"
+        @record-up="recorder.onRecordPointerUp"
+        @record-cancel="recorder.onRecordPointerCancel"
+        @set-mode="(m: 'voice' | 'note') => recorder.chatMode.value = m"
+      />
+      <p class="chat-footnote">{{ chat.wsConnected.value ? t('dashboard.reconnected') : t('dashboard.connecting') }}</p>
+    </div>
+
+    <template v-else>
+      <p class="eyebrow">{{ t('dashboard.mutualEyebrow') }}</p>
+      <div class="view-heading"><h1>{{ t('dashboard.chats') }}</h1><span class="counter">{{ matches.length }}</span></div>
+      <div v-if="isLoading" class="empty-state">{{ t('dashboard.loadingChats') }}</div>
+      <div v-else-if="matches.length" class="match-list">
+        <button v-for="match in matches" :key="match.id" class="match-row" type="button" @click="chat.openChat(match)">
+          <div class="mini-avatar">{{ match.profile?.city?.slice(0, 1)?.toUpperCase() || '✦' }}</div>
+          <div class="match-copy">
+            <div class="match-title"><strong>{{ match.profile?.displayName || t('dashboard.newMatch') }}</strong><time>{{ match.lastMessage ? formatTime(match.lastMessage.createdAt) : formatTime(match.createdAt) }}</time></div>
+            <p>{{ match.lastMessage ? `${match.lastMessage.sentByMe ? t('dashboard.you') : ''}${chat.previewBody(match.lastMessage.body, match.lastMessage.kind)}` : t('dashboard.matchStart') }}</p>
+          </div>
+          <span class="row-arrow">›</span>
+        </button>
+      </div>
+      <div v-else class="empty-state">
+        <span class="empty-star">♡</span>
+        <h2>{{ t('dashboard.noMatches') }}</h2>
+        <p>{{ t('dashboard.noMatchesHint') }}</p>
+        <button type="button" class="text-button" @click="emit('backToOrbit')">{{ t('dashboard.backOrbit') }}</button>
+      </div>
+    </template>
+
+    <CallOverlay
+      :active-call="activeCall"
+      :incoming-call="incomingCall"
+      :call-timer="callTimer"
+      @accept="acceptIncomingCall"
+      @decline="declineIncomingCall"
+      @end="endCallUI"
+    />
+  </section>
+</template>
+
+<style scoped>
+.view { width: min(100%, 720px); margin: 0 auto; }
+.eyebrow { margin: 0 0 10px; color: #85c9b9; font-size: 10px; font-weight: 750; letter-spacing: .14em; }
+.view-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
+.counter { display: inline-flex; align-items: baseline; gap: 3px; padding: 7px 10px; border: 1px solid #334545; border-radius: 8px; color: #e7bd7e; font-size: 18px; font-weight: 700; }
+.chat-panel { display: flex; min-height: min(72svh, 720px); flex-direction: column; border: 1px solid #2b3c3d; border-radius: 10px; background: #121f20; }
+.match-list { border-top: 1px solid #2a393a; }
+.match-row { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid #2a393a; padding: 14px 3px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.mini-avatar { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid #587169; border-radius: 50%; background: #24423d; color: #dbf0e6; font-size: 16px; font-weight: 700; }
+.match-copy { min-width: 0; flex: 1; }
+.match-title { display: flex; justify-content: space-between; gap: 12px; }
+.match-title strong { font-size: 14px; }
+.match-title time, .match-copy p { color: #879894; font-size: 11px; }
+.match-copy p { overflow: hidden; margin: 4px 0 0; text-overflow: ellipsis; white-space: nowrap; }
+.row-arrow { color: #80918c; font-size: 23px; }
+.empty-state { display: grid; min-height: 300px; align-content: center; justify-items: center; padding: 28px 22px; color: #a8b8b4; text-align: center; }
+.empty-state h2 { margin: 13px 0 4px; color: #eff3ee; font-size: 20px; }
+.empty-state p { max-width: 400px; margin: 7px 0 15px; line-height: 1.55; }
+.empty-star { color: #e4b46c; font-size: 30px; }
+.text-button { min-height: 44px; border: 0; background: none; color: #85c9b9; font-size: 13px; font-weight: 700; cursor: pointer; }
+.chat-footnote { margin: 0; padding: 0 12px 9px; color: #7d8c89; font-size: 9px; }
+</style>

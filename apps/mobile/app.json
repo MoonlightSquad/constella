@@ -1,0 +1,69 @@
+{
+  "expo": {
+    "name": "Constella",
+    "slug": "constella-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "constella",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#101c1d",
+    "ios": {
+      "bundleIdentifier": "pp.constella.mobile",
+      "icon": "./assets/expo.icon",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Constella показує знайомства поблизу — потрібен ваш приблизний населений пункт.",
+        "NSPhotoLibraryUsageDescription": "Ви обираєте фото профію зі своєї галереї.",
+        "NSCameraUsageDescription": "Ви можете зробити фото для профію просто в застосунку.",
+        "NSMicrophoneUsageDescription": "Ви записуєте голосові повідомлення в чаті."
+      }
+    },
+    "android": {
+      "package": "pp.constella.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#101c1d",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-audio",
+      "@react-native-community/datetimepicker",
+      "expo-localization",
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#101c1d",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#d9b879"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "apiBaseUrl": "https://api.constella.pp.ua"
+    }
+  }
+}

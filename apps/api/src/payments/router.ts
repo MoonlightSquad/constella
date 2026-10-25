@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { and, eq } from 'drizzle-orm';
-import { identities, paymentIntents, userBoosts, userEntitlements, users } from '@constella/db';
+import { and, desc, eq } from 'drizzle-orm';
+import { authTokens, identities, paymentIntents, userBoosts, userEntitlements, users } from '@constella/db';
 import { CreateStarInvoiceSchema, STAR_PRODUCTS, isVipPlan } from '@constella/shared';
 import { z } from 'zod';
 import { protectedProcedure, router } from '../trpc.js';
 import { hasVip } from '../engine/core.js';
 import { cancelTelegramStarSubscription, createTelegramStarInvoiceLink } from './telegramStars.js';
 import { verifyTelegramLoginWidget } from '../utils/telegram-login-widget.js';
+import { issueAuthToken } from '../utils/auth-tokens.js';
 
 const linkedTelegramId = async (db: any, userId: string) => {
   const [identity] = await db
@@ -143,6 +144,31 @@ export const billingRouter = router({
       throw new TRPCError({ code: 'CONFLICT', message: 'This Telegram account is already linked to another Constella account.' });
     }
     return { ok: true, alreadyLinked: true };
+  }),
+
+  // Нативний клієнт не може скористатися Login Widget (потрібна браузерна доменна верифікація),
+  // тому прив'язка іде через одноразовий код: код видається сюди, бот підтверджує його
+  // через POST /internal/telegram-link/complete.
+  beginTelegramLink: protectedProcedure.mutation(async ({ ctx }) => {
+    const botUsername = process.env.NUXT_PUBLIC_BOT_USERNAME ?? process.env.BOT_USERNAME ?? null;
+    if (!botUsername) {
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Telegram account linking is not configured.' });
+    }
+    const telegramId = await linkedTelegramId(ctx.db, ctx.user.id);
+    if (telegramId) return { alreadyLinked: true, code: null as string | null, botUsername, deepLink: null as string | null };
+
+    const [recent] = await ctx.db
+      .select({ createdAt: authTokens.createdAt })
+      .from(authTokens)
+      .where(and(eq(authTokens.userId, ctx.user.id), eq(authTokens.purpose, 'telegram_link')))
+      .orderBy(desc(authTokens.createdAt))
+      .limit(1);
+    if (recent && Date.now() - new Date(recent.createdAt).getTime() < 15_000) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'A link code was just created. Try again in a moment.' });
+    }
+
+    const code = await issueAuthToken(ctx.db, ctx.user.id, 'telegram_link');
+    return { alreadyLinked: false, code, botUsername, deepLink: `https://t.me/${botUsername}?start=link-${code}` };
   }),
 
   createInvoice: protectedProcedure.input(CreateStarInvoiceSchema).mutation(async ({ ctx, input }) => {

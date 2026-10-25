@@ -65,7 +65,8 @@ pnpm deploy:vercel -- --skip-webhook
 1. **Web**: `https://app-test.constella.pp.ua`, Nuxt у Project з Root Directory `apps/web`.
 2. **API**: `https://api-test.constella.pp.ua`, Fastify у Project з Root Directory `apps/api`. Web звертається до API через свій `/api/*` proxy.
 3. **Bot**: handlers grammY імпортуються API, який приймає `POST /telegram/webhook` на API-домені й перевіряє `TELEGRAM_WEBHOOK_SECRET`. Окремий bot worker не потрібен.
-4. **Зовнішні сервіси**: Aiven PostgreSQL/PostGIS, Cloudflare R2, Resend і Sentry.
+4. **Mobile** (`apps/mobile`): Expo-застосунок, який **не** живе на Vercel — збірку робить EAS (`eas build --platform ios|android`). Він їсть той самий API-домен, що й web, тому окремого серверного проєкту не потребує.
+5. **Зовнішні сервіси**: Aiven PostgreSQL/PostGIS, Cloudflare R2, Resend і Sentry.
 
 ---
 
@@ -116,6 +117,16 @@ SMTP_FROM=Constella Support <support@test.constella.pp.ua>
 # Sentry
 SENTRY_DSN=<monitoring.sentry_dsn_backend>
 NUXT_PUBLIC_SENTRY_DSN=<monitoring.sentry_dsn_frontend>
+
+# Мобільний застосунок (EAS-проєкт, не Vercel)
+# EXPO_PUBLIC_API_URL вбудовується у бандл, тому секретів містити не може.
+EXPO_PUBLIC_API_URL=https://api-test.constella.pp.ua
+EXPO_ACCESS_TOKEN=<eas.access.token>
+EXPO_PROJECT_ID=<expo.project.id>
+
+# Пуш-фан-аут — це змінна API-проєкту (apps/api/src/push/notify.ts).
+# Без EXPO_PUSH_ACCESS_TOKEN API бере EXPO_ACCESS_TOKEN; без обох пуші не надсилаються.
+EXPO_PUSH_ACCESS_TOKEN=<expo.push.project.token>
 ```
 
 ---
@@ -183,6 +194,24 @@ npx vercel deploy --prod --cwd apps/api
 Після production-деплою API та додавання його домену виконай з кореня `pnpm webhook:set`, щоб зареєструвати webhook і налаштувати кнопку Mini App. Для цього локальний `apps/bot/.env` має містити `BOT_TOKEN`, `TELEGRAM_WEBHOOK_URL=https://api-test.constella.pp.ua/telegram/webhook`, той самий `TELEGRAM_WEBHOOK_SECRET` та `WEB_APP_URL=https://app-test.constella.pp.ua`; не додавай секрети до Git.
 
 Зверни увагу: Vercel не запускає постійний `startBackgroundScheduler`; для щоденних scheduler jobs потрібен окремий worker або окремо реалізований і захищений Cron endpoint. Наявні Vercel Cron налаштування видалені, бо в API ще немає такого endpoint.
+
+### Крок 6. Мобільна збірка (EAS)
+Мобільний застосунок — четвертий учасник workspace (`apps/mobile`), але він не деплоїться на Vercel:
+
+```bash
+pnpm --filter @constella/shared build
+pnpm --filter @constella/mobile bundle          # `expo export --platform android`, перевірка без Android SDK
+npx eas init                                     # одноразово: прив'язує проєкт (appVersionSource: "remote" в eas.json вимагає projectId)
+npx eas build --platform android --profile production
+```
+
+- `eas init` і `eas build` потребують токена Expo: `EXPO_ACCESS_TOKEN`+`EXPO_PROJECT_ID` (див. блок змінних вище) або `eas login`. Без прив'язаного `projectId` збірка падає ще до компіляції.
+- `EXPO_PUBLIC_API_URL` інлайниться у бандл під час збірки, тож замість домену `api-test.constella.pp.ua` на прод-білді потрібен новий запуск `eas build`, а не зміна змінних у рантаймі.
+- Міграція `0011_push_devices` застосовується тим самим `pnpm --filter @constella/db db:migrate`, що й решта схими; без неї `trpc.push.registerToken` падатиме, а всі інші екрани працюватимуть.
+- Пуші: у Expo Go вистачає спільних облікових даних Expo, нативна production-збірка потребує власних APNs/FCM-ключів (`eas credentials`) і `EXPO_PUSH_ACCESS_TOKEN` (або `EXPO_ACCESS_TOKEN`) в API-проєкті.
+- CORS API не чіпаємо: `fetch` у React Native не надсилає `Origin`, тому єдиний дозволений `WEB_APP_URL`-origin стосується лише вебу.
+- Прив'язка Telegram для покупок за Stars іде через одноразовий код у боті (`/start link-<code>`), тому в API-проєкті має бути задано `NUXT_PUBLIC_BOT_USERNAME` (або `BOT_USERNAME`) — без нього `billing.beginTelegramLink` поверне `PRECONDITION_FAILED`.
+- Дзвінків у мобільному немає: `social.startCall` на сервері — заглушка без SFU/LiveKit, тож WebRTC не додається, і в чаті навмисне **немає** кнопки дзвінка (на вебі модалка «з'єднано через WebRTC» імітує розмову — не повторюємо це в UI).
 
 ---
 

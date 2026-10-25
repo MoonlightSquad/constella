@@ -22,5 +22,5 @@ const changeLocale = (event: Event) => {
 
 <style scoped>
 .language-switcher { display: inline-flex; align-items: center; gap: 7px; color: #9aaba7; font-size: 10px; }
-.language-switcher select { max-width: 124px; border: 1px solid #3a504c; border-radius: 7px; padding: 6px 8px; background: #142222; color: #e5efeb; font-size: 11px; }
+.language-switcher select { max-width: 124px; min-height: 44px; border: 1px solid #3a504c; border-radius: 7px; padding: 0 8px; background: #142222; color: #e5efeb; font-size: 11px; cursor: pointer; }
 </style>

@@ -121,7 +121,7 @@ export const authTokens = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
     tokenHash: text('token_hash').notNull(),
-    purpose: text('purpose').$type<'email_verification' | 'password_reset'>().notNull(),
+    purpose: text('purpose').$type<'email_verification' | 'password_reset' | 'telegram_link'>().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -457,4 +457,18 @@ export const blogPosts = pgTable('blog_posts', {
   groupLocaleIdx: uniqueIndex('blog_posts_group_locale_unique').on(table.groupId, table.locale),
   listIdx: index('blog_posts_locale_status_published_idx').on(table.locale, table.status, table.publishedAt),
   groupIdx: index('blog_posts_group_idx').on(table.groupId),
+}));
+
+// Один рядок на пристрій: Expo-токен глобально унікальний, бо повторний реєстр
+// того самого пристрою іншим акаунтом означав би, що пуш іде не тому.
+export const pushDevices = pgTable('push_devices', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  pushToken: text('push_token').notNull(),
+  platform: text('platform').$type<'ios' | 'android'>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tokenUnique: uniqueIndex('push_devices_token_unique').on(table.pushToken),
+  userIdx: index('push_devices_user_idx').on(table.userId),
 }));

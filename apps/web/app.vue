@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import { useDashboard } from '~/composables/useDashboard'
 
 const { $trpc } = useNuxtApp() as any
 const config = useRuntimeConfig()
 const { t } = useLocale()
 const route = useRoute()
-const isAdmin = ref(false)
+const dash = useDashboard()
+const isAdmin = dash.isAdmin
+const account = dash.account
+const editingProfile = dash.editingProfile
 
-const account = ref<Record<string, any> | null>(null)
 const isLoading = ref(true)
 const isSaving = ref(false)
 const needsProfileSetup = ref(false)
-const isEditingProfile = ref(false)
 const error = ref('')
 const authNotice = ref('')
 const showResendVerification = ref(false)
@@ -87,7 +89,7 @@ const saveProfile = async (profile: Record<string, unknown>) => {
   try {
     await $trpc.completeProfile.mutate(profile)
     await loadAccount()
-    isEditingProfile.value = false
+    editingProfile.value = false
   } catch (cause: any) {
     error.value = cause?.message || t('app.saveFailed')
   } finally {
@@ -227,6 +229,11 @@ const deleteAccount = async () => {
 }
 const retry = () => window.location.reload()
 
+dash.authActions.value = {
+  logout: () => { logout(); void navigateTo('/') },
+  deleteAccount,
+}
+
 watch(
   [() => route.path, isLoading, isAdmin],
   ([path, loading, admin]) => {
@@ -277,24 +284,18 @@ watch(
     />
 
     <ProfileSetup
-      v-else-if="account && (needsProfileSetup || isEditingProfile)"
+      v-else-if="account && (needsProfileSetup || editingProfile)"
       :initial="account"
       :busy="isSaving"
-      :can-cancel="isEditingProfile && !needsProfileSetup"
+      :can-cancel="editingProfile && !needsProfileSetup"
       :error="error"
       @save="saveProfile"
-      @cancel="isEditingProfile = false; error = ''"
+      @cancel="editingProfile = false; error = ''"
     />
 
-    <ConstellaDashboard
-      v-else-if="account"
-      :account="account"
-      :is-admin="isAdmin"
-      @open-admin="navigateTo('/admin')"
-      @edit-profile="isEditingProfile = true"
-      @logout="logout"
-      @delete-account="deleteAccount"
-    />
+    <NuxtLayout v-else-if="account">
+      <NuxtPage />
+    </NuxtLayout>
   </div>
 </template>
 

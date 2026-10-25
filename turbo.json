@@ -23,7 +23,10 @@
     "SMTP_FROM",
     "SENTRY_DSN",
     "SENTRY_ENVIRONMENT",
-    "API_PUBLIC_URL"
+    "API_PUBLIC_URL",
+    "EXPO_ACCESS_TOKEN",
+    "EXPO_PROJECT_ID",
+    "EXPO_PUSH_ACCESS_TOKEN"
   ],
   "tasks": {
     "build": {
@@ -45,6 +48,14 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "bundle": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "env": ["EXPO_PUBLIC_API_URL", "NODE_ENV"]
     },
     "db:generate": {
       "cache": false

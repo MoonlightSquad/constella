@@ -8,6 +8,7 @@ import { billingRouter } from '../payments/router.js';
 import { adminRouter } from './admin.js';
 import { supportRouter } from './support.js';
 import { photosRouter } from './photos.js';
+import { pushRouter } from './push.js';
 
 const getAgeFromBirthdate = (value: string | Date) => {
   const birthdate = new Date(value);
@@ -33,6 +34,7 @@ export const appRouter = router({
   admin: adminRouter,
   support: supportRouter,
   photos: photosRouter,
+  push: pushRouter,
 
   healthcheck: publicProcedure.query(() => {
     return { status: 'ok' };

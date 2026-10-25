@@ -31,6 +31,9 @@ export const ACHIEVEMENTS = [
 export const DAILY_QUESTS = [
   { code: 'swipe-20', title: '20 swipes today', description: 'Swipe 20 profiles today.', target: 20, xp: 30 },
   { code: 'superlike-1', title: 'Send a Superlike', description: 'Send 1 Superlike for Stars.', target: 1, xp: 40 },
+  { code: 'message-5', title: 'Send 5 messages', description: 'Write 5 messages to your matches today.', target: 5, xp: 40 },
+  { code: 'voice-1', title: 'Send a voice message', description: 'Record and send one voice message.', target: 1, xp: 35 },
+  { code: 'photo-1', title: 'Add a photo', description: 'Upload a new photo to your profile.', target: 1, xp: 30 },
   { code: 'invite-friend', title: 'Invite a friend', description: 'Share your referral link.', target: 1, xp: 50 },
 ] as const;
 
