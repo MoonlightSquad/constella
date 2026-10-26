@@ -27,7 +27,6 @@ const emit = defineEmits<{
 const { t } = useLocale()
 const fileInput = ref<HTMLInputElement | null>(null)
 const attachMenuOpen = ref(false)
-const notePreview = ref<HTMLVideoElement | null>(null)
 
 const toggleAttach = () => { attachMenuOpen.value = !attachMenuOpen.value }
 const openFilePicker = () => { attachMenuOpen.value = false; fileInput.value?.click() }
@@ -41,7 +40,7 @@ const onFileSelected = (event: Event) => {
 
 <template>
   <div v-if="noteStream" class="note-stage">
-    <video ref="notePreview" :srcObject.prop="noteStream" class="note-live" muted playsinline autoplay></video>
+    <video :srcObject.prop="noteStream" class="note-live" muted playsinline autoplay></video>
   </div>
   <form class="composer" @submit.prevent="emit('send')">
     <input type="file" ref="fileInput" accept="image/*,video/*" class="hidden-file-input" @change="onFileSelected" />
@@ -68,6 +67,7 @@ const onFileSelected = (event: Event) => {
       @pointermove="emit('recordMove', $event)"
       @pointerup="emit('recordUp')"
       @pointercancel="emit('recordCancel')"
+      @lostpointercapture="emit('recordCancel')"
       @contextmenu.prevent
     >
       {{ chatMode === 'voice' ? '🎙' : '⭕' }}
@@ -80,8 +80,8 @@ const onFileSelected = (event: Event) => {
 
 <style scoped>
 .note-stage { display: grid; place-items: center; padding: 10px 14px 0; }
-.note-live { width: 168px; height: 168px; border: 2px solid #e4b46c; border-radius: 50%; background: #0d1718; object-fit: cover; }
-.composer { display: flex; align-items: flex-end; gap: 8px; border-top: 1px solid #2b3c3d; padding: 10px; }
+.note-live { width: min(168px, 32vh); height: min(168px, 32vh); border: 2px solid #e4b46c; border-radius: 50%; background: #0d1718; object-fit: cover; }
+.composer { display: flex; align-items: flex-end; gap: 8px; border-top: 1px solid #2b3c3d; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
 .attach-wrap { position: relative; flex: 0 0 auto; }
 .attach-menu { position: absolute; bottom: 44px; left: 0; display: flex; flex-direction: column; gap: 2px; min-width: 168px; border: 1px solid #3d524f; border-radius: 10px; padding: 5px; background: #16282a; box-shadow: 0 14px 40px #0009; z-index: 3; }
 .attach-item { display: flex; min-height: 44px; align-items: center; gap: 8px; border: 0; border-radius: 7px; padding: 0 11px; background: transparent; color: #dbe7e3; text-align: left; font-size: 12px; cursor: pointer; }

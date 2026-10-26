@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Redirect, Stack, usePathname } from 'expo-router';
 
 import { useSession } from '@/auth/session';
 import { Button, Screen, Subtitle, Title } from '@/components/ui';
 import { useLocale } from '@/i18n/locale-provider';
+import { ensureMicPermission } from '@/media/permissions';
 import { usePushNotifications } from '@/notifications/push';
 import { DashboardProvider } from '@/state/dashboard';
 import { colors, spacing, typography } from '@/theme/tokens';
@@ -27,6 +29,7 @@ export default function AppLayout() {
   return (
     <DashboardProvider>
       <PushBridge />
+      <MediaBridge />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -41,6 +44,14 @@ export default function AppLayout() {
 /** Реєстрація push-пристрою та навігація по тапу — living всередині захищеної групи. */
 function PushBridge() {
   usePushNotifications();
+  return null;
+}
+
+/** Дозвіл на мікрофон питимо тут, а не посеред затискання кнопки запису. */
+function MediaBridge() {
+  useEffect(() => {
+    void ensureMicPermission();
+  }, []);
   return null;
 }
 

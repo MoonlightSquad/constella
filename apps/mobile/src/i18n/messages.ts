@@ -270,7 +270,7 @@ export const messages = {
   'dashboard.holdToRecord': ['Тримай — запис голосу', 'Hold to record voice', 'Gedrückt halten — Sprache aufnehmen', 'Maintiens pour enregistrer la voix'],
   'dashboard.holdToNote': ['Тримай — запис кружка', 'Hold to record a video note', 'Gedrückt halten — Videonotiz aufnehmen', 'Maintiens pour enregistrer une note vidéo'],
   'dashboard.releaseToSend': ['Відпусти — надішлю', 'Release to send', 'Loslassen zum Senden', 'Relâche pour envoyer'],
-  'dashboard.slideToCancel': ['Вбік — скасувати', 'Slide aside to cancel', 'Zur Seite — abbrechen', 'Sur le côté — annuler'],
+  'dashboard.slideToCancel': ['Вліво — скасувати', 'Swipe left to cancel', 'Nach links — abbrechen', 'Vers la gauche — annuler'],
   'dashboard.textMode': ['Текст', 'Text', 'Text', 'Texte'],
   'dashboard.recording': ['Запис…', 'Recording…', 'Aufnahme…', 'Enregistrement…'],
   'dashboard.voiceMessage': ['Голосове повідомлення', 'Voice message', 'Sprachnachricht', 'Message vocal'],

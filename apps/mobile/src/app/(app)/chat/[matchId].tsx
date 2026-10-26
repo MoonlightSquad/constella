@@ -329,8 +329,10 @@ export default function ChatScreen() {
   const moveHold = (event: GestureResponderEvent) => {
     if (!holdingRef.current) return;
     const up = holdOrigin.current.y - event.nativeEvent.pageY;
+    const left = holdOrigin.current.x - event.nativeEvent.pageX;
     const aside = Math.abs(event.nativeEvent.pageX - holdOrigin.current.x);
-    const cancel = up > CANCEL_DRAG_PX || aside > CANCEL_DRAG_PX * 2;
+    // Вліво вистачає короткого руху; вправо — тільки далеко, щоб випадковий зсув не викинув запис.
+    const cancel = up > CANCEL_DRAG_PX || left > CANCEL_DRAG_PX || aside > CANCEL_DRAG_PX * 2;
     if (cancel !== cancelRef.current) {
       cancelRef.current = cancel;
       setCancelling(cancel);
@@ -341,6 +343,21 @@ export default function ChatScreen() {
     const tooShort = Date.now() - heldAt.current < MIN_HOLD_MS;
     void stopRecording(!cancelRef.current && !tooShort);
     if (tooShort) flash(t('dashboard.holdToRecord'));
+  };
+
+  /**
+   * Діалог дозволу на мікрофон забирає responder у кнопки, і тоді `onResponderRelease`
+   * не приходить ніколи: без цього прапорець лишався піднятим і запис стартував без пальця.
+   */
+  const terminateHold = () => {
+    holdingRef.current = false;
+    if (recording || recorder.isRecording) void stopRecording(false);
+  };
+
+  /** ← і «Заблокувати» закривають екран: знімаємо запис до навігації, бо `router.back()` не чекає cleanup. */
+  const leaveRoom = () => {
+    if (recording || recorder.isRecording) void stopRecording(false);
+    router.back();
   };
 
   /**
@@ -403,6 +420,19 @@ export default function ChatScreen() {
     // stopRecording читає свіжі refs, а не стан, тому в залежності його не треба.
   }, [recording]);
 
+  /**
+   * «←» і «Заблокувати» скасовують запис явно, але swipe-жест iOS та апаратна «назад»
+   * просто знімають екран: `AudioRecorder` у expo-audio не має native-деструктора, тому
+   * інакше запис досписувався б у фоні з гарячим мікрофоном.
+   */
+  useEffect(
+    () => () => {
+      holdingRef.current = false;
+      if (recorder.isRecording) void recorder.stop().catch(() => {});
+    },
+    [],
+  );
+
   const shareTelegramContact = async () => {
     if (!matchId || sharing) return;
     setSharing(true);
@@ -426,7 +456,7 @@ export default function ChatScreen() {
     return (
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.shell}>
         <View style={styles.header}>
-          <HeaderBack onPress={() => router.back()} />
+          <HeaderBack onPress={leaveRoom} />
         </View>
         <View style={styles.missing}>
           <Text style={styles.missingText}>{loading ? t('dashboard.loadingChats') : t('chats.notFound')}</Text>
@@ -439,7 +469,7 @@ export default function ChatScreen() {
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.shell}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
-          <HeaderBack onPress={() => router.back()} />
+          <HeaderBack onPress={leaveRoom} />
           {peer?.photos[0] ? (
             <Image accessibilityLabel={t('dashboard.verifiedProfile')} contentFit="cover" source={{ uri: peer.photos[0] }} style={styles.avatar} />
           ) : (
@@ -603,7 +633,9 @@ export default function ChatScreen() {
                 onMoveShouldSetResponder={() => true}
                 onResponderGrant={beginHold}
                 onResponderMove={moveHold}
+                onResponderReject={terminateHold}
                 onResponderRelease={endHold}
+                onResponderTerminate={terminateHold}
                 onResponderTerminationRequest={() => false}
                 onStartShouldSetResponder={() => !sending}
                 style={[styles.holdBar, recording && styles.holdBarLive, cancelling && styles.holdBarCancel]}
@@ -695,7 +727,7 @@ export default function ChatScreen() {
         onClose={() => setSafety(null)}
         onSuccess={(action) => {
           flash(t(action === 'block' ? 'dashboard.blocked' : 'dashboard.reportThanks'));
-          if (action === 'block') router.back();
+          if (action === 'block') leaveRoom();
         }}
         target={safety}
       />
