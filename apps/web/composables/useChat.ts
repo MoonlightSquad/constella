@@ -8,13 +8,23 @@ type Match = {
   lastMessage: { body: string; kind: string | null; sentByMe: boolean; createdAt: string } | null
 }
 
+export interface CallSignalPayload {
+  matchId: string
+  roomId: string
+  callType: 'audio' | 'video'
+  fromId: string
+  fromName?: string
+}
+
 export interface ChatOptions {
   onToast?: (msg: string) => void
   onMatchRefresh?: () => Promise<void>
   onQuestRefresh?: () => Promise<void>
   getUserId?: () => string | undefined
-  onCallIncoming?: (payload: { roomId: string; callType: 'audio' | 'video'; fromId: string; fromName: string; token: string }) => void
-  onCallEnded?: () => void
+  onCallIncoming?: (payload: CallSignalPayload) => void
+  onCallAccepted?: (payload: CallSignalPayload) => void
+  onCallRejected?: (payload: { matchId: string; roomId: string }) => void
+  onCallEnded?: (payload: { matchId: string; roomId: string; reason?: string; durationSec?: number }) => void
   defaultPeerName?: string
 }
 
@@ -92,9 +102,13 @@ export function useChat(options: ChatOptions = {}) {
             peerTyping.value = true
             window.setTimeout(() => { peerTyping.value = false }, 3000)
           } else if (data.type === 'call.incoming') {
-            options.onCallIncoming?.({ roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName, token: data.token })
+            options.onCallIncoming?.({ matchId: data.matchId, roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName })
+          } else if (data.type === 'call.accepted') {
+            options.onCallAccepted?.({ matchId: data.matchId, roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName })
+          } else if (data.type === 'call.rejected') {
+            options.onCallRejected?.({ matchId: data.matchId, roomId: data.roomId })
           } else if (data.type === 'call.ended') {
-            options.onCallEnded?.()
+            options.onCallEnded?.({ matchId: data.matchId, roomId: data.roomId, reason: data.reason, durationSec: data.durationSec })
           } else if (data.type === 'presence.read') {
             const m = chatMessages.value.find((x: any) => x.id === data.messageId)
             if (m) m.readAt = data.readAt
@@ -175,7 +189,16 @@ export function useChat(options: ChatOptions = {}) {
 
   const previewBody = (body: string, kind: string | null): string => {
     if (kind === 'voice') return t('dashboard.voiceMessage')
-    if (kind === 'call') return t('chats.lastCall')
+    if (kind === 'call') {
+      try {
+        const call = JSON.parse(body)
+        if (call?.status === 'missed' || call?.status === 'rejected') return t('chats.missedCall')
+        const sec = Number(call?.durationSec || 0)
+        return sec > 0 ? `${t('chats.lastCall')} · ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : t('chats.lastCall')
+      } catch {
+        return t('chats.lastCall')
+      }
+    }
     if (kind === 'contact') return t('chats.lastContact')
     const media = mediaFromBody(body)
     if (media?.kind === 'image') return t('chats.lastImage')

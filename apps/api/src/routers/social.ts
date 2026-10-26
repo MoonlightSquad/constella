@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import {
@@ -17,9 +16,11 @@ import {
   users,
 } from '@constella/db';
 import { ACHIEVEMENTS, DAILY_QUESTS, FREE_DAILY_LIKES, STAR_PRODUCTS } from '@constella/shared';
+import type { CallEndReason, CallSignal, CallStatus } from '@constella/shared';
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc.js';
 import { broadcastToMatch } from '../realtime.js';
+import { callUrl, createCallToken, isCallProviderConfigured, newCallRoomId } from '../call/livekit.js';
 import { orbitFilterSchema, hasOrbitFilters, resolveTargetGenders } from './social.schemas.js';
 import {
   awardAchievement,
@@ -212,6 +213,66 @@ const createMatchIfMutual = async (db: any, userId: string, profileId: string, k
   }
   return { matchId: existing?.id ?? null, matched: Boolean(existing) };
 };
+
+/**
+ * Статуси дзвінка живуть у JSON-тілі повідомки `kind:'call'` — окремої таблиці
+ * немає, тому термінальні статуси (`rejected`/`ended`/`missed`) не переписуються:
+ * обидві вкладки тиснуть «Завершити», і другий виклик не має зіпсувати тривалість.
+ */
+type CallBody = {
+  callType: 'audio' | 'video';
+  roomId: string;
+  status: CallStatus;
+  acceptedAt?: string;
+  durationSec?: number;
+  reason?: CallEndReason;
+};
+
+const TERMINAL_CALL_STATUSES: ReadonlySet<CallStatus> = new Set(['rejected', 'ended', 'missed']);
+
+/** Дзвінок, що «дзвонить» довше за це, вбивається наступним `startCall` — вкладка ініціатора могла впасти. */
+const RINGING_TTL_MS = 45_000;
+
+const parseCallBody = (raw: string): CallBody | null => {
+  try {
+    const body = JSON.parse(raw);
+    return body && typeof body.roomId === 'string' && typeof body.callType === 'string'
+      ? (body as CallBody)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const recentCallRows = async (db: any, matchId: string) => {
+  const rows = await db
+    .select({ id: messages.id, senderId: messages.senderId, createdAt: messages.createdAt, body: messages.body })
+    .from(messages)
+    .where(and(eq(messages.matchId, matchId), eq(messages.kind, 'call')))
+    .orderBy(desc(messages.id))
+    .limit(10);
+  return rows
+    .map((row: { body: string }) => ({ ...row, call: parseCallBody(row.body) }))
+    .filter((row: { call: CallBody | null }) => row.call !== null) as Array<{
+    id: number;
+    senderId: string;
+    createdAt: Date;
+    body: string;
+    call: CallBody;
+  }>;
+};
+
+const findCallRow = async (db: any, matchId: string, roomId: string) => {
+  const rows = await recentCallRows(db, matchId);
+  return rows.find((row) => row.call.roomId === roomId) ?? null;
+};
+
+const saveCallBody = async (db: any, id: number, call: CallBody) => {
+  await db.update(messages).set({ body: JSON.stringify(call) }).where(eq(messages.id, id));
+};
+
+const callDurationSec = (call: CallBody): number =>
+  call.acceptedAt ? Math.max(0, Math.round((Date.now() - new Date(call.acceptedAt).getTime()) / 1000)) : 0;
 
 export const socialRouter = router({
   orbit: protectedProcedure.input(orbitFilterSchema.default({})).query(async ({ ctx, input }) => {
@@ -690,6 +751,11 @@ export const socialRouter = router({
       return message;
     }),
 
+  callConfig: protectedProcedure.query(() => ({
+    available: isCallProviderConfigured(),
+    url: isCallProviderConfigured() ? callUrl() : '',
+  })),
+
   startCall: protectedProcedure
     .input(
       z.object({
@@ -698,56 +764,164 @@ export const socialRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const match = await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
-      const peerId = match.userOneId === ctx.user.id ? match.userTwoId : match.userOneId;
-      const roomId = `constella-call-${input.matchId}`;
-      const token = createHash('sha256')
-        .update(`${roomId}-${ctx.user.id}-${Date.now()}`)
-        .digest('hex')
-        .slice(0, 32);
+      if (!isCallProviderConfigured()) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Дзвінки ще не налаштовані.' });
+      }
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
 
-      await ctx.db.insert(messages).values({
-        matchId: input.matchId,
-        senderId: ctx.user.id,
-        kind: 'call',
-        body: JSON.stringify({
-          callType: input.callType,
-          status: 'initiated',
-          roomId,
-        }),
-      });
+      const rows = await recentCallRows(ctx.db, input.matchId);
+      const active = rows.find(
+        (row) =>
+          row.call.status === 'accepted' ||
+          (row.call.status === 'ringing' && Date.now() - row.createdAt.getTime() < RINGING_TTL_MS),
+      );
+      if (active) throw new TRPCError({ code: 'CONFLICT', message: 'Дзвінок уже триває.' });
+      // «ringing» без ініціатора (вкладка кинулася) інакше заблокував би матч назавжди.
+      for (const row of rows) {
+        if (row.call.status === 'ringing') {
+          await saveCallBody(ctx.db, row.id, { ...row.call, status: 'missed', reason: 'missed', durationSec: 0 });
+        }
+      }
 
-      // Ring the peer if it has a live socket on this match.
       const [caller] = await ctx.db
         .select({ displayName: users.displayName })
         .from(users)
         .where(eq(users.id, ctx.user.id))
         .limit(1);
+      const fromName = caller?.displayName ?? '';
+      const roomId = newCallRoomId(input.matchId);
+      // Токен отримує лише ініціатор: пір підписує собі власний у `acceptCall`.
+      const token = await createCallToken({ room: roomId, identity: ctx.user.id, name: fromName });
+
+      await ctx.db.insert(messages).values({
+        matchId: input.matchId,
+        senderId: ctx.user.id,
+        kind: 'call',
+        body: JSON.stringify({ callType: input.callType, roomId, status: 'ringing' } satisfies CallBody),
+      });
+
+      // Ring the peer if it has a live socket on this match.
       broadcastToMatch(
         input.matchId,
         {
           type: 'call.incoming',
+          matchId: input.matchId,
           roomId,
           callType: input.callType,
           fromId: ctx.user.id,
-          fromName: caller?.displayName ?? '',
-          token,
-          matchId: input.matchId,
-        },
+          fromName,
+        } satisfies CallSignal,
         ctx.user.id,
       );
 
-      return {
-        roomId,
-        token,
-        callType: input.callType,
-        initiatorId: ctx.user.id,
-        peerId,
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      };
+      return { roomId, url: callUrl(), token, callType: input.callType };
+    }),
+
+  acceptCall: protectedProcedure
+    .input(z.object({ matchId: z.string().uuid(), roomId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      const row = await findCallRow(ctx.db, input.matchId, input.roomId);
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Дзвінок не знайдено.' });
+      if (row.senderId === ctx.user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Власний дзвінок не приймають.' });
+      }
+      if (row.call.status !== 'ringing') {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Дзвінок уже не очікує відповіді.' });
+      }
+
+      const acceptedAt = new Date().toISOString();
+      const call: CallBody = { ...row.call, status: 'accepted', acceptedAt };
+      await saveCallBody(ctx.db, row.id, call);
+
+      const [me] = await ctx.db
+        .select({ displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+      const fromName = me?.displayName ?? '';
+      const token = await createCallToken({ room: call.roomId, identity: ctx.user.id, name: fromName });
+
+      broadcastToMatch(
+        input.matchId,
+        {
+          type: 'call.accepted',
+          matchId: input.matchId,
+          roomId: call.roomId,
+          callType: call.callType,
+          fromId: ctx.user.id,
+          fromName,
+        } satisfies CallSignal,
+        ctx.user.id,
+      );
+
+      return { roomId: call.roomId, url: callUrl(), token, callType: call.callType };
+    }),
+
+  rejectCall: protectedProcedure
+    .input(z.object({ matchId: z.string().uuid(), roomId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      const row = await findCallRow(ctx.db, input.matchId, input.roomId);
+      if (!row || row.call.status !== 'ringing') return { ok: false };
+
+      const call: CallBody = { ...row.call, status: 'rejected', reason: 'rejected', durationSec: 0 };
+      await saveCallBody(ctx.db, row.id, call);
+
+      broadcastToMatch(
+        input.matchId,
+        {
+          type: 'call.rejected',
+          matchId: input.matchId,
+          roomId: call.roomId,
+          callType: call.callType,
+          fromId: ctx.user.id,
+        } satisfies CallSignal,
+        ctx.user.id,
+      );
+
+      return { ok: true };
+    }),
+
+  /**
+   * Завершує дзвінок. Ідемпотентно: обидва піри жмуть «Завершити», і другий
+   * виклик має просто отримати вже записану тривалість, а не помилку.
+   */
+  endCall: protectedProcedure
+    .input(
+      z.object({
+        matchId: z.string().uuid(),
+        roomId: z.string().min(1),
+        reason: z.enum(['ended', 'missed', 'failed']).default('ended'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      const row = await findCallRow(ctx.db, input.matchId, input.roomId);
+      if (!row) return { ok: true, durationSec: 0 };
+      if (TERMINAL_CALL_STATUSES.has(row.call.status)) {
+        return { ok: true, durationSec: row.call.durationSec ?? 0 };
+      }
+
+      const durationSec = callDurationSec(row.call);
+      const status: CallStatus = input.reason === 'missed' ? 'missed' : 'ended';
+      const call: CallBody = { ...row.call, status, reason: input.reason, durationSec };
+      await saveCallBody(ctx.db, row.id, call);
+
+      broadcastToMatch(
+        input.matchId,
+        {
+          type: 'call.ended',
+          matchId: input.matchId,
+          roomId: call.roomId,
+          callType: call.callType,
+          fromId: ctx.user.id,
+          reason: input.reason,
+          durationSec,
+        } satisfies CallSignal,
+      );
+
+      return { ok: true, durationSec };
     }),
 
   shareContact: protectedProcedure.input(z.object({ matchId: z.string().uuid() })).mutation(async ({ ctx, input }) => {

@@ -27,6 +27,30 @@ export interface ChatSocket {
 /** `readyState` value indicating an open, writable socket. */
 export const CHAT_SOCKET_OPEN = 1;
 
+/** Terminals after which a call row never changes status again. */
+export type CallStatus = 'ringing' | 'accepted' | 'rejected' | 'ended' | 'missed';
+
+/** Why a call stopped; `missed` is what the callee sees as a missed-call entry. */
+export type CallEndReason = 'ended' | 'missed' | 'rejected' | 'failed';
+
+/**
+ * Call control frames pushed over the chat socket. Media negotiation itself
+ * happens inside the LiveKit SDK, so these carry no SDP/ICE — only lifecycle.
+ */
+export type CallWsEvent = 'call.incoming' | 'call.accepted' | 'call.rejected' | 'call.ended';
+
+export interface CallSignal {
+  type: CallWsEvent;
+  matchId: string;
+  roomId: string;
+  callType: 'audio' | 'video';
+  /** The participant that caused the event (caller for `incoming`, callee otherwise). */
+  fromId: string;
+  fromName?: string;
+  reason?: CallEndReason;
+  durationSec?: number;
+}
+
 export interface ClientPayload {
   type: 'send.message' | 'send.typing' | 'send.read' | 'send.linked' | 'send.media' | 'send.pin';
   matchId: string;
@@ -48,7 +72,7 @@ export interface ChatMessageDB {
   id: string;
   matchId: string;
   senderId: string;
-  kind: 'text' | 'system' | 'contact' | 'gift' | 'voice' | 'video' | 'image';
+  kind: 'text' | 'system' | 'contact' | 'gift' | 'voice' | 'video' | 'image' | 'call';
   body: string;
   createdAt: string;
   deliveredAt: string | null;

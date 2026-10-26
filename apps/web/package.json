@@ -19,6 +19,7 @@
     "@trpc/client": "^11.19.0",
     "@trpc/server": "11.19.0",
     "dotenv": "^16.4.5",
+    "livekit-client": "^2.23.0",
     "nuxt": "^3.12.3",
     "vue": "^3.4.29",
     "vue-router": "^4.4.0"
