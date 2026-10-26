@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
-import { CONSENT_STORAGE_KEY, decideCancel, decideHoldAction, isVoiceUploadable, normalizeMime, pickAudioMime, pickVideoMime } from './media-decisions.mjs'
+import { CONSENT_STORAGE_KEY, decideCancel, decideHoldAction, isTelegramWebview, isVoiceUploadable, normalizeMime, pickAudioMime, pickVideoMime } from './media-decisions.mjs'
 
 const MAX_VOICE_SEC = 300
 const MAX_NOTE_SEC = 60
@@ -33,6 +33,8 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   const awaitingPermission = ref(false)
 
   let liveStream: MediaStream | null = null
+  /** Мікрофон, відкритий один раз на кімнату: див. `isTelegramWebview`. */
+  let warmVoice: MediaStream | null = null
   let mediaRecorder: MediaRecorder | null = null
   let audioChunks: Blob[] = []
   let videoChunks: Blob[] = []
@@ -41,9 +43,19 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   let holdStartedAt = 0
   let holdOrigin = { x: 0, y: 0 }
 
+  /** Теплий мікрофон має сенс лише там, де дозвіл видається на кожен запит. */
+  const keepWarm = () => typeof window !== 'undefined' && isTelegramWebview(navigator.userAgent)
+  const isLive = (stream: MediaStream | null) => Boolean(stream && stream.getTracks().every((track) => track.readyState === 'live'))
+
+  const dropWarm = () => {
+    warmVoice?.getTracks().forEach((track) => track.stop())
+    warmVoice = null
+  }
+
   const releaseStream = () => {
     awaitingPermission.value = false
-    liveStream?.getTracks().forEach((track) => track.stop())
+    const warm = keepWarm() && liveStream === warmVoice && isLive(warmVoice)
+    if (!warm) liveStream?.getTracks().forEach((track) => track.stop())
     liveStream = null
     noteStream.value = null
   }
@@ -72,15 +84,25 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   /**
    * `getUserMedia` резолвиться після того, як системний діалог уже забрав pointer-потік,
    * тому викликані звідси record-старти завжди перечитують `holdActive`.
+   * `warmable` — мікрофон: у WebView Telegram grant видається на кожен виклик, тому
+   * вже відкритий стрім повертається синхронно й жест діалог не з'їдає.
    */
-  const acquire = async (constraints: MediaStreamConstraints): Promise<MediaStream | null> => {
+  const acquire = async (constraints: MediaStreamConstraints, warmable = false): Promise<MediaStream | null> => {
     if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       return unsupported()
+    }
+    if (warmable && keepWarm() && isLive(warmVoice)) {
+      liveStream = warmVoice
+      return warmVoice
     }
     awaitingPermission.value = true
     try {
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       liveStream = stream
+      if (warmable && keepWarm()) warmVoice = stream
+      // Telegram питає власний дозвіл саме тут: без цього запису стартовий `denied`
+      // лишився б і подальші помилки читались би як «немає доступу».
+      localStorage.setItem(CONSENT_STORAGE_KEY, 'granted')
       return stream
     } catch (error: any) {
       releaseStream()
@@ -88,6 +110,22 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
       toast(previouslyDenied ? t('dashboard.callMicDenied') : (error?.message || t('dashboard.voiceUnsupported')))
       return null
     }
+  }
+
+  /**
+   * Відкриває мікрофон заздалегідь — на вході в кімнату, де втратити жест не шкода.
+   * У звичайному браузері не робить нічого: там grant пам'ятається, і зайвого діалогу
+   * було б більше, ніж користі.
+   */
+  const warmUp = () => {
+    if (!keepWarm() || isLive(warmVoice) || isRecording.value || typeof window === 'undefined') return
+    if (!navigator?.mediaDevices?.getUserMedia) return
+    void navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        warmVoice = stream
+        localStorage.setItem(CONSENT_STORAGE_KEY, 'granted')
+      })
+      .catch(() => { /* жест по кнопці все одно покаже діалог */ })
   }
 
   /** Деякі рушії підтверджують тип в `isTypeSupported`, але кидають у конструкторі. */
@@ -105,10 +143,28 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
     reader.readAsDataURL(blob)
   })
 
+  /**
+   * Розв'язка «жест з'їв діалог дозволу» — рівно один раз: інакше `pointerup` і пізній
+   * резолв `getUserMedia` перемикали б режим двічі.
+   */
+  let holdSettled = false
+  const settleConsumedHold = (wasTap: boolean) => {
+    if (holdSettled) return
+    holdSettled = true
+    holdActive.value = false
+    holdCancelling.value = false
+    if (wasTap) cycleChatMode()
+    else toast(t(chatMode.value === 'note' ? 'dashboard.holdToNote' : 'dashboard.holdToRecord'))
+  }
+
   // --- Voice recording ---
   const startVoiceRecording = async () => {
-    const stream = await acquire({ audio: true })
-    if (!stream || !holdActive.value) return releaseStream()
+    const stream = await acquire({ audio: true }, true)
+    if (!stream) return
+    if (!holdActive.value) {
+      releaseStream()
+      return settleConsumedHold(false)
+    }
     const mime = pickAudioMime((type) => MediaRecorder.isTypeSupported(type))
     const recorder = createRecorder(stream, mime)
     audioChunks = []
@@ -171,7 +227,11 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   // --- Note recording ---
   const startNoteRecording = async () => {
     const stream = await acquire({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } }, audio: true })
-    if (!stream || !holdActive.value) return releaseStream()
+    if (!stream) return
+    if (!holdActive.value) {
+      releaseStream()
+      return settleConsumedHold(false)
+    }
     noteStream.value = stream
     const mime = pickVideoMime((type) => MediaRecorder.isTypeSupported(type))
     const recorder = createRecorder(stream, mime)
@@ -234,6 +294,7 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
     holdStartedAt = Date.now()
     holdCancelling.value = false
     holdActive.value = true
+    holdSettled = false
     if (chatMode.value === 'note') void startNoteRecording()
     else void startVoiceRecording()
   }
@@ -261,6 +322,9 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
    */
   const cancelLiveRecording = () => {
     const live = holdActive.value || isRecording.value || isRecordingVideo.value
+    // Поки висить діалог дозволу, це ще не розв'язка жесту: її дасть пізній резолв
+    // `getUserMedia`, інакше користувач не побачив би на екрані нічого.
+    if (live && !awaitingPermission.value) holdSettled = true
     holdActive.value = false
     holdCancelling.value = false
     if (!live) return
@@ -282,18 +346,19 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   }
 
   const onRecordPointerUp = () => {
+    const elapsedMs = Date.now() - holdStartedAt
     const action = decideHoldAction({
-      elapsedMs: Date.now() - holdStartedAt,
+      elapsedMs,
       awaitingPermission: awaitingPermission.value,
       cancelling: holdCancelling.value,
       minMs: MIN_HOLD_MS,
     })
     holdActive.value = false
     if (action === 'dismiss') {
-      toast(t(chatMode.value === 'note' ? 'dashboard.holdToNote' : 'dashboard.holdToRecord'))
-      holdCancelling.value = false
-      return
+      // Діалог забрав pointer-потік: короткий тап усе одно був наміром перемкнути режим.
+      return settleConsumedHold(elapsedMs < MIN_HOLD_MS)
     }
+    holdSettled = true
     if (action === 'send') return onHoldEnd()
     cancelLiveRecording()
     if (action === 'tooShort') cycleChatMode()
@@ -303,15 +368,29 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
 
   /** Згорнутий екран: `pointerup` може не дійти, а мікрофон лишитися гарячим. */
   const abandonHold = () => {
-    if (document.visibilityState === 'hidden') cancelLiveRecording()
+    if (document.visibilityState !== 'hidden') return
+    cancelLiveRecording()
+    // Фонове вікно не тримає пристрій: наступний запис open'отно попросить дозвіл.
+    dropWarm()
   }
 
-  onMounted(() => document.addEventListener('visibilitychange', abandonHold))
+  // Діалог дозволу на мікрофон знімає фокус і часто забирає останній pointer-івент:
+  // без цього резолв `getUserMedia` стартував би запис, коли пальця вже немає.
+  const abandonOnBlur = () => {
+    if (awaitingPermission.value) cancelLiveRecording()
+  }
+
+  onMounted(() => {
+    document.addEventListener('visibilitychange', abandonHold)
+    window.addEventListener('blur', abandonOnBlur)
+  })
   onBeforeUnmount(() => {
     document.removeEventListener('visibilitychange', abandonHold)
+    window.removeEventListener('blur', abandonOnBlur)
     if (recordingTimer) clearInterval(recordingTimer)
     if (recordingVideoTimer) clearInterval(recordingVideoTimer)
     cancelLiveRecording()
+    dropWarm()
   })
 
   return {
@@ -320,7 +399,7 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
     holdCancelling, noteStream, isSending,
     holdLabel, formatDuration,
     onRecordPointerDown, onRecordPointerUp, onRecordPointerCancel,
-    onHoldMove, cycleChatMode, cancelLiveRecording,
+    onHoldMove, cycleChatMode, cancelLiveRecording, warmUp, dropWarm,
     startNoteRecording, stopNoteRecording, cancelNoteRecording,
     startVoiceRecording, stopVoiceRecording, cancelVoiceRecording,
     MIN_HOLD_MS,

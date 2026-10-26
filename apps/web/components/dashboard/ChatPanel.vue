@@ -93,7 +93,13 @@ const recorder = useVoiceRecorder({
 
 // Панель при закритті кімнати не розмонтовується (`closeChat` лише обнулює `selectedMatch`),
 // тому живий запис знімаємо явно: інакше мікрофон лишається гарячим, а таймер сам надсилає.
-watch(() => chat.selectedMatch.value?.id, () => recorder.cancelLiveRecording())
+// Вхід навпаки гріє мікрофон: WebView Telegram видає дозвіл на кожен `getUserMedia`, тож
+// один діалог на кімнату тут, де жест вже витрачений на навігацію.
+watch(() => chat.selectedMatch.value?.id, (matchId) => {
+  recorder.cancelLiveRecording()
+  if (matchId) recorder.warmUp()
+  else recorder.dropWarm()
+})
 
 // ---------- Calls ----------
 /** Рінг тримає браузер ініціатора: серверного воркера для таймаута на Vercel немає. */

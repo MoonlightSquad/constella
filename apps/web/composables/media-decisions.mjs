@@ -42,3 +42,11 @@ export const CANCEL_GESTURE_PX = { up: 60, left: 60, aside: 120 };
 export function decideCancel({ dx, dy, thresholds = CANCEL_GESTURE_PX }) {
   return -dy > thresholds.up || -dx > thresholds.left || Math.abs(dx) > thresholds.aside;
 }
+
+/**
+ * Telegram's WebView grants media access per `onPermissionRequest`, i.e. once per
+ * `getUserMedia` call, and does not persist it for the origin. A regular browser remembers
+ * "Allow", so only there is it worth keeping one microphone stream warm per chat room.
+ * UA markers: `telegram/android-…`, `telegram/ios-…`, `TelegramAndroid` in Mini Apps.
+ */
+export const isTelegramWebview = (userAgent) => /telegram/i.test(userAgent || '');

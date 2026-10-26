@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   decideCancel,
   decideHoldAction,
+  isTelegramWebview,
   isVideoUploadable,
   isVoiceUploadable,
   normalizeMime,
@@ -52,4 +53,11 @@ test('swiping left cancels sooner than swiping right', () => {
   assert.equal(decideCancel({ dx: 130, dy: 0 }), true);
   assert.equal(decideCancel({ dx: 0, dy: -70 }), true);
   assert.equal(decideCancel({ dx: 10, dy: -10 }), false);
+});
+
+test('only the Telegram WebView needs a warm microphone', () => {
+  assert.equal(isTelegramWebview('Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 Telegram/Android-11.5.3'), true);
+  assert.equal(isTelegramWebview('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/21A Telegram/ios-11.5'), true);
+  assert.equal(isTelegramWebview('Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'), false);
+  assert.equal(isTelegramWebview(undefined), false);
 });
