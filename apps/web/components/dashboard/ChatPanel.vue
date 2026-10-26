@@ -94,11 +94,27 @@ const recorder = useVoiceRecorder({
 // Панель при закритті кімнати не розмонтовується (`closeChat` лише обнулює `selectedMatch`),
 // тому живий запис знімаємо явно: інакше мікрофон лишається гарячим, а таймер сам надсилає.
 // Вхід навпаки гріє мікрофон: WebView Telegram видає дозвіл на кожен `getUserMedia`, тож
-// один діалог на кімнату тут, де жест вже витрачений на навігацію.
+// діалог стається тут, де жест вже витрачений на навігацію (камеру гріє watch нижче).
+const rewarmComposer = () => {
+  if (!chat.selectedMatch.value) return
+  recorder.warmUp()
+  if (recorder.chatMode.value === 'note') recorder.warmUp('note')
+}
+
 watch(() => chat.selectedMatch.value?.id, (matchId) => {
   recorder.cancelLiveRecording()
-  if (matchId) recorder.warmUp()
+  if (matchId) rewarmComposer()
   else recorder.dropWarm()
+})
+
+// Камера з OS-додатка (📎 → 📷) відправляє сторінку у фон, і `useVoiceRecorder` гасить теплі
+// стріми. Повертаючись, гріємо знову — інакше перше затискання після фото питало б дозвіл.
+const rewarmOnReturn = () => { if (document.visibilityState === 'visible') rewarmComposer() }
+
+// Камера жива лише в режимі ⭕: вихід із нього одразу гасить і стрім, і індикатор.
+watch(() => recorder.chatMode.value, (mode) => {
+  if (mode === 'note') recorder.warmUp('note')
+  else recorder.dropWarm('note')
 })
 
 // ---------- Calls ----------
@@ -239,9 +255,13 @@ const blockProfile = async (profileId: string, matchId?: string) => {
 
 const onPickFile = (file: File) => { void chat.sendMediaMessage(file) }
 
-onMounted(() => { void loadCallConfig() })
+onMounted(() => {
+  document.addEventListener('visibilitychange', rewarmOnReturn)
+  void loadCallConfig()
+})
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', rewarmOnReturn)
   // Розмонтаж із відкритою кімнатою інакше залишив би рамку застосунку прихованою.
   dash.chatRoomOpen.value = false
   chat.closeRealtime()

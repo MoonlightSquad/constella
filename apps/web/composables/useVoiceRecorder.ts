@@ -5,6 +5,12 @@ import { CONSENT_STORAGE_KEY, decideCancel, decideHoldAction, isTelegramWebview,
 const MAX_VOICE_SEC = 300
 const MAX_NOTE_SEC = 60
 const MIN_HOLD_MS = 400
+const NOTE_CONSTRAINTS: MediaStreamConstraints = {
+  video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } },
+  audio: true,
+}
+
+type WarmMode = 'voice' | 'note'
 
 export interface VoiceRecorderOptions {
   onToast?: (msg: string) => void
@@ -33,8 +39,8 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   const awaitingPermission = ref(false)
 
   let liveStream: MediaStream | null = null
-  /** Мікрофон, відкритий один раз на кімнату: див. `isTelegramWebview`. */
-  let warmVoice: MediaStream | null = null
+  /** Стріми, відкриті наперед: мікрофон на кімнату, камера+мікрофон на режим ⭕. */
+  const warmStreams: Record<WarmMode, MediaStream | null> = { voice: null, note: null }
   let mediaRecorder: MediaRecorder | null = null
   let audioChunks: Blob[] = []
   let videoChunks: Blob[] = []
@@ -43,19 +49,26 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   let holdStartedAt = 0
   let holdOrigin = { x: 0, y: 0 }
 
-  /** Теплий мікрофон має сенс лише там, де дозвіл видається на кожен запит. */
+  /** Теплі стріми мають сенс лише там, де дозвіл видається на кожен запит. */
   const keepWarm = () => typeof window !== 'undefined' && isTelegramWebview(navigator.userAgent)
   const isLive = (stream: MediaStream | null) => Boolean(stream && stream.getTracks().every((track) => track.readyState === 'live'))
 
-  const dropWarm = () => {
-    warmVoice?.getTracks().forEach((track) => track.stop())
-    warmVoice = null
+  const warmKeyOf = (stream: MediaStream | null): WarmMode | null =>
+    stream && stream === warmStreams.voice ? 'voice' : stream && stream === warmStreams.note ? 'note' : null
+
+  const dropWarm = (mode?: WarmMode) => {
+    const keys: WarmMode[] = mode ? [mode] : ['voice', 'note']
+    for (const key of keys) {
+      warmStreams[key]?.getTracks().forEach((track) => track.stop())
+      warmStreams[key] = null
+    }
   }
 
   const releaseStream = () => {
     awaitingPermission.value = false
-    const warm = keepWarm() && liveStream === warmVoice && isLive(warmVoice)
-    if (!warm) liveStream?.getTracks().forEach((track) => track.stop())
+    const key = warmKeyOf(liveStream)
+    const reusable = Boolean(key) && keepWarm() && isLive(key ? warmStreams[key] : null)
+    if (!reusable) liveStream?.getTracks().forEach((track) => track.stop())
     liveStream = null
     noteStream.value = null
   }
@@ -84,22 +97,22 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   /**
    * `getUserMedia` резолвиться після того, як системний діалог уже забрав pointer-потік,
    * тому викликані звідси record-старти завжди перечитують `holdActive`.
-   * `warmable` — мікрофон: у WebView Telegram grant видається на кожен виклик, тому
-   * вже відкритий стрім повертається синхронно й жест діалог не з'їдає.
+   * Теплий стрім повертається синхронно: жест діалог не з'їдає.
    */
-  const acquire = async (constraints: MediaStreamConstraints, warmable = false): Promise<MediaStream | null> => {
+  const acquire = async (constraints: MediaStreamConstraints, mode: WarmMode): Promise<MediaStream | null> => {
     if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       return unsupported()
     }
-    if (warmable && keepWarm() && isLive(warmVoice)) {
-      liveStream = warmVoice
-      return warmVoice
+    const cached = keepWarm() ? warmStreams[mode] : null
+    if (isLive(cached)) {
+      liveStream = cached
+      return cached
     }
     awaitingPermission.value = true
     try {
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       liveStream = stream
-      if (warmable && keepWarm()) warmVoice = stream
+      if (keepWarm()) warmStreams[mode] = stream
       // Telegram питає власний дозвіл саме тут: без цього запису стартовий `denied`
       // лишився б і подальші помилки читались би як «немає доступу».
       localStorage.setItem(CONSENT_STORAGE_KEY, 'granted')
@@ -113,19 +126,21 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   }
 
   /**
-   * Відкриває мікрофон заздалегідь — на вході в кімнату, де втратити жест не шкода.
-   * У звичайному браузері не робить нічого: там grant пам'ятається, і зайвого діалогу
-   * було б більше, ніж користі.
+   * Відкриває пристрій заздалегідь: мікрофон — на вході в кімнату, камеру разом з
+   * мікрофоном — на переході в режим ⭕. Обидва тапи вже витрачені на UI, тож діалог
+   * Telegram нічого не краде, а наступне затискання пише відразу.
+   * Поза WebView Telegram не робить нічого: там grant пам'ятається, і тримати
+   * гарячу камеру без потреби не було б сенсу.
    */
-  const warmUp = () => {
-    if (!keepWarm() || isLive(warmVoice) || isRecording.value || typeof window === 'undefined') return
-    if (!navigator?.mediaDevices?.getUserMedia) return
-    void navigator.mediaDevices.getUserMedia({ audio: true })
+  const warmUp = (mode: WarmMode = 'voice') => {
+    if (!keepWarm() || typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) return
+    if (isLive(warmStreams[mode]) || isRecording.value || isRecordingVideo.value) return
+    void navigator.mediaDevices.getUserMedia(mode === 'voice' ? { audio: true } : NOTE_CONSTRAINTS)
       .then((stream) => {
-        warmVoice = stream
+        warmStreams[mode] = stream
         localStorage.setItem(CONSENT_STORAGE_KEY, 'granted')
       })
-      .catch(() => { /* жест по кнопці все одно покаже діалог */ })
+      .catch(() => { /* затискання по кнопці все одно покаже діалог */ })
   }
 
   /** Деякі рушії підтверджують тип в `isTypeSupported`, але кидають у конструкторі. */
@@ -159,7 +174,7 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
 
   // --- Voice recording ---
   const startVoiceRecording = async () => {
-    const stream = await acquire({ audio: true }, true)
+    const stream = await acquire({ audio: true }, 'voice')
     if (!stream) return
     if (!holdActive.value) {
       releaseStream()
@@ -226,7 +241,7 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
 
   // --- Note recording ---
   const startNoteRecording = async () => {
-    const stream = await acquire({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } }, audio: true })
+    const stream = await acquire(NOTE_CONSTRAINTS, 'note')
     if (!stream) return
     if (!holdActive.value) {
       releaseStream()
