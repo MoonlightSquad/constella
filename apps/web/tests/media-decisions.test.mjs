@@ -6,6 +6,7 @@ import {
   isTelegramWebview,
   isVideoUploadable,
   isVoiceUploadable,
+  mediaKindOf,
   normalizeMime,
   pickAudioMime,
   pickVideoMime,
@@ -60,4 +61,23 @@ test('only the Telegram WebView needs a warm microphone', () => {
   assert.equal(isTelegramWebview('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/21A Telegram/ios-11.5'), true);
   assert.equal(isTelegramWebview('Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'), false);
   assert.equal(isTelegramWebview(undefined), false);
+});
+
+test('a chat attachment is typed by mime first, extension only as a fallback', () => {
+  assert.deepEqual(mediaKindOf({ type: 'image/heic', name: 'IMG_1.JPG' }), { kind: 'image', contentType: 'image/jpeg' });
+  assert.deepEqual(mediaKindOf({ type: 'video/quicktime;codecs=hvc1', name: 'clip.mov' }), { kind: 'video', contentType: 'video/mp4' });
+});
+
+test('a camera file with an empty type still uploads by extension', () => {
+  assert.deepEqual(mediaKindOf({ type: '', name: 'IMG_2024.jpg' }), { kind: 'image', contentType: 'image/jpeg' });
+  assert.deepEqual(mediaKindOf({ type: undefined, name: 'VID_0001.mp4' }), { kind: 'video', contentType: 'video/mp4' });
+});
+
+test('nothing outside the upload allowlist is accepted', () => {
+  assert.equal(mediaKindOf({ type: 'image/heic', name: 'IMG_1.HEIC' }), null);
+  assert.equal(mediaKindOf({ type: '', name: 'photo.txt' }), null);
+  assert.equal(mediaKindOf({ type: '', name: 'noextension' }), null);
+  assert.equal(mediaKindOf({ type: 'application/pdf', name: 'resume.pdf' }), null);
+  // Prototype keys must not resolve through the extension table.
+  assert.equal(mediaKindOf({ type: '', name: 'a.constructor' }), null);
 });

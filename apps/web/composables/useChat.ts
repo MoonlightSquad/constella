@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import { mediaKindOf } from './media-decisions.mjs'
 
 type Match = {
   id: string
@@ -389,19 +390,21 @@ export function useChat(options: ChatOptions = {}) {
   // --- Send media ---
   const sendMediaMessage = async (file: File) => {
     if (!selectedMatch.value || isSending.value) return
-    const isVideo = file.type.startsWith('video/')
-    if (!isVideo && !file.type.startsWith('image/')) return
+    const media = mediaKindOf({ type: file.type, name: file.name })
+    if (!media) { toast(t('dashboard.mediaUnsupported')); return }
+    const isVideo = media.kind === 'video'
     isSending.value = true
     try {
-      const kind = isVideo ? 'video' : 'image'
       const uploadMeta = isVideo
-        ? await $trpc.photos.createVideoUpload.mutate({ contentType: file.type as 'video/mp4' | 'video/webm' })
-        : await $trpc.photos.createUpload.mutate({ contentType: file.type as any })
-      await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+        ? await $trpc.photos.createVideoUpload.mutate({ contentType: media.contentType as 'video/mp4' | 'video/webm' })
+        : await $trpc.photos.createUpload.mutate({ contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp' })
+      // PUT і confirm мусять оголошувати той самий тип, що й підписаний запит: `confirmUpload`
+      // порівнює збережений `head.ContentType` і відхиляє об'єкт при розбіжності.
+      await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': media.contentType } })
       const processed = isVideo
-        ? await $trpc.photos.confirmVideoUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: file.type as 'video/mp4' | 'video/webm' })
-        : await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: file.type as any })
-      await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind, url: processed.publicUrl, fileName: file.name, size: file.size }) })
+        ? await $trpc.photos.confirmVideoUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'video/mp4' | 'video/webm' })
+        : await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp' })
+      await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind: media.kind, url: processed.publicUrl, fileName: file.name, size: file.size }) })
       await loadChatMessages()
     } catch (err) { showError(err) } finally { isSending.value = false }
   }

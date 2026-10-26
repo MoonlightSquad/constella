@@ -43,6 +43,35 @@ export function decideCancel({ dx, dy, thresholds = CANCEL_GESTURE_PX }) {
   return -dy > thresholds.up || -dx > thresholds.left || Math.abs(dx) > thresholds.aside;
 }
 
+// Mirror of apps/api/src/routers/photos.ts image `z.enum`.
+export const IMAGE_ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
+
+// A camera capture reaches the input as `…/IMG_1234.jpg` with an empty `type` on some
+// Android WebViews, so the extension is then the only reliable hint at the real codec.
+// `.mov`/`.m4v` are MPEG-4 containers, so declaring them `video/mp4` matches the bytes.
+const EXTENSION_TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+  mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/mp4', webm: 'video/webm',
+};
+
+const typeByExtension = (name) => {
+  const ext = (name || '').toLowerCase().split('.').pop() || '';
+  return Object.hasOwn(EXTENSION_TYPES, ext) ? EXTENSION_TYPES[ext] : '';
+};
+
+/**
+ * Chat attachments have to land inside the upload allowlist, or the `z.enum` of
+ * `photos.createUpload`/`createVideoUpload` rejects them before a byte is uploaded.
+ * Returns the kind plus the single `Content-Type` to sign the PUT with, or `null` for a
+ * file no path accepts (a `.heic` from the iPhone camera roll, an unknown container).
+ */
+export function mediaKindOf({ type, name }) {
+  const mime = normalizeMime(type).toLowerCase();
+  const candidate = IMAGE_ALLOWED.includes(mime) || VIDEO_ALLOWED.includes(mime) ? mime : typeByExtension(name);
+  if (!candidate) return null;
+  return { kind: candidate.startsWith('video/') ? 'video' : 'image', contentType: candidate };
+}
+
 /**
  * Telegram's WebView grants media access per `onPermissionRequest`, i.e. once per
  * `getUserMedia` call, and does not persist it for the origin. A regular browser remembers
