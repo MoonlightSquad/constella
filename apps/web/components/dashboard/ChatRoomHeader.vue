@@ -8,6 +8,7 @@ const props = defineProps<{
   contactInfo: { offeredByMe: boolean; mutual: boolean; usernames: string[] } | null
   isSharingContact: boolean
   notificationsEnabled: boolean
+  callsAvailable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,8 +35,8 @@ const menuOpen = ref(false)
       <p>{{ match.profile?.age }} {{ t('dashboard.years') }} · {{ match.profile?.city }}</p>
     </div>
     <div class="chat-header-actions">
-      <button class="call-icon-button" type="button" :title="t('dashboard.audioCall')" @click="emit('startCall', 'audio')">📞</button>
-      <button class="call-icon-button" type="button" :title="t('dashboard.videoCall')" @click="emit('startCall', 'video')">📹</button>
+      <button v-if="callsAvailable" class="call-icon-button" type="button" :title="t('dashboard.audioCall')" @click="emit('startCall', 'audio')">📞</button>
+      <button v-if="callsAvailable" class="call-icon-button" type="button" :title="t('dashboard.videoCall')" @click="emit('startCall', 'video')">📹</button>
       <button class="overflow-menu-btn" type="button" aria-label="Menu" @click="menuOpen = !menuOpen">⋮</button>
     </div>
     <div v-if="menuOpen" class="menu-backdrop" @click="menuOpen = false"></div>

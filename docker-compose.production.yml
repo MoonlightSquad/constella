@@ -51,6 +51,11 @@ services:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID in .env.production}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY in .env.production}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:?Set S3_PUBLIC_BASE_URL in .env.production}
+      # Аудіо/відео дзвінки (LiveKit Cloud). Опційно: без цих значень веб ховає
+      # кнопки дзвінка, уся решта працює як раніше.
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

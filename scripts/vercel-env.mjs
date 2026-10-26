@@ -120,6 +120,11 @@ const projects = {
       SMTP_FROM: { required: true },
       SENTRY_DSN: {},
       SENTRY_ENVIRONMENT: {},
+      // Опційні: без них `social.callConfig` повертає available:false, і веб ховає
+      // кнопки дзвінка. Копії в web-проєкт не потрібні — браузер дістає url з API.
+      LIVEKIT_API_KEY: {},
+      LIVEKIT_API_SECRET: {},
+      LIVEKIT_URL: {},
     },
   },
   web: {

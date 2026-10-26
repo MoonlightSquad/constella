@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
 import { useChat } from '~/composables/useChat'
+import { useCallRoom } from '~/composables/useCallRoom'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 import ChatRoomHeader from './ChatRoomHeader.vue'
 import ChatMessageList from './ChatMessageList.vue'
@@ -43,12 +44,27 @@ const chat = useChat({
   onQuestRefresh: async () => { emit('refresh') },
   getUserId,
   onCallIncoming: (payload) => {
-    incomingCall.value = payload
+    if (callPhase.value !== 'idle') return
+    callInfo.value = { matchId: payload.matchId, roomId: payload.roomId, callType: payload.callType, peerName: payload.fromName || t('dashboard.traveler') }
+    callPhase.value = 'incoming'
     emit('toast', t('dashboard.callIncoming'))
   },
-  onCallEnded: () => {
-    endCallUI()
-    emit('toast', t('dashboard.callEnded'))
+  onCallAccepted: async (payload) => {
+    if (callPhase.value !== 'outgoing' || callInfo.value?.roomId !== payload.roomId) return
+    if (ringTimeout) { window.clearTimeout(ringTimeout); ringTimeout = null }
+    callPhase.value = 'active'
+    startTick()
+    if (!(await joinRoom(payload.callType))) await hangUp('failed')
+  },
+  onCallRejected: (payload) => {
+    if (callInfo.value?.roomId !== payload.roomId) return
+    forgetCall()
+    emit('toast', t('dashboard.callRejected'))
+  },
+  onCallEnded: async (payload) => {
+    if (callInfo.value?.roomId !== payload.roomId) return
+    await finishFromRemote()
+    emit('toast', payload.reason === 'missed' ? t('chats.missedCall') : t('dashboard.callEnded'))
   },
 })
 
@@ -70,39 +86,117 @@ const recorder = useVoiceRecorder({
 })
 
 // ---------- Calls ----------
-const activeCall = ref<{ roomId: string; callType: 'audio' | 'video'; peerName: string } | null>(null)
-const incomingCall = ref<{ roomId: string; callType: 'audio' | 'video'; fromId: string; fromName: string; token: string } | null>(null)
-const callTimer = ref(0)
-const isCalling = ref(false)
-let callTimerInterval: number | null = null
+/** Рінг тримає браузер ініціатора: серверного воркера для таймаута на Vercel немає. */
+const RING_TIMEOUT_MS = 30_000
+
+type CallInfo = { matchId: string; roomId: string; callType: 'audio' | 'video'; peerName: string }
+
+const callPhase = ref<'idle' | 'outgoing' | 'incoming' | 'active'>('idle')
+const callInfo = ref<CallInfo | null>(null)
+const callSeconds = ref(0)
+const isCallBusy = ref(false)
+const callsAvailable = ref(false)
+/** Видається по одному на учасника: ініціатору — у `startCall`, піру — у `acceptCall`. */
+let callCredentials: { url: string; token: string } | null = null
+let callTick: number | null = null
+let ringTimeout: number | null = null
+
+const room = useCallRoom({
+  onToast: (msg) => emit('toast', msg),
+  onPeerLeft: () => { if (callPhase.value === 'active') void hangUp('ended') },
+})
+
+const stopTick = () => {
+  if (callTick) { window.clearInterval(callTick); callTick = null }
+  if (ringTimeout) { window.clearTimeout(ringTimeout); ringTimeout = null }
+}
+
+const startTick = () => {
+  stopTick()
+  callSeconds.value = 0
+  callTick = window.setInterval(() => { callSeconds.value += 1 }, 1000)
+}
+
+const forgetCall = () => {
+  stopTick()
+  callCredentials = null
+  callInfo.value = null
+  callPhase.value = 'idle'
+  callSeconds.value = 0
+}
+
+const loadCallConfig = async () => {
+  try {
+    const config = await $trpc.social.callConfig.query()
+    callsAvailable.value = Boolean(config?.available)
+  } catch { callsAvailable.value = false }
+}
+
+const joinRoom = async (callType: 'audio' | 'video') => {
+  if (!callCredentials) return false
+  return room.connect({ url: callCredentials.url, token: callCredentials.token, callType })
+}
+
+/** Ініціатива користувача: закриваємо кімнату і повідомляємо сервер. */
+const hangUp = async (reason: 'ended' | 'missed' | 'failed') => {
+  const info = callInfo.value
+  forgetCall()
+  await room.disconnect()
+  if (!info) return
+  try {
+    await $trpc.social.endCall.mutate({ matchId: info.matchId, roomId: info.roomId, reason })
+  } catch (err: any) {
+    emit('toast', err?.message || t('dashboard.loadError'))
+  }
+  await chat.loadChatMessages()
+  emit('refresh')
+}
+
+/** Подія від піра: лише згортаємо UI, жодного повторного `endCall`. */
+const finishFromRemote = async () => {
+  forgetCall()
+  await room.disconnect()
+  await chat.loadChatMessages()
+  emit('refresh')
+}
 
 const startCallUI = async (callType: 'audio' | 'video') => {
-  if (!chat.selectedMatch.value || isCalling.value) return
-  isCalling.value = true
+  const match = chat.selectedMatch.value
+  if (!match || callPhase.value !== 'idle' || isCallBusy.value) return
+  isCallBusy.value = true
   try {
-    const s = await $trpc.social.startCall.mutate({ matchId: chat.selectedMatch.value.id, callType })
-    activeCall.value = { roomId: s.roomId, callType, peerName: chat.selectedMatch.value.profile?.displayName || t('dashboard.traveler') }
-    callTimer.value = 0
-    callTimerInterval = window.setInterval(() => { callTimer.value += 1 }, 1000)
+    const s = await $trpc.social.startCall.mutate({ matchId: match.id, callType })
+    callCredentials = { url: s.url, token: s.token }
+    callInfo.value = { matchId: match.id, roomId: s.roomId, callType, peerName: match.profile?.displayName || t('dashboard.traveler') }
+    callPhase.value = 'outgoing'
+    ringTimeout = window.setTimeout(() => { void hangUp('missed') }, RING_TIMEOUT_MS)
+  } catch (err: any) { emit('toast', err?.message || t('dashboard.loadError')) } finally { isCallBusy.value = false }
+}
+
+const acceptIncomingCall = async () => {
+  const info = callInfo.value
+  if (!info || isCallBusy.value) return
+  isCallBusy.value = true
+  try {
+    const s = await $trpc.social.acceptCall.mutate({ matchId: info.matchId, roomId: info.roomId })
+    callCredentials = { url: s.url, token: s.token }
+    callPhase.value = 'active'
+    startTick()
+    if (!(await joinRoom(info.callType))) await hangUp('failed')
+  } catch (err: any) {
+    emit('toast', err?.message || t('dashboard.loadError'))
+    forgetCall()
+  } finally { isCallBusy.value = false }
+}
+
+const declineIncomingCall = async () => {
+  const info = callInfo.value
+  forgetCall()
+  if (!info) return
+  try {
+    await $trpc.social.rejectCall.mutate({ matchId: info.matchId, roomId: info.roomId })
     await chat.loadChatMessages()
-  } catch (err: any) { emit('toast', err?.message || t('dashboard.loadError')) } finally { isCalling.value = false }
-}
-
-const acceptIncomingCall = () => {
-  if (!incomingCall.value) return
-  activeCall.value = { roomId: incomingCall.value.roomId, callType: incomingCall.value.callType, peerName: incomingCall.value.fromName }
-  incomingCall.value = null
-  callTimer.value = 0
-  callTimerInterval = window.setInterval(() => { callTimer.value += 1 }, 1000)
-}
-
-const declineIncomingCall = () => { incomingCall.value = null }
-
-const endCallUI = () => {
-  if (callTimerInterval) { window.clearInterval(callTimerInterval); callTimerInterval = null }
-  activeCall.value = null
-  incomingCall.value = null
-  callTimer.value = 0
+  } catch (err: any) { emit('toast', err?.message || t('dashboard.loadError')) }
 }
 
 // ---------- Safety ----------
@@ -124,10 +218,13 @@ const blockProfile = async (profileId: string, matchId?: string) => {
 
 const onPickFile = (file: File) => { void chat.sendMediaMessage(file) }
 
+onMounted(() => { void loadCallConfig() })
+
 onUnmounted(() => {
   chat.closeChatWs()
   chat.stopAllVoices()
-  endCallUI()
+  // Закрита вкладка не повинна залишати піра у стані «дзвінок йде».
+  if (callPhase.value !== 'idle') void hangUp(callPhase.value === 'active' ? 'ended' : 'missed')
 })
 </script>
 
@@ -140,6 +237,7 @@ onUnmounted(() => {
         :contact-info="chat.contactInfo.value"
         :is-sharing-contact="chat.isSharingContact.value"
         :notifications-enabled="chat.notificationsEnabled.value"
+        :calls-available="callsAvailable"
         @back="closeRoom"
         @start-call="startCallUI"
         @share-contact="chat.shareContact()"
@@ -209,12 +307,21 @@ onUnmounted(() => {
     </template>
 
     <CallOverlay
-      :active-call="activeCall"
-      :incoming-call="incomingCall"
-      :call-timer="callTimer"
+      :phase="callPhase"
+      :room-phase="room.phase.value"
+      :call-type="callInfo?.callType ?? 'audio'"
+      :peer-name="callInfo?.peerName ?? ''"
+      :seconds="callSeconds"
+      :mic-enabled="room.micEnabled.value"
+      :cam-enabled="room.camEnabled.value"
+      :peer-present="room.peerPresent.value"
+      :local-stream="room.localStream.value"
+      :remote-stream="room.remoteStream.value"
       @accept="acceptIncomingCall"
       @decline="declineIncomingCall"
-      @end="endCallUI"
+      @end="hangUp(callPhase === 'outgoing' ? 'missed' : 'ended')"
+      @toggle-mic="room.toggleMic()"
+      @toggle-cam="room.toggleCam()"
     />
   </section>
 </template>
