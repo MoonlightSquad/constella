@@ -268,6 +268,9 @@ export default function ChatScreen() {
     // Палець міг відпускатися, поки просили дозвіл, — тоді не стартуємо взагалі.
     if (!permission.granted || !holdingRef.current) {
       if (!permission.granted) setIssue(t('dashboard.voiceUnsupported'));
+      // Жест, який з'їв діалог дозволу, не повинен лишатися без відповіді: підказуємо,
+      // що запис — саме затискання (короткий тап у нас нічого не перемикає).
+      else if (Date.now() - heldAt.current >= MIN_HOLD_MS) flash(t('dashboard.holdToRecord'));
       return;
     }
     try {
