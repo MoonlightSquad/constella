@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import { messageTickOf } from './chat-status.mjs'
 import { mediaKindOf } from './media-decisions.mjs'
 
 type Match = {
@@ -19,8 +20,8 @@ export interface CallSignalPayload {
 
 export interface ChatOptions {
   onToast?: (msg: string) => void
-  onMatchRefresh?: () => Promise<void>
-  onQuestRefresh?: () => Promise<void>
+  /** Бічний ефект надсилання: превʼю матчу й прогрес квестів. Не чекаємо відповіді. */
+  onChatRefresh?: () => void
   getUserId?: () => string | undefined
   onCallIncoming?: (payload: CallSignalPayload) => void
   onCallAccepted?: (payload: CallSignalPayload) => void
@@ -62,7 +63,7 @@ export function useChat(options: ChatOptions = {}) {
   let ablyDetach: (() => void) | null = null
   let pollTimer: number | null = null
 
-  const POLL_INTERVAL_MS = 5000
+  const POLL_INTERVAL_MS = 1500
 
   const loadRealtimeConfig = async (): Promise<'ably' | 'poll'> => {
     if (realtimeTransport.value) return realtimeTransport.value
@@ -82,20 +83,27 @@ export function useChat(options: ChatOptions = {}) {
     wsConnected.value = false
   }
 
-  /** Прочитані «вхідні» повідомки — лише коли вкладку видно, як і з сокетом. */
-  const markIncomingRead = (message: any) => {
+  /**
+   * Галочка «доставлено» чесна лише тоді, коли пір справді дістав рядки:
+   * видимій вкладці ставимо прочитання, невидимій — лише доставку. Інакше у
+   * відправника назавжди лишилась би одиночна ✓ на повідомленні, яке пір бачив.
+   */
+  const markIncoming = (message: any) => {
     const matchId = selectedMatch.value?.id
     if (!message || !matchId || message.matchId !== matchId) return
     if (message.senderId === getUserId()) return
-    if (document.visibilityState !== 'visible') return
+    if (document.visibilityState !== 'visible') {
+      void $trpc.social.markDelivered.mutate({ matchId, messageIds: [message.id] }).catch(() => {})
+      return
+    }
     void $trpc.social.markRead.mutate({ matchId, messageIds: [message.id] }).catch(() => {})
   }
 
-  const applyReadReceipt = (data: any) => {
+  const applyReceipt = (data: any, field: 'readAt' | 'deliveredAt') => {
     const ids: number[] = Array.isArray(data.messageIds) ? data.messageIds : [data.messageId]
     for (const id of ids) {
       const m = chatMessages.value.find((x: any) => x.id === id)
-      if (m) m.readAt = data.readAt
+      if (m) m[field] = data[field]
     }
   }
 
@@ -106,7 +114,7 @@ export function useChat(options: ChatOptions = {}) {
     if (data.actorId && data.actorId === getUserId()) return
     if (data.type === 'chat.message') {
       appendMessage(data.message)
-      markIncomingRead(data.message)
+      markIncoming(data.message)
       if (notificationsEnabled.value && data.message && data.message.senderId !== getUserId() && document.visibilityState !== 'visible') {
         void showNewMessageNotification(data.message, selectedMatch.value)
       }
@@ -122,7 +130,9 @@ export function useChat(options: ChatOptions = {}) {
     } else if (data.type === 'call.ended') {
       options.onCallEnded?.({ matchId: data.matchId, roomId: data.roomId, reason: data.reason, durationSec: data.durationSec })
     } else if (data.type === 'presence.read') {
-      applyReadReceipt(data)
+      applyReceipt(data, 'readAt')
+    } else if (data.type === 'presence.delivered') {
+      applyReceipt(data, 'deliveredAt')
     }
   }
 
@@ -163,7 +173,7 @@ export function useChat(options: ChatOptions = {}) {
     try {
       const res = await $trpc.social.chatMessages.query({ matchId, afterId: lastId })
       const tail = Array.isArray(res) ? res : res?.messages || []
-      for (const message of tail) { appendMessage(message); markIncomingRead(message) }
+      for (const message of tail) { appendMessage(message); markIncoming(message) }
     } catch {}
   }
 
@@ -208,21 +218,59 @@ export function useChat(options: ChatOptions = {}) {
     } catch (error) { showError(error) }
   }
 
-  const sendMessage = async () => {
-    const body = chatDraft.value.trim()
-    if (!body || !selectedMatch.value || isSending.value) return
-    isSending.value = true
-    try {
-      await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body })
-      chatDraft.value = ''
-      await Promise.all([loadChatMessages(), options.onMatchRefresh?.(), options.onQuestRefresh?.()])
-    } catch (error) { showError(error) } finally { isSending.value = false }
-  }
-
   const appendMessage = (message: any) => {
     const exists = chatMessages.value.some((m: any) => m.id === message.id)
     if (exists) return
     chatMessages.value = [...chatMessages.value, message].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  }
+
+  // Надсилання оптимістичне: рядок живе під локальним `id` із прапорцем `pending`,
+  // відповідь сервера замінює його тим самим `appendMessage`-шляхом, що й решта стрічки.
+  // Курсор `pollChatTail` з `'p<n>'` не ламається — там `Number(m.id) || 0`.
+  let pendingSeq = 0
+
+  const appendPending = (partial: Record<string, any>) => {
+    const row = {
+      id: `p${++pendingSeq}`,
+      pending: true,
+      kind: 'text',
+      matchId: selectedMatch.value?.id,
+      senderId: getUserId(),
+      body: '',
+      deliveredAt: null,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+      ...partial,
+    }
+    chatMessages.value = [...chatMessages.value, row]
+    return row.id
+  }
+
+  const settlePending = (tempId: string, message: any) => {
+    chatMessages.value = chatMessages.value.filter((m: any) => m.id !== tempId)
+    // Рядок уже міг прийти раніше з Ably чи з опитування — дедуплікує `appendMessage`.
+    if (message?.matchId === selectedMatch.value?.id) appendMessage(message)
+  }
+
+  const dropPending = (tempId: string) => {
+    chatMessages.value = chatMessages.value.filter((m: any) => m.id !== tempId)
+  }
+
+  const sendMessage = async () => {
+    const body = chatDraft.value.trim()
+    if (!body || !selectedMatch.value || isSending.value) return
+    const tempId = appendPending({ body })
+    chatDraft.value = ''
+    isSending.value = true
+    try {
+      settlePending(tempId, await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body }))
+      void options.onChatRefresh?.()
+    } catch (error) {
+      dropPending(tempId)
+      // Повертаємо текст у чернетку, лише якщо за час запиту користувач нічого не набрав.
+      if (!chatDraft.value.trim()) chatDraft.value = body
+      showError(error)
+    } finally { isSending.value = false }
   }
 
   // --- Media helpers ---
@@ -271,13 +319,7 @@ export function useChat(options: ChatOptions = {}) {
     return { message, media, shown: media?.kind ?? message.kind }
   }))
 
-  const messageStatus = (message: any) => {
-    if (message.senderId === getUserId()) {
-      if (message.readAt) return t('dashboard.messageRead')
-      if (message.deliveredAt) return t('dashboard.messageSent')
-    }
-    return ''
-  }
+  const messageTick = (message: any) => messageTickOf(message, getUserId())
 
   // --- Audio playback ---
   const audioPlayers = new Map<string, { audio: HTMLAudioElement; speed: number; playing: boolean; duration: number; currentTime: number }>()
@@ -404,8 +446,11 @@ export function useChat(options: ChatOptions = {}) {
       const processed = isVideo
         ? await $trpc.photos.confirmVideoUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'video/mp4' | 'video/webm' })
         : await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp' })
-      await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind: media.kind, url: processed.publicUrl, fileName: file.name, size: file.size }) })
-      await loadChatMessages()
+      const message = await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind: media.kind, url: processed.publicUrl, fileName: file.name, size: file.size }) })
+      // Рядок із відповіді — той самий, що й у стрічці, тож перезавантаження історії
+      // тут зайве: воно прибирало б галочку «pending» на цілу секунду.
+      appendMessage(message)
+      void options.onChatRefresh?.()
     } catch (err) { showError(err) } finally { isSending.value = false }
   }
 
@@ -416,6 +461,7 @@ export function useChat(options: ChatOptions = {}) {
     pinnedMedia, notificationPermission, notificationsEnabled,
     // Actions
     openChat, closeChat, loadChatMessages, sendMessage, appendMessage,
+    appendPending, settlePending, dropPending,
     connectRealtime, closeRealtime, loadRealtimeConfig, onComposerInput,
     shareContact, sendMediaMessage,
     // Audio
@@ -423,7 +469,7 @@ export function useChat(options: ChatOptions = {}) {
     voiceProgressPercent, messageSpeed, stopAllVoices,
     // Helpers
     parseVoice, mediaFromBody, previewBody, renderedMessages,
-    messageStatus, isPinned, togglePinMedia,
+    messageTick, isPinned, togglePinMedia,
     // Notifications
     toggleNotifications, requestNotificationPermission,
     // i18n

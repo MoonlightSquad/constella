@@ -19,6 +19,8 @@ export const colors = {
   goldDim: '#9d815c',
   mint: '#82c7b7',
   mintSoft: '#85c9b9',
+  /** Галочка «прочитано» — той самий акцент, що в вебі (`ChatMessageList.vue`). */
+  mintBright: '#6ee7c7',
   mintDim: '#4a756b',
   danger: '#f29b8e',
   dangerSoft: '#ff9c8f',

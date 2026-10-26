@@ -25,7 +25,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toast: [msg: string]
+  /** Повний рефреш дашборда: блокування, завершене дзвінка. */
   refresh: []
+  /** Лише превʼю матчу й квести — те, що змінює надіслане повідомлення. */
+  chatRefresh: []
   report: [profile: any, matchId?: string]
   backToOrbit: []
 }>()
@@ -41,8 +44,7 @@ const getUserId = () => props.account?.userId as string | undefined
 // ---------- Chat (WS, messages, media, audio) ----------
 const chat = useChat({
   onToast: (msg) => emit('toast', msg),
-  onMatchRefresh: async () => { emit('refresh') },
-  onQuestRefresh: async () => { emit('refresh') },
+  onChatRefresh: () => { emit('chatRefresh') },
   getUserId,
   onCallIncoming: (payload) => {
     if (callPhase.value !== 'idle') return
@@ -81,13 +83,21 @@ const recorder = useVoiceRecorder({
   onToast: (msg) => emit('toast', msg),
   getSelectedMatchId: () => chat.selectedMatch.value?.id ?? null,
   onSend: async (type, payload) => {
-    if (type === 'voice') {
-      await $trpc.social.sendVoiceMessage.mutate({ matchId: payload.matchId, audioUrl: payload.audioUrl, durationSec: payload.durationSec })
-    } else {
-      await $trpc.social.sendMessage.mutate({ matchId: payload.matchId, body: payload.body })
+    // Голос і кружок теж оптимістичні: файл уже в R2, тож бульбашка з'являється
+    // миттєво, а ◷ тримається лише на час одного запиту до API.
+    const tempId = chat.appendPending(type === 'voice'
+      ? { kind: 'voice', body: JSON.stringify({ audioUrl: payload.audioUrl, durationSec: Math.round(payload.durationSec) }) }
+      : { body: payload.body })
+    try {
+      const message = type === 'voice'
+        ? await $trpc.social.sendVoiceMessage.mutate({ matchId: payload.matchId, audioUrl: payload.audioUrl, durationSec: payload.durationSec })
+        : await $trpc.social.sendMessage.mutate({ matchId: payload.matchId, body: payload.body })
+      chat.settlePending(tempId, message)
+      emit('chatRefresh')
+    } catch (err) {
+      chat.dropPending(tempId)
+      throw err
     }
-    await chat.loadChatMessages()
-    emit('refresh')
   },
 })
 
@@ -301,6 +311,7 @@ onUnmounted(() => {
         :voice-progress-percent="chat.voiceProgressPercent"
         :message-speed="chat.messageSpeed"
         :is-pinned="chat.isPinned"
+        :message-tick="chat.messageTick"
         @play-voice="(id, url, dur) => chat.playVoice(id, url, dur)"
         @pause-voice="(id) => chat.pauseVoice(id)"
         @toggle-speed="(id) => chat.togglePlaybackSpeed(id)"

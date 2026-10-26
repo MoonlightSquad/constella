@@ -10,13 +10,16 @@ import type { ChatMessage } from './types';
 export type ChatFrame =
   | { type: 'chat.message'; message: ChatMessage }
   | { type: 'chat.typing' }
-  | { type: 'presence.read'; messageId: number; readAt: string }
+  // `messageIds` — batch із `chatMessages`/`markRead`; без нього ми б губили решту рядків.
+  | { type: 'presence.read'; messageId: number; messageIds?: number[]; readAt: string }
+  | { type: 'presence.delivered'; messageId: number; messageIds?: number[]; deliveredAt: string }
   | { type: 'error'; code: string; message: string };
 
 export type OutgoingFrame =
   | { type: 'send.message'; body: string }
   | { type: 'send.typing' }
-  | { type: 'send.read'; messageId: number };
+  | { type: 'send.read'; messageId: number }
+  | { type: 'send.delivered'; messageId: number };
 
 /**
  * Сервер закриває рукопотискення цими кодами (apps/api/src/index.ts:303-360), і жоден

@@ -3,7 +3,6 @@ import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
   message: any
-  isMine: boolean
   isPlaying: boolean
   progressPercent: number
   speed: number
@@ -48,7 +47,6 @@ const formatDuration = (sec: number) => {
       <span class="voice-time">{{ formatDuration(durationSec) }}</span>
     </div>
     <button type="button" class="speed-btn" :aria-label="t('dashboard.playbackSpeed')" @click="emit('toggleSpeed')">{{ speed }}×</button>
-    <span v-if="!isMine" class="msg-status">{{ message.readAt ? t('dashboard.messageRead') : message.deliveredAt ? t('dashboard.messageSent') : '' }}</span>
   </div>
 </template>
 
@@ -62,5 +60,4 @@ const formatDuration = (sec: number) => {
 .wave-bar.played { background: #e4b46c; }
 .voice-time { color: #879b95; font-size: 10px; white-space: nowrap; }
 .speed-btn { flex: 0 0 auto; min-height: 34px; border: 1px solid #364949; border-radius: 99px; padding: 0 10px; background: #182828; color: #a5eedb; font-size: 10px; font-weight: 700; cursor: pointer; }
-.msg-status { color: #7f948d; font-size: 9px; white-space: nowrap; }
 </style>

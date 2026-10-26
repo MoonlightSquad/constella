@@ -33,7 +33,9 @@ import {
   getAge,
   getLocalDate,
   getMatchForUser,
+  hasAchievement,
   hasVip,
+  markMessagesDelivered,
   markMessagesRead,
   notifyTelegram,
   remainingLikes,
@@ -47,6 +49,55 @@ import {
 import { notifyUser } from '../push/notify.js';
 
 const MAX_MESSAGE_LENGTH = 1000;
+
+/** Quest progress is counted per local day, so the sender's timezone is read first. */
+const bumpQuestsForSender = async (db: any, userId: string, codes: string[]) => {
+  const [sender] = await db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, userId)).limit(1);
+  const timeZone = sender?.timeZone ?? 'UTC';
+  await Promise.all(codes.map((code) => bumpQuest(db, userId, timeZone, code)));
+};
+
+/**
+ * `dialog-master` and `good-conversation` are decided from message history — two `GROUP BY`
+ * scans over every message the user ever sent. Both are one-time, so the scans are skipped
+ * once the account already holds them; otherwise the cost would fall on every message.
+ */
+const awardConversationAchievements = async (db: any, userId: string, peerId: string, matchId: string) => {
+  const [hasDialogMaster, hasMyConversation, hasPeerConversation] = await Promise.all([
+    hasAchievement(db, userId, 'dialog-master'),
+    hasAchievement(db, userId, 'good-conversation'),
+    hasAchievement(db, peerId, 'good-conversation'),
+  ]);
+  const longChats = hasDialogMaster
+    ? Promise.resolve(false)
+    : db
+        .select({ matchId: messages.matchId, count: sql<number>`count(*)::int` })
+        .from(messages)
+        .where(eq(messages.senderId, userId))
+        .groupBy(messages.matchId)
+        .then((counts: any[]) => counts.filter((row: any) => row.count >= 10).length >= 10);
+  const bothTalking = hasMyConversation && hasPeerConversation
+    ? Promise.resolve(false)
+    : db
+        .select({ senderId: messages.senderId, count: sql<number>`count(*)::int` })
+        .from(messages)
+        .where(eq(messages.matchId, matchId))
+        .groupBy(messages.senderId)
+        .then((rows: any[]) => {
+          const myCount = rows.find((entry: any) => entry.senderId === userId)?.count ?? 0;
+          const peerCount = rows.find((entry: any) => entry.senderId !== userId)?.count ?? 0;
+          return myCount >= 5 && peerCount >= 5;
+        });
+  const [manyMatches, conversation] = await Promise.all([longChats, bothTalking]);
+  if (manyMatches) await awardAchievement(db, userId, 'dialog-master');
+  if (conversation) {
+    await Promise.all([
+      hasMyConversation ? Promise.resolve(false) : awardAchievement(db, userId, 'good-conversation'),
+      hasPeerConversation ? Promise.resolve(false) : awardAchievement(db, peerId, 'good-conversation'),
+    ]);
+  }
+};
+
 const publicProfileFields = {
   id: users.id,
   birthdate: users.birthdate,
@@ -694,33 +745,21 @@ export const socialRouter = router({
       }
       const [message] = await ctx.db
         .insert(messages)
-        .values({ matchId: input.matchId, senderId: ctx.user.id, body: input.body, deliveredAt: new Date() })
+        .values({ matchId: input.matchId, senderId: ctx.user.id, body: input.body })
         .returning();
-      // The web client writes over tRPC, so push to every live peer on this
-      // match (sockets here, Ably for browsers on another instance) instead of
-      // relying on polling.
-      await deliverToMatch(input.matchId, { type: 'chat.message', message });
-      await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
-      const [sender] = await ctx.db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
-      await bumpQuest(ctx.db, ctx.user.id, sender?.timeZone ?? 'UTC', 'message-5');
-      const counts = await ctx.db
-        .select({ matchId: messages.matchId, count: sql<number>`count(*)::int` })
-        .from(messages)
-        .where(eq(messages.senderId, ctx.user.id))
-        .groupBy(messages.matchId);
-      const longChats = counts.filter((row: any) => row.count >= 10).length;
-      if (longChats >= 10) await awardAchievement(ctx.db, ctx.user.id, 'dialog-master');
-      const senderCounts = await ctx.db
-        .select({ senderId: messages.senderId, count: sql<number>`count(*)::int` })
-        .from(messages)
-        .where(eq(messages.matchId, input.matchId))
-        .groupBy(messages.senderId);
-      const myCount = senderCounts.find((entry: any) => entry.senderId === ctx.user.id)?.count ?? 0;
-      const peerCount = senderCounts.find((entry: any) => entry.senderId !== ctx.user.id)?.count ?? 0;
-      if (myCount >= 5 && peerCount >= 5) {
-        const peerId = match.userOneId === ctx.user.id ? match.userTwoId : match.userOneId;
-        await Promise.all([awardAchievement(ctx.db, ctx.user.id, 'good-conversation'), awardAchievement(ctx.db, peerId, 'good-conversation')]);
-      }
+      const peerId = match.userOneId === ctx.user.id ? match.userTwoId : match.userOneId;
+      // Nothing here depends on anything else, and none of it decides the response, so it
+      // goes out as one wave: still awaited (Vercel freezes the instance once the response
+      // is flushed), but `max()` instead of the sum of a dozen round-trips to a remote DB.
+      await Promise.all([
+        // The web client writes over tRPC, so push to every live peer on this
+        // match (sockets here, Ably for browsers on another instance) instead of
+        // relying on polling.
+        deliverToMatch(input.matchId, { type: 'chat.message', message }),
+        awardAchievement(ctx.db, ctx.user.id, 'first-hello'),
+        bumpQuestsForSender(ctx.db, ctx.user.id, ['message-5']),
+        awardConversationAchievements(ctx.db, ctx.user.id, peerId, input.matchId),
+      ]);
       return message;
     }),
 
@@ -744,14 +783,13 @@ export const socialRouter = router({
       const body = JSON.stringify({ audioUrl: input.audioUrl, durationSec: Math.round(input.durationSec) });
       const [message] = await ctx.db
         .insert(messages)
-        .values({ matchId: input.matchId, senderId: ctx.user.id, kind: 'voice', body, deliveredAt: new Date() })
+        .values({ matchId: input.matchId, senderId: ctx.user.id, kind: 'voice', body })
         .returning();
-      await deliverToMatch(input.matchId, { type: 'chat.message', message });
-      await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
-      const [voiceSender] = await ctx.db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
-      const voiceTz = voiceSender?.timeZone ?? 'UTC';
-      await bumpQuest(ctx.db, ctx.user.id, voiceTz, 'message-5');
-      await bumpQuest(ctx.db, ctx.user.id, voiceTz, 'voice-1');
+      await Promise.all([
+        deliverToMatch(input.matchId, { type: 'chat.message', message }),
+        awardAchievement(ctx.db, ctx.user.id, 'first-hello'),
+        bumpQuestsForSender(ctx.db, ctx.user.id, ['message-5', 'voice-1']),
+      ]);
       return message;
     }),
 
@@ -800,6 +838,32 @@ export const socialRouter = router({
           messageId: marked[0].id,
           messageIds: marked.map((row) => row.id),
           readAt: marked[0].readAt,
+          matchId: input.matchId,
+        });
+      }
+      return { marked: marked.length };
+    }),
+
+  /**
+   * Delivery receipts for the browser. Ably tokens are subscribe-only, so a browser can
+   * only ever ack over HTTP — this is the tRPC twin of the `send.delivered` WS frame.
+   */
+  markDelivered: protectedProcedure
+    .input(
+      z.object({
+        matchId: z.string().uuid(),
+        messageIds: z.array(z.number().int().positive()).min(1).max(100),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      const marked = await markMessagesDelivered(ctx.db, input.matchId, ctx.user.id, input.messageIds);
+      if (marked.length > 0) {
+        await deliverToMatch(input.matchId, {
+          type: 'presence.delivered',
+          messageId: marked[0].id,
+          messageIds: marked.map((row) => row.id),
+          deliveredAt: marked[0].deliveredAt,
           matchId: input.matchId,
         });
       }
