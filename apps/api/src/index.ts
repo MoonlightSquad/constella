@@ -22,7 +22,9 @@ import { authTokens, closeDb, db, users, identities, webCredentials, photoAssets
 import { appendTrpcOpenApiPaths } from './openapi.js';
 import { isEmailDeliveryConfigured, sendTransactionalEmail } from './utils/email.js';
 import { isPhotoStorageConfigured, removePhotoObjects } from './photos/storage.js';
+import { hashOpaqueToken, issueAuthToken } from './utils/auth-tokens.js';
 import { startBackgroundScheduler } from './engine/scheduler.js';
+import { closeSentry, initSentry } from './sentry.js';
 import { bot as telegramBot } from '@constella/bot';
 import { isConfiguredTelegramWebhookSecret, isValidTelegramWebhookSecret } from './utils/telegram-webhook.js';
 import { z } from 'zod';
@@ -38,6 +40,8 @@ declare module 'fastify' {
 
 dotenv.config();
 dotenv.config({ path: resolve(process.cwd(), '../../.env') });
+// Ініціалізація після dotenv, але до створення Fastify-інстансу.
+initSentry();
 
 const logger = createLogger('api');
 /** Parses a JSON object, returning `{}` for malformed or non-object payloads. */
@@ -126,23 +130,10 @@ const PORT = Number(process.env.PORT) || 4000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 let telegramBotInitialization: Promise<void> | undefined;
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomBytes(32).toString('hex'), 10);
-const hashOpaqueToken = (token: string) => createHash('sha256').update(token).digest('hex');
 const publicAppUrl = () => (process.env.WEB_APP_URL || 'http://localhost:5173').replace(/\/$/, '');
 
-const issueAuthToken = async (userId: string, purpose: 'email_verification' | 'password_reset') => {
-  const token = randomBytes(32).toString('base64url');
-  const now = new Date();
-  await db.update(authTokens).set({ usedAt: now })
-    .where(and(eq(authTokens.userId, userId), eq(authTokens.purpose, purpose), isNull(authTokens.usedAt)));
-  await db.insert(authTokens).values({
-    userId, tokenHash: hashOpaqueToken(token), purpose,
-    expiresAt: new Date(now.getTime() + (purpose === 'email_verification' ? 24 : 1) * 60 * 60 * 1000),
-  });
-  return token;
-};
-
 const sendVerificationEmail = async (email: string, userId: string) => {
-  const token = await issueAuthToken(userId, 'email_verification');
+  const token = await issueAuthToken(db, userId, 'email_verification');
   const url = `${publicAppUrl()}/auth/verify?token=${encodeURIComponent(token)}`;
   await sendTransactionalEmail({
     to: email,
@@ -153,7 +144,7 @@ const sendVerificationEmail = async (email: string, userId: string) => {
 };
 
 const sendPasswordResetEmail = async (email: string, userId: string) => {
-  const token = await issueAuthToken(userId, 'password_reset');
+  const token = await issueAuthToken(db, userId, 'password_reset');
   const url = `${publicAppUrl()}/auth/reset-password?token=${encodeURIComponent(token)}`;
   await sendTransactionalEmail({
     to: email,
@@ -993,6 +984,7 @@ async function initialize() {
   fastify.addHook('onClose', async () => {
     stopScheduler?.();
     await closeDb();
+    await closeSentry();
   });
 
   await fastify.ready();

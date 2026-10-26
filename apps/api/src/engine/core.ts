@@ -223,6 +223,33 @@ export const touchStreakAndPresence = async (db: any, profile: any) => {
 export const referralCodeFor = (userId: string) =>
   createHash('sha1').update(userId).digest('hex').slice(0, 8);
 
+let cachedBotUsername: string | null = null;
+let botUsernameLookupFailed = false;
+
+// Used to build referral/share links. Env first, then getMe once per process.
+export const resolveBotUsername = async () => {
+  if (cachedBotUsername) return cachedBotUsername;
+  const fromEnv = process.env.NUXT_PUBLIC_BOT_USERNAME || process.env.BOT_USERNAME || '';
+  if (fromEnv) {
+    cachedBotUsername = fromEnv;
+    return cachedBotUsername;
+  }
+  const token = process.env.BOT_TOKEN;
+  if (!token || botUsernameLookupFailed) return null;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const json = (await response.json()) as { ok?: boolean; result?: { username?: string } };
+    if (json?.ok && json.result?.username) {
+      cachedBotUsername = json.result.username;
+      return cachedBotUsername;
+    }
+  } catch {
+    /* best effort */
+  }
+  botUsernameLookupFailed = true;
+  return null;
+};
+
 export const issueRefreshToken = () => randomBytes(48).toString('hex');
 
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');

@@ -17,6 +17,8 @@ pnpm --filter @constella/bot dev      # grammY bot (polling, local only)
 pnpm --filter @constella/web dev      # Nuxt app, port 5173
 pnpm --filter @constella/landing dev  # Nuxt marketing site, port 5174
 pnpm --filter @constella/api build    # plain `tsc`, see workspace gotcha below
+pnpm --filter @constella/mobile dev # Expo start (Metro); needs no Android SDK
+pnpm --filter @constella/mobile bundle # expo export --platform android, device-free proof
 ```
 
 The API throws at startup without `BOT_TOKEN` (`apps/api/src/index.ts:166`); for a local tRPC smoke test `BOT_TOKEN='123:dummy' VERCEL=1 node dist/index.js` is enough — `VERCEL=1` suppresses `startBackgroundScheduler`, which otherwise runs `runSchedulerCycle` immediately and writes to whatever `DATABASE_URL` points at (currently a shared remote database).
@@ -35,16 +37,29 @@ If a Nuxt build dies with `Cannot start service: Host version "0.28.2" does not 
 
 No vitest/jest. Tests use Node's built-in runner via `tsx --test`, colocated as `*.test.ts` next to sources. `apps/api`'s test script **whitelists directories by glob** — a test added in a new subdirectory is silently never run unless the glob is updated.
 
+## Mobile app (apps/mobile)
+
+Expo SDK 58 + `expo-router` (router root is `src/app`). It is a real workspace member (`@constella/mobile`), not a web clone: parity baseline is `apps/web/components/ConstellaDashboard.vue` (five tabs orbit/sparks/chats/quests/sky), so reviewing the mobile app means diffing against that file. Admin console and voice/video calls are deliberately not ported (`social.startCall` is a server stub with no SFU).
+
+- Import `@constella/shared/client`, never the root barrel: the root re-exports `./logger.js` → winston + `process.env`, which Metro cannot bundle. New client-safe modules go into `packages/shared/src/client.ts`; leave the `"."` export alone. Proof: `pnpm --filter @constella/mobile bundle`, then `grep -c winston` in `dist/` must be 0.
+- tRPC is a vanilla `createTRPCClient` + `httpBatchLink` (no `@trpc/react-query`), same as `apps/web/plugins/trpc.ts`; the server's default JSON transformer sends `Date` as strings. JWT lives in `expo-secure-store` under `constella_token`, and any 401 clears it and redirects to `(auth)/login` — there is no refresh flow.
+- The i18n dictionary is mobile-local (`src/i18n/messages.ts`, `[uk,en,de,fr]` tuples keyed exactly like `useLocale.ts`); `t()` does its own `{slot}` substitution. Hermes gaps: `URL` comes from `react-native-url-polyfill` (imported first in `src/polyfills.ts`), and times are formatted by hand in `src/utils/dates.ts` rather than `toLocale*`.
+- Chat WebSocket auth requires `?token=` (RN cannot set WS headers either). Close codes 4001/4002/4003 are terminal — do not retry them — and `broadcastToMatch` echoes `chat.message` to the author, so the client must dedupe by message id. R2 uploads must `PUT` with the exact `Content-Type` `photos.createUpload` returned, or `confirmUpload` rejects.
+- Push = `trpc.push.registerToken` plus `apps/api/src/push/notify.ts` (plain `fetch` against the Expo REST API). It needs migration `0011_push_devices` and reads `EXPO_PUSH_ACCESS_TOKEN` → `EXPO_ACCESS_TOKEN`; with neither, fan-out is a silent no-op. Telegram linking on mobile goes through `billing.beginTelegramLink` → `/start link-<code>` → `POST /internal/telegram-link/complete`, because the Login Widget requires a browser domain — do not "simplify" it back to the widget.
+- Typed routes (`.expo/types/router.d.ts`) regenerate **only** under `expo start`: after adding a screen, run `CI=1 npx expo start` once before `pnpm --filter @constella/mobile typecheck`, or `router.push` will not know the new href.
+
 ## Domain notes
 
 - PostgreSQL + **PostGIS**. `users.geo` is a `customType` mapping to `geography(Point,4326)`; queries use raw `sql` with `ST_MakePoint` / `ST_DWithin` / `ST_SetSRID`. Local Postgres must be the postgis image or migrations fail.
-- **Never run `db:generate`** (this includes the root `pnpm db:generate`). `meta/` snapshots stop at `0004_brief_rhino`, but `_journal.json` lists 0000-0009 and migrations `0005`-`0009` are hand-written SQL. Generating diffs the new schema against the 0004 snapshot, so it emits `CREATE TABLE` for everything added since (`user_entitlements`, `photo_assets`, `admin_audit_logs`, `support_tickets`, …) and collides with the next number. Write new migrations by hand in the `0005`+ style (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) and append the `_journal.json` entry yourself, then apply with `pnpm --filter @constella/db db:migrate`. Fixing this properly means backfilling snapshots first.
+- **Never run `db:generate`** (this includes the root `pnpm db:generate`). `meta/` snapshots stop at `0004_brief_rhino`, but `_journal.json` lists 0000-0011 and migrations `0005`-`0011` are hand-written SQL. Generating diffs the new schema against the 0004 snapshot, so it emits `CREATE TABLE` for everything added since (`user_entitlements`, `photo_assets`, `admin_audit_logs`, `support_tickets`, …) and collides with the next number. Write new migrations by hand in the `0005`+ style (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) and append the `_journal.json` entry yourself, then apply with `pnpm --filter @constella/db db:migrate`. Fixing this properly means backfilling snapshots first.
 - `DATABASE_URL` in the live `.env` points at a shared remote Aiven test database, and there is no `docker` in this environment, so `db:migrate` is not a local-only operation.
 - On Vercel there is **no separate bot process** — `@constella/bot` handlers are imported by the API, which serves `POST /telegram/webhook` guarded by `TELEGRAM_WEBHOOK_SECRET`. `startBackgroundScheduler` therefore does not run in production; scheduled jobs need a separate worker or a protected cron endpoint.
 - `apps/web` proxies `/api/*` to the API (`apps/web/server/api/[...path].ts`). The upstream is resolved **at request time** from `NUXT_API_INTERNAL_BASE` → `API_INTERNAL_URL` → `API_PROXY_TARGET` → `NUXT_PUBLIC_API_URL`, so platform env changes take effect without a rebuild.
 - `apps/landing` is a **third Vercel project** (`constella-landing`, root directory `apps/landing`, default domain `constella.pp.ua`) and proxies its own `/api/*` through nitro. Nothing in its bundle calls the API from the browser, so the API's single-origin CORS allowlist never applies to it. Its admin JWT lives in an httpOnly cookie scoped to `path=/api/admin` and is turned into `Authorization: Bearer` server-side — do not move it to `localStorage`, and do not let the client send its own `Authorization`.
 - The landing's canonical host is build-time: `NUXT_PUBLIC_SITE_URL` feeds prerendered markup, hreflang, sitemap and RSS, so it is listed in `turbo.json` `tasks.build.env` and changing it requires a rebuild.
 - Never set the API's Vercel build command to `pnpm build`; it bypasses the turbo graph and fails with `Cannot find module '@constella/db'`. Use `turbo run build --filter=@constella/api...` (already in `apps/api/vercel.json`).
+- Chat media never reaches `messages.kind`: `social.sendMessage` always inserts `'text'`, and the schema union has no `image`/`video`. Both clients therefore derive the bubble type from the JSON body — `mediaFromBody` + `displayKind` in `apps/mobile/src/api/types.ts` and `ConstellaDashboard.vue`. Keep the body shape `{kind:'image'|'video', url, fileName, size, round?, durationSec?}`; a plain-string body must still parse via the fallback, so do not "fix" this with a server-side kind without a migration.
+- Video (including round «кружок» notes) uploads go through `photos.createVideoUpload` → `confirmVideoUpload` (30 MB cap, `video/mp4|webm` only), separate from the image path because `confirmUpload` also appends to `users.photos` and counts toward the 6-photo limit.
 
 ## Style
 

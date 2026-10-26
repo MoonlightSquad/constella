@@ -235,7 +235,7 @@ onMounted(() => {
 .eyebrow { margin: 0 0 13px; color: #82c7b7; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
 h1 { margin: 0; font-size: clamp(28px, 7vw, 42px); line-height: 1.08; }
 .setup-heading > p:last-child { max-width: 520px; margin: 12px 0 0; color: #aab9b6; line-height: 1.55; }
-.cancel-edit { margin-top: 17px; border: 0; background: transparent; padding: 0; color: #82c7b7; font-size: 12px; }
+.cancel-edit { display: flex; width: max-content; min-height: 44px; align-items: center; margin-top: 4px; border: 0; background: transparent; padding: 0; color: #82c7b7; font-size: 12px; cursor: pointer; }
 .setup-form { display: grid; gap: 24px; padding-top: 26px; }
 .form-section { display: grid; gap: 17px; }
 .section-title { display: flex; align-items: center; gap: 12px; }
@@ -245,17 +245,17 @@ h1 { margin: 0; font-size: clamp(28px, 7vw, 42px); line-height: 1.08; }
 .field { display: grid; gap: 8px; color: #d4dfdc; font-size: 13px; }
 .field > span { display: flex; justify-content: space-between; gap: 10px; }
 .field small { color: #8fa29f; font-size: 11px; font-weight: 400; }
-.field input:not([type=range]), .field select, .field textarea { width: 100%; border: 1px solid #344748; border-radius: 8px; background: #122021; padding: 12px 13px; color: #f5f7f6; outline: none; }
+.field input:not([type=range]), .field select, .field textarea { width: 100%; min-height: 44px; border: 1px solid #344748; border-radius: 8px; background: #122021; padding: 12px 13px; color: #f5f7f6; outline: none; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #82c7b7; box-shadow: 0 0 0 2px #82c7b722; }
 .field textarea { resize: vertical; }
-.field input[type=range] { width: 100%; accent-color: #82c7b7; }
+.field input[type=range] { width: 100%; min-height: 44px; accent-color: #82c7b7; }
 .choice-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.choice { border: 1px solid #344748; border-radius: 999px; padding: 9px 12px; background: transparent; color: #bdceca; font-size: 12px; }
+.choice { display: inline-flex; min-height: 44px; align-items: center; border: 1px solid #344748; border-radius: 999px; padding: 0 14px; background: transparent; color: #bdceca; font-size: 12px; cursor: pointer; }
 .choice.selected { border-color: #82c7b7; background: #23413d; color: #e5f8f1; }
 .choice:disabled { cursor: not-allowed; opacity: .45; }
 .form-note, .form-footnote { margin: 0; color: #91a39f; font-size: 12px; line-height: 1.5; }
-.consent-row { display: flex; align-items: start; gap: 10px; color: #bdcbc7; font-size: 12px; line-height: 1.5; }
-.consent-row input { width: 17px; height: 17px; flex: 0 0 auto; margin: 1px 0 0; accent-color: #82c7b7; }
+.consent-row { display: flex; align-items: start; gap: 10px; min-height: 44px; color: #bdcbc7; font-size: 12px; line-height: 1.5; cursor: pointer; }
+.consent-row input { width: 20px; height: 20px; flex: 0 0 auto; margin: 0; accent-color: #82c7b7; }
 .form-error { margin: 0; color: #ff9c8f; font-size: 13px; }
 .submit-button { width: 100%; min-height: 50px; border: 0; border-radius: 8px; background: #d9ad6d; color: #1b211f; font-weight: 750; }
 .submit-button:disabled { cursor: wait; opacity: .6; }

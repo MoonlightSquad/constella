@@ -44,10 +44,33 @@ const postPaymentEvent = async (path: string, body: unknown) => {
 };
 
 bot.command('start', async (ctx) => {
-  await ctx.reply(
-    `Вітаю, ${ctx.from?.first_name || 'мандрівнику'}! Твоє сузір’я знайомств починається тут.`,
-    { reply_markup: appKeyboard() }
-  );
+  const payload = ctx.match ?? '';
+  if (!payload.startsWith('link-')) {
+    await ctx.reply(
+      `Вітаю, ${ctx.from?.first_name || 'мандрівнику'}! Твоє сузір’я знайомств починається тут.`,
+      { reply_markup: appKeyboard() }
+    );
+    return;
+  }
+
+  const telegramUserId = ctx.from?.id;
+  if (!telegramUserId) return;
+  const code = payload.slice('link-'.length);
+  try {
+    const result = await postPaymentEvent('/internal/telegram-link/complete', {
+      code,
+      telegramUserId,
+      telegramUsername: ctx.from?.username,
+    });
+    if (!result.ok) {
+      await ctx.reply(result.errorMessage || 'Не вдалося прив’язати акаунт. Створи новий код у Constella.');
+      return;
+    }
+    await ctx.reply('Готово! Telegram прив’язано до твого акаунта Constella. ✨');
+  } catch (error) {
+    logger.error('Could not complete Telegram linking', { message: error instanceof Error ? error.message : 'Unknown error' });
+    await ctx.reply('Не вдалося прив’язати акаунт. Спробуй ще раз трохи пізніше.');
+  }
 });
 
 bot.command('orbit', async (ctx) => {

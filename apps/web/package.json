@@ -15,6 +15,7 @@
   "dependencies": {
     "@constella/api": "workspace:*",
     "@constella/shared": "workspace:*",
+    "@sentry/nuxt": "^11.9.0",
     "@trpc/client": "^11.19.0",
     "@trpc/server": "11.19.0",
     "dotenv": "^16.4.5",

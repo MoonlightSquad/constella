@@ -35,10 +35,13 @@ import {
   notifyTelegram,
   remainingLikes,
   requireCompleteProfile,
+  referralCodeFor,
+  resolveBotUsername,
   telegramIdForUser,
   toPublicProfile,
   touchStreakAndPresence,
 } from '../engine/core.js';
+import { notifyUser } from '../push/notify.js';
 
 const MAX_MESSAGE_LENGTH = 1000;
 const publicProfileFields = {
@@ -194,11 +197,18 @@ const createMatchIfMutual = async (db: any, userId: string, profileId: string, k
     const peerTelegram = await telegramIdForUser(db, profileId);
     const [me] = await db.select({ displayName: users.displayName }).from(users).where(eq(users.id, userId)).limit(1);
     const [peer] = await db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, profileId)).limit(1);
+    const headline = `У вас новий матч з ${me?.displayName || 'кимось'}! ✨`;
     if (peerTelegram) {
-      await notifyTelegram(peerTelegram, `У вас новий матч з ${me?.displayName || 'кимось'}! ✨`, {
+      await notifyTelegram(peerTelegram, headline, {
         userTimeZone: peer?.timeZone ?? 'UTC',
       });
     }
+    await notifyUser(db, profileId, {
+      title: 'Constella',
+      body: headline,
+      data: { matchId: existing.id, route: `match/${existing.id}` },
+      userTimeZone: peer?.timeZone ?? 'UTC',
+    });
   }
   return { matchId: existing?.id ?? null, matched: Boolean(existing) };
 };
@@ -626,6 +636,8 @@ export const socialRouter = router({
       // match (including the author's other tabs) instead of relying on polling.
       broadcastToMatch(input.matchId, { type: 'chat.message', message });
       await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
+      const [sender] = await ctx.db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+      await bumpQuest(ctx.db, ctx.user.id, sender?.timeZone ?? 'UTC', 'message-5');
       const counts = await ctx.db
         .select({ matchId: messages.matchId, count: sql<number>`count(*)::int` })
         .from(messages)
@@ -671,6 +683,10 @@ export const socialRouter = router({
         .returning();
       broadcastToMatch(input.matchId, { type: 'chat.message', message });
       await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
+      const [voiceSender] = await ctx.db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
+      const voiceTz = voiceSender?.timeZone ?? 'UTC';
+      await bumpQuest(ctx.db, ctx.user.id, voiceTz, 'message-5');
+      await bumpQuest(ctx.db, ctx.user.id, voiceTz, 'voice-1');
       return message;
     }),
 
@@ -781,12 +797,19 @@ export const socialRouter = router({
     ]);
     const earnedByCode = new Map<string, any>(earned.map((row: any) => [row.code, row.earnedAt] as [string, any]));
     const progressByCode = new Map<string, any>(progress.map((row: any) => [row.code, row] as [string, any]));
+    let referralCode = profile.referralCode;
+    if (!referralCode) {
+      referralCode = referralCodeFor(ctx.user.id);
+      // Deterministic per user, so a unique-index clash cannot desync later reads.
+      await ctx.db.update(users).set({ referralCode }).where(eq(users.id, ctx.user.id)).catch(() => undefined);
+    }
     return {
       xp: profile.xp ?? 0,
       level: profile.level ?? 1,
       streak: profile.streakCount ?? 0,
       freezes: profile.streakFreezes ?? 0,
-      referralCode: profile.referralCode,
+      referralCode,
+      botUsername: await resolveBotUsername(),
       daily: DAILY_QUESTS.map((quest) => {
         const row = progressByCode.get(quest.code);
         return { ...quest, progress: row?.progress ?? 0, completedAt: row?.completedAt ?? null };

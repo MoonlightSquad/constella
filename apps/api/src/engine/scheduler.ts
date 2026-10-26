@@ -2,6 +2,7 @@ import { and, eq, gte, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { events, userBoosts, userEntitlements, users } from '@constella/db';
 import { createLogger } from '@constella/shared';
 import { getLocalDate, getLocalHour, notifyTelegram, telegramIdForUser } from './core.js';
+import { notifyUser } from '../push/notify.js';
 
 const logger = createLogger('scheduler');
 
@@ -89,18 +90,23 @@ export const runSchedulerCycle = async (db: any) => {
 
         if (!alreadyReminded) {
           const telegramId = await telegramIdForUser(db, user.id);
+          const reminder = `Твій стрік у Constella під загрозою! 🔥 Зазирни сьогодні, щоб не втратити ${user.streakCount} ${user.streakCount === 1 ? 'день' : 'днів'} активності.`;
           if (telegramId) {
-            await notifyTelegram(
-              telegramId,
-              `Твій стрік у Constella під загрозою! 🔥 Зазирни сьогодні, щоб не втратити ${user.streakCount} ${user.streakCount === 1 ? 'день' : 'днів'} активності.`,
-              { userTimeZone: user.timeZone }
-            );
-            await db.insert(events).values({
-              userId: user.id,
-              type: 'streak_reminder',
-              meta: { streakCount: user.streakCount, date: today },
-            });
+            await notifyTelegram(telegramId, reminder, { userTimeZone: user.timeZone });
           }
+          await notifyUser(db, user.id, {
+            title: 'Constella',
+            body: reminder,
+            data: { route: 'quests' },
+            userTimeZone: user.timeZone,
+          });
+          // Маркер «уже нагадали» тепер поза `if (telegramId)`: без нього пристрій,
+          // який не прив'язаний до Telegram, отримував би пуш щохвилини.
+          await db.insert(events).values({
+            userId: user.id,
+            type: 'streak_reminder',
+            meta: { streakCount: user.streakCount, date: today },
+          });
         }
       }
     }

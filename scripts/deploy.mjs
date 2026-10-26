@@ -167,6 +167,7 @@ const envLines = [
   `SMTP_FROM=${config.email?.smtp_from || 'Constella Support <support@test.constella.pp.ua>'}`,
   `SENTRY_DSN=${config.monitoring?.sentry_dsn_backend || ''}`,
   `NUXT_PUBLIC_SENTRY_DSN=${config.monitoring?.sentry_dsn_frontend || ''}`,
+  `EXPO_PUBLIC_SENTRY_DSN=${config.monitoring?.sentry_dsn_frontend || ''}`,
   `SENTRY_ENVIRONMENT=${config.monitoring?.environment || 'production'}`
 ].join('\n');
 
