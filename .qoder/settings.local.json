@@ -264,7 +264,8 @@
       "Bash(cd /home/allko/constella && timeout 900 pnpm --filter @constella/landing build 2>&1 | tail -25)",
       "Bash(cd /home/allko/constella/apps/landing/.output/public && node -e \"\nconst fs=require\\('fs'\\),zlib=require\\('zlib'\\),path=require\\('path'\\);\nconst walk=d=>fs.readdirSync\\(d,{withFileTypes:true}\\).flatMap\\(e=>e.isDirectory\\(\\)?walk\\(path.join\\(d,e.name\\)\\):[path.join\\(d,e.name\\)]\\);\nconst files=walk\\('_nuxt'\\);\nconst html=fs.readFileSync\\('index.html','utf8'\\);\nconst refs=new Set\\([...html.matchAll\\(/\\(?:href|src\\)=\\\\\"\\\\/_nuxt\\\\/\\([^\\\\\"]+\\)\\\\\"/g\\)].map\\(m=>m[1]\\)\\);\nlet tot=0;\nfor\\(const f of files\\){const name=path.basename\\(f\\); if\\(!refs.has\\(name\\)\\)continue; const g=zlib.gzipSync\\(fs.readFileSync\\(f\\)\\).length; tot+=g; console.log\\(\\(g/1024\\).toFixed\\(1\\)+' KB', name\\);}\nconsole.log\\('--- initial total gzip', \\(tot/1024\\).toFixed\\(1\\)+' KB', '\\('+refs.size+' files\\)'\\);\nconst js=files.filter\\(f=>f.endsWith\\('.js'\\)\\).length; console.log\\('js chunks total gzip', \\(files.filter\\(f=>f.endsWith\\('.js'\\)\\).reduce\\(\\(s,f\\)=>s+zlib.gzipSync\\(fs.readFileSync\\(f\\)\\).length,0\\)/1024\\).toFixed\\(1\\)+' KB across', js,'chunks'\\);\n\")",
       "Bash(cd /home/allko/constella/apps/landing/.output/public/_nuxt && for s in \"Знайди людей\" \"Finde Menschen\" \"Trouve des personnes\" \"Znajomi\"; do printf '%s: ' \"$s\"; grep -l \"$s\" *.js 2>/dev/null | tr '\\\\n' ' '; echo; done; ls -l PSs-Ps-K.js; grep -c 'vue-i18n\\\\|intlify' PSs-Ps-K.js)",
-      "Bash(cd /home/allko/constella && pnpm test 2>&1 | tail -25)"
+      "Bash(cd /home/allko/constella && pnpm test 2>&1 | tail -25)",
+      "Bash(git:*)"
     ]
   }
 }
