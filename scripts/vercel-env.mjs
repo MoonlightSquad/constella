@@ -125,6 +125,10 @@ const projects = {
       LIVEKIT_API_KEY: {},
       LIVEKIT_API_SECRET: {},
       LIVEKIT_URL: {},
+      // Реалтайм чату й рінг дзвінка (Ably). Без ключа `social.realtimeConfig`
+      // повертає transport:'poll', веб опитує чат і ховає кнопки дзвінка.
+      ABLY_API_KEY: {},
+      ABLY_ENVIRONMENT: {},
     },
   },
   web: {

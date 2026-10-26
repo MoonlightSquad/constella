@@ -127,8 +127,13 @@ const forgetCall = () => {
 
 const loadCallConfig = async () => {
   try {
-    const config = await $trpc.social.callConfig.query()
-    callsAvailable.value = Boolean(config?.available)
+    const [config, transport] = await Promise.all([
+      $trpc.social.callConfig.query(),
+      chat.loadRealtimeConfig(),
+    ])
+    // Рінг приходить лише з Ably: через опитування ніхто дзвінка не почує, а
+    // кнопка, яка нікого не будить, гірша за відсутність кнопки.
+    callsAvailable.value = Boolean(config?.available) && transport === 'ably'
   } catch { callsAvailable.value = false }
 }
 
@@ -221,7 +226,7 @@ const onPickFile = (file: File) => { void chat.sendMediaMessage(file) }
 onMounted(() => { void loadCallConfig() })
 
 onUnmounted(() => {
-  chat.closeChatWs()
+  chat.closeRealtime()
   chat.stopAllVoices()
   // Закрита вкладка не повинна залишати піра у стані «дзвінок йде».
   if (callPhase.value !== 'idle') void hangUp(callPhase.value === 'active' ? 'ended' : 'missed')
@@ -245,7 +250,7 @@ onUnmounted(() => {
         @report="(p: any, mid: string) => emit('report', p, mid)"
         @refresh="chat.loadChatMessages()"
         @toggle-notifications="chat.toggleNotifications()"
-        @reconnect="(mid: string) => chat.connectChatWs(mid)"
+        @reconnect="(mid: string) => chat.connectRealtime(mid)"
       />
       <ChatMessageList
         :entries="chat.renderedMessages.value"

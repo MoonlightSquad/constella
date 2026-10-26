@@ -128,6 +128,22 @@ EXPO_PROJECT_ID=<expo.project.id>
 # Пуш-фан-аут — це змінна API-проєкту (apps/api/src/push/notify.ts).
 # Без EXPO_PUSH_ACCESS_TOKEN API бере EXPO_ACCESS_TOKEN; без обох пуші не надсилаються.
 EXPO_PUSH_ACCESS_TOKEN=<expo.push.project.token>
+
+# Дзвінки (LiveKit Cloud) — змінні лише API-проєкту (apps/api/src/call/livekit.ts).
+# Браузер іде на LIVEKIT_URL напряму (wss), копію в NUXT_PUBLIC_* робити не потрібно:
+# `social.callConfig` віддає url із сервера. Без будь-якого з трьох значень
+# `social.startCall` повертає PRECONDITION_FAILED, а веб ховає кнопки дзвінка.
+LIVEKIT_API_KEY=<livekit.api_key>
+LIVEKIT_API_SECRET=<livekit.api_secret>
+LIVEKIT_URL=wss://<livekit.project>.livekit.cloud
+
+# Транспорт реалтайму (Ably) — теж змінна лише API-проєкту
+# (apps/api/src/realtime/ably.ts). Формат ключа appId.keyId:secret.
+# Без нього сокетний fan-out лишається в межах одного instance, тому веб опитує чат
+# раз на 5 с і ховає кнопки дзвінка (ринг не має як дійти до піра).
+ABLY_API_KEY=<ably.root_key>
+# "sandbox" лише для ключа з пісничного застосунка (sandbox-rest.ably.io).
+ABLY_ENVIRONMENT=
 ```
 
 ---
@@ -212,7 +228,21 @@ npx eas build --platform android --profile production
 - Пуші: у Expo Go вистачає спільних облікових даних Expo, нативна production-збірка потребує власних APNs/FCM-ключів (`eas credentials`) і `EXPO_PUSH_ACCESS_TOKEN` (або `EXPO_ACCESS_TOKEN`) в API-проєкті.
 - CORS API не чіпаємо: `fetch` у React Native не надсилає `Origin`, тому єдиний дозволений `WEB_APP_URL`-origin стосується лише вебу.
 - Прив'язка Telegram для покупок за Stars іде через одноразовий код у боті (`/start link-<code>`), тому в API-проєкті має бути задано `NUXT_PUBLIC_BOT_USERNAME` (або `BOT_USERNAME`) — без нього `billing.beginTelegramLink` поверне `PRECONDITION_FAILED`.
-- Дзвінків у мобільному немає: `social.startCall` на сервері — заглушка без SFU/LiveKit, тож WebRTC не додається, і в чаті навмисне **немає** кнопки дзвінка (на вебі модалка «з'єднано через WebRTC» імітує розмову — не повторюємо це в UI).
+- Дзвінків у мобільному немає: `apps/mobile` не тягне `livekit-client` і не показує кнопку дзвінка, хоча `social.startCall` на сервері вже справжній (LiveKit). Мобільний чат і далі користується `/api/chat/ws`.
+
+### Крок 7. Реалтайм-транспорт чату й дзвінків
+`apps/api/src/realtime.ts` тримає таблицю сокетів у пам'яті процесу, а на Vercel кожен connection прикріплений до свого instance, тож без зовнішнього брокера `broadcastToMatch` фізично не дістане піра на іншому instance. Керований pub/sub замикає цю прогалину:
+
+| | Web | Mobile |
+|---|---|---|
+| вхід (сервер → клієнт) | Ably-канал `match:<matchId>` | `/api/chat/ws` (без змін) |
+| вихід (клієнт → сервер) | tRPC (`social.sendMessage`, `markRead`, `notifyTyping`) | кадри `send.*` по сокету |
+| медіа дзвінка | LiveKit (wss напряму до `LIVEKIT_URL`) | — |
+
+- `ABLY_API_KEY` — секрет **лише** API-проєкту. Браузер його не бачить: `social.chatToken` видає короткостроковий (1 год) токен із capability `{ 'match:<matchId>': ['subscribe'] }`, тож клієнт не може ні публікувати в канал, ні слухати чужі матчі (`getMatchForUser` перевіряє учасників).
+- Публікація з сервера іде через REST і завжди очікується (`await`): Vercel заморожує instance після відправки відповіді, і незакритий запит загинув би в польоті. Таймаут 1500 мс, помилка лише логується — бізнес-операція (надіслання повідомки, дзвінок) не падає, якщо Ably недоступний.
+- Без `ABLY_API_KEY` `social.realtimeConfig` повертає `transport: 'poll'`: веб опитує чат раз на 5 с курсором `afterId` (лише коли вкладку видно), а `ChatPanel.vue` ховає кнопки дзвінка — через опитування рінг не приходить, і кнопка, яка нікого не будить, гірша за відсутність кнопки. Дзвінки тоді повертаються, щойно додано обидва: `LIVEKIT_*` і `ABLY_API_KEY`.
+- Спільний канал не має `exceptUserId`, тому envelope містить `actorId`, а клієнт сам себе відфільтровує. Поведінка сокетів не змінилась, і мобільні збірки, що вже випущені, працюють як раніше.
 
 ---
 

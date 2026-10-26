@@ -19,7 +19,8 @@ import { ACHIEVEMENTS, DAILY_QUESTS, FREE_DAILY_LIKES, STAR_PRODUCTS } from '@co
 import type { CallEndReason, CallSignal, CallStatus } from '@constella/shared';
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc.js';
-import { broadcastToMatch } from '../realtime.js';
+import { deliverToMatch } from '../realtime.js';
+import { createMatchTokenRequest, isAblyConfigured } from '../realtime/ably.js';
 import { callUrl, createCallToken, isCallProviderConfigured, newCallRoomId } from '../call/livekit.js';
 import { orbitFilterSchema, hasOrbitFilters, resolveTargetGenders } from './social.schemas.js';
 import {
@@ -33,6 +34,7 @@ import {
   getLocalDate,
   getMatchForUser,
   hasVip,
+  markMessagesRead,
   notifyTelegram,
   remainingLikes,
   requireCompleteProfile,
@@ -654,18 +656,19 @@ export const socialRouter = router({
       )
       .orderBy(desc(messages.createdAt))
       .limit(100);
-    // Mark incoming messages read and tell any live peer sockets, so read
-    // receipts arrive in realtime even though this path is a tRPC query.
-    const readAt = new Date();
-    const markedRead = await ctx.db
-      .update(messages)
-      .set({ readAt, deliveredAt: sql`COALESCE(${messages.deliveredAt}, NOW())` })
-      .where(and(eq(messages.matchId, input.matchId), ne(messages.senderId, ctx.user.id), isNull(messages.readAt)))
-      .returning({ id: messages.id });
+    // Mark incoming messages read and tell any live peer, so read receipts
+    // arrive in realtime even though this path is a tRPC query.
+    const markedRead = await markMessagesRead(ctx.db, input.matchId, ctx.user.id);
     if (markedRead.length > 0) {
-      for (const row of markedRead) {
-        broadcastToMatch(input.matchId, { type: 'presence.read', messageId: row.id, readAt, matchId: input.matchId });
-      }
+      // One frame for the whole batch: a peer with 40 unread messages should not
+      // pay for 40 Ably publishes (or 40 socket frames) to learn they were read.
+      await deliverToMatch(input.matchId, {
+        type: 'presence.read',
+        messageId: markedRead[0].id,
+        messageIds: markedRead.map((row) => row.id),
+        readAt: markedRead[0].readAt,
+        matchId: input.matchId,
+      });
     }
     const shares = await ctx.db.select().from(contactShares).where(eq(contactShares.matchId, input.matchId));
     return {
@@ -693,9 +696,10 @@ export const socialRouter = router({
         .insert(messages)
         .values({ matchId: input.matchId, senderId: ctx.user.id, body: input.body, deliveredAt: new Date() })
         .returning();
-      // The web client writes over tRPC, so push to any live sockets on this
-      // match (including the author's other tabs) instead of relying on polling.
-      broadcastToMatch(input.matchId, { type: 'chat.message', message });
+      // The web client writes over tRPC, so push to every live peer on this
+      // match (sockets here, Ably for browsers on another instance) instead of
+      // relying on polling.
+      await deliverToMatch(input.matchId, { type: 'chat.message', message });
       await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
       const [sender] = await ctx.db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
       await bumpQuest(ctx.db, ctx.user.id, sender?.timeZone ?? 'UTC', 'message-5');
@@ -742,7 +746,7 @@ export const socialRouter = router({
         .insert(messages)
         .values({ matchId: input.matchId, senderId: ctx.user.id, kind: 'voice', body, deliveredAt: new Date() })
         .returning();
-      broadcastToMatch(input.matchId, { type: 'chat.message', message });
+      await deliverToMatch(input.matchId, { type: 'chat.message', message });
       await awardAchievement(ctx.db, ctx.user.id, 'first-hello');
       const [voiceSender] = await ctx.db.select({ timeZone: users.timeZone }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
       const voiceTz = voiceSender?.timeZone ?? 'UTC';
@@ -755,6 +759,69 @@ export const socialRouter = router({
     available: isCallProviderConfigured(),
     url: isCallProviderConfigured() ? callUrl() : '',
   })),
+
+  /**
+   * Which realtime transport the browser should use. `poll` also means "the
+   * server cannot wake a peer up", so the caller hides the call buttons.
+   */
+  realtimeConfig: protectedProcedure.query(() => ({
+    transport: isAblyConfigured() ? ('ably' as const) : ('poll' as const),
+  })),
+
+  /**
+   * Short-lived subscribe-only token for the caller's own match channel. The
+   * root key never leaves the server; a non-participant gets NOT_FOUND from
+   * `getMatchForUser` before anything is signed.
+   */
+  chatToken: protectedProcedure
+    .input(z.object({ matchId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!isAblyConfigured()) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Realtime transport is not configured.' });
+      }
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      return createMatchTokenRequest(input.matchId, ctx.user.id);
+    }),
+
+  /** Read receipts for the browser: the same statement the `send.read` frame runs. */
+  markRead: protectedProcedure
+    .input(
+      z.object({
+        matchId: z.string().uuid(),
+        messageIds: z.array(z.number().int().positive()).min(1).max(100),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      const marked = await markMessagesRead(ctx.db, input.matchId, ctx.user.id, input.messageIds);
+      if (marked.length > 0) {
+        await deliverToMatch(input.matchId, {
+          type: 'presence.read',
+          messageId: marked[0].id,
+          messageIds: marked.map((row) => row.id),
+          readAt: marked[0].readAt,
+          matchId: input.matchId,
+        });
+      }
+      return { marked: marked.length };
+    }),
+
+  /**
+   * Typing indicator for the browser. Cheap by design — one membership check and
+   * one publish, throttled to 1500 ms by the client and capped by the global
+   * HTTP rate limiter.
+   */
+  notifyTyping: protectedProcedure
+    .input(z.object({ matchId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
+      await deliverToMatch(
+        input.matchId,
+        { type: 'chat.typing', matchId: input.matchId, fromId: ctx.user.id },
+        ctx.user.id,
+      );
+      return { ok: true };
+    }),
 
   startCall: protectedProcedure
     .input(
@@ -800,8 +867,10 @@ export const socialRouter = router({
         body: JSON.stringify({ callType: input.callType, roomId, status: 'ringing' } satisfies CallBody),
       });
 
-      // Ring the peer if it has a live socket on this match.
-      broadcastToMatch(
+      // Ring the peer on every transport: its socket if one is attached here,
+      // its Ably channel otherwise. Awaiting matters — on Vercel the instance is
+      // frozen as soon as this mutation replies.
+      await deliverToMatch(
         input.matchId,
         {
           type: 'call.incoming',
@@ -842,7 +911,7 @@ export const socialRouter = router({
       const fromName = me?.displayName ?? '';
       const token = await createCallToken({ room: call.roomId, identity: ctx.user.id, name: fromName });
 
-      broadcastToMatch(
+      await deliverToMatch(
         input.matchId,
         {
           type: 'call.accepted',
@@ -868,7 +937,7 @@ export const socialRouter = router({
       const call: CallBody = { ...row.call, status: 'rejected', reason: 'rejected', durationSec: 0 };
       await saveCallBody(ctx.db, row.id, call);
 
-      broadcastToMatch(
+      await deliverToMatch(
         input.matchId,
         {
           type: 'call.rejected',
@@ -908,7 +977,7 @@ export const socialRouter = router({
       const call: CallBody = { ...row.call, status, reason: input.reason, durationSec };
       await saveCallBody(ctx.db, row.id, call);
 
-      broadcastToMatch(
+      await deliverToMatch(
         input.matchId,
         {
           type: 'call.ended',

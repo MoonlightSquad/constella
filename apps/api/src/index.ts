@@ -10,10 +10,11 @@ import * as dotenv from 'dotenv';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { eq, and, gt, isNull, ne, or, sql } from 'drizzle-orm';
+import { eq, and, gt, isNull, or, sql } from 'drizzle-orm';
 import { AuthRequestSchema, AuthTokenSchema, WebLoginSchema, WebPasswordResetSchema, WebRegisterSchema, createLogger, notifyClient, type ClientPayload } from '@constella/shared';
 import { verifyTelegramInitData } from './utils/telegram.js';
-import { registerConnection, unregisterConnection, broadcastToMatch } from './realtime.js';
+import { registerConnection, unregisterConnection, deliverToMatch } from './realtime.js';
+import { markMessagesRead } from './engine/core.js';
 import { appRouter } from './routers/_app.js';
 import { createContext, isConfiguredAdmin } from './trpc.js';
 import { registerTelegramPaymentRoutes } from './payments/routes.js';
@@ -375,33 +376,26 @@ async function initialize() {
               .insert(messages)
               .values({ matchId, senderId: userId, body, kind: 'text', deliveredAt: new Date() })
               .returning();
-            if (m) broadcastToMatch(matchId, { type: 'chat.message', message: m });
+            if (m) await deliverToMatch(matchId, { type: 'chat.message', message: m });
             break;
           }
           case 'send.typing': {
             // Exclude the author: `chat.typing` drives the *peer's* indicator.
-            broadcastToMatch(matchId, { type: 'chat.typing' }, userId);
+            await deliverToMatch(matchId, { type: 'chat.typing' }, userId);
             break;
           }
           case 'send.read': {
             const messageId = Number(data.messageId);
             if (!Number.isSafeInteger(messageId) || messageId <= 0) return;
-            const [updated] = await db
-              .update(messages)
-              .set({ readAt: new Date() })
-              .where(
-                and(
-                  eq(messages.id, messageId),
-                  eq(messages.matchId, matchId),
-                  // You may only acknowledge the other side's messages.
-                  ne(messages.senderId, userId),
-                ),
-              )
-              .returning();
+            // Only the other side's not-yet-read messages in this room; the same
+            // statement the `chatMessages` query uses when a thread is opened.
+            const marked = await markMessagesRead(db, matchId, userId, [messageId]);
+            const updated = marked[0];
             if (updated) {
-              broadcastToMatch(matchId, {
+              await deliverToMatch(matchId, {
                 type: 'presence.read',
                 messageId: updated.id,
+                messageIds: marked.map((row) => row.id),
                 readAt: updated.readAt,
                 matchId,
               });
@@ -420,7 +414,7 @@ async function initialize() {
               .set({ body: nextBody })
               .where(and(eq(messages.id, messageId), eq(messages.matchId, matchId)))
               .returning();
-            if (m) broadcastToMatch(matchId, { type: 'chat.message', message: m });
+            if (m) await deliverToMatch(matchId, { type: 'chat.message', message: m });
             break;
           }
           case 'send.media': {
@@ -442,7 +436,7 @@ async function initialize() {
                 deliveredAt: new Date(),
               })
               .returning();
-            if (m) broadcastToMatch(matchId, { type: 'chat.message', message: m });
+            if (m) await deliverToMatch(matchId, { type: 'chat.message', message: m });
             break;
           }
           default:
