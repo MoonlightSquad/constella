@@ -121,6 +121,7 @@ NUXT_PUBLIC_SENTRY_DSN=<monitoring.sentry_dsn_frontend>
 # Мобільний застосунок (EAS-проєкт, не Vercel)
 # EXPO_PUBLIC_API_URL вбудовується у бандл, тому секретів містити не може.
 EXPO_PUBLIC_API_URL=https://api-test.constella.pp.ua
+EXPO_PUBLIC_SENTRY_DSN=<monitoring.sentry_dsn_frontend>
 EXPO_ACCESS_TOKEN=<eas.access.token>
 EXPO_PROJECT_ID=<expo.project.id>
 

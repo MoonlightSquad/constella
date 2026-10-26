@@ -10,7 +10,7 @@ config({ path: resolve(__dirname, '../../.env') });
 export default defineNuxtConfig({
   ssr: false,
   compatibilityDate: '2024-04-03',
-  modules: ['@nuxtjs/tailwindcss'],
+  modules: ['@nuxtjs/tailwindcss', '@sentry/nuxt/module'],
 
   watch: ['../../.env'],
 
@@ -28,11 +28,17 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     apiInternalBase: resolveApiInternalBase(process.env),
+    // Sentry-конфіги зчитують ці значення (див. sentry.client/server.config.ts).
+    sentryServerDsn: process.env.NUXT_SENTRY_SERVER_DSN || '',
     public: {
       // Browser-facing API base: same-origin "/api" proxy by default; set
       // NUXT_PUBLIC_API_URL to call the API origin directly (CORS is open).
       apiBase: (process.env.NUXT_PUBLIC_API_URL || '/api').replace(/\/+$/, ''),
       telegramBotUsername: process.env.NUXT_PUBLIC_BOT_USERNAME || process.env.BOT_USERNAME || '',
+      sentry: {
+        dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || '',
+        environment: process.env.SENTRY_ENVIRONMENT || '',
+      },
     }
   },
 

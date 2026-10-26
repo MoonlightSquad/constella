@@ -1,4 +1,5 @@
 import '@/polyfills';
+import { Sentry } from '@/sentry';
 
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -8,7 +9,7 @@ import { SessionProvider } from '@/auth/session';
 import { LocaleProvider } from '@/i18n/locale-provider';
 import { colors } from '@/theme/tokens';
 
-export default function RootLayout() {
+function RootLayout() {
   return (
     <SafeAreaProvider>
       <LocaleProvider>
@@ -26,3 +27,7 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+// Sentry.wrap додає глобальний ErrorBoundary (стабільний для expo-router) навіть
+// коли SDK вимкнено без DSN — просто нікуди не надсилатиме події.
+export default Sentry.wrap(RootLayout);

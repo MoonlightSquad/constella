@@ -55,7 +55,7 @@
     "bundle": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
-      "env": ["EXPO_PUBLIC_API_URL", "NODE_ENV"]
+      "env": ["EXPO_PUBLIC_API_URL", "EXPO_PUBLIC_SENTRY_DSN", "NODE_ENV"]
     },
     "db:generate": {
       "cache": false

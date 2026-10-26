@@ -3,6 +3,7 @@ import type { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify'
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { db, users } from '@constella/db';
 import { eq } from 'drizzle-orm';
+import { captureServerError } from './sentry.js';
 
 export interface UserPayload {
   id: string;
@@ -39,7 +40,25 @@ export const createContext = async ({ req, res }: CreateFastifyContextOptions): 
 const t = initTRPC.context<Context>().create();
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+
+// У tRPC v11 немає глобального onError на create() — знімаємо помилки спільним
+// middleware: «очікувані» клієнтські коди (UNAUTHORIZED/FORBIDDEN/…) не пишемо.
+const captureErrors = t.middleware(async ({ path, type, ctx, next }) => {
+  try {
+    return await next();
+  } catch (error) {
+    if (!(error instanceof TRPCError) || error.code === 'INTERNAL_SERVER_ERROR') {
+      captureServerError(error instanceof TRPCError ? error.cause ?? error : error, {
+        path: `${type}:${path}`,
+        requestId: ctx.req?.id,
+        userId: ctx.user?.id,
+      });
+    }
+    throw error;
+  }
+});
+
+export const publicProcedure = t.procedure.use(captureErrors);
 
 // Middleware для захищених роутів
 const isAuthed = t.middleware(async ({ ctx, next }) => {
@@ -63,7 +82,7 @@ const isAuthed = t.middleware(async ({ ctx, next }) => {
   });
 });
 
-export const protectedProcedure = t.procedure.use(isAuthed);
+export const protectedProcedure = t.procedure.use(captureErrors).use(isAuthed);
 
 const configuredAdminIds = (key: 'ADMIN_USER_IDS' | 'ADMIN_TELEGRAM_IDS') =>
   new Set((process.env[key] ?? '').split(',').map((value) => value.trim()).filter(Boolean));

@@ -4,6 +4,7 @@ import { TRPCClientError } from '@trpc/client';
 import { dropToken, readToken, saveToken } from '@/api/token-store';
 import { trpc } from '@/api/trpc';
 import { unregisterPushDevice } from '@/notifications/push';
+import { Sentry } from '@/sentry';
 
 export type Me = Awaited<ReturnType<typeof trpc.me.query>>;
 
@@ -51,6 +52,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Теґ користувача для Sentry: без ініціалізованого SDK це no-op.
+  useEffect(() => {
+    Sentry.setUser(me ? { id: me.userId } : null);
+  }, [me]);
 
   const signIn = useCallback(
     async (token: string) => {

@@ -24,6 +24,7 @@ import { isEmailDeliveryConfigured, sendTransactionalEmail } from './utils/email
 import { isPhotoStorageConfigured, removePhotoObjects } from './photos/storage.js';
 import { hashOpaqueToken, issueAuthToken } from './utils/auth-tokens.js';
 import { startBackgroundScheduler } from './engine/scheduler.js';
+import { closeSentry, initSentry } from './sentry.js';
 import { bot as telegramBot } from '@constella/bot';
 import { isConfiguredTelegramWebhookSecret, isValidTelegramWebhookSecret } from './utils/telegram-webhook.js';
 import { z } from 'zod';
@@ -39,6 +40,8 @@ declare module 'fastify' {
 
 dotenv.config();
 dotenv.config({ path: resolve(process.cwd(), '../../.env') });
+// Ініціалізація після dotenv, але до створення Fastify-інстансу.
+initSentry();
 
 const logger = createLogger('api');
 /** Parses a JSON object, returning `{}` for malformed or non-object payloads. */
@@ -981,6 +984,7 @@ async function initialize() {
   fastify.addHook('onClose', async () => {
     stopScheduler?.();
     await closeDb();
+    await closeSentry();
   });
 
   await fastify.ready();
