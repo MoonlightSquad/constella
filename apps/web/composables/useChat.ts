@@ -30,7 +30,6 @@ export interface ChatOptions {
 
 export function useChat(options: ChatOptions = {}) {
   const { $trpc } = useNuxtApp() as any
-  const runtimeConfig = useRuntimeConfig()
   const { locale, t } = useLocale()
   const getUserId = () => options.getUserId?.()
 
@@ -43,7 +42,6 @@ export function useChat(options: ChatOptions = {}) {
   const chatDraft = ref('')
   const isLoading = ref(false)
   const isSending = ref(false)
-  const wsConnected = ref(false)
   const peerTyping = ref(false)
   const contactInfo = ref<{ offeredByMe: boolean; mutual: boolean; usernames: string[] } | null>(null)
   const isSharingContact = ref(false)
@@ -52,88 +50,146 @@ export function useChat(options: ChatOptions = {}) {
   const notificationsEnabled = ref(false)
   const voiceProgress = ref<{ id: string; percent: number }>({ id: '', percent: 0 })
 
-  // --- WS ---
-  let chatWs: WebSocket | null = null
-  let wsReconnectTimer: number | null = null
-  const apiBase = (runtimeConfig.public.apiBase as string) || ''
-  const wsUrl = apiBase.startsWith('http')
-    ? apiBase.replace(/^http/, 'ws')
-    : `ws://${window.location.hostname}:4000`
+  // --- Realtime ---
+  // Браузери не можуть користуватися нашим сокетом: Vercel пинить кожне
+  // з'єднання до свого instance, тому події чату й рінг дзвінка приходять з
+  // Ably-каналу `match:<id>`. Без Ably лишається опитування — воно не будить
+  // піра, тож дзвінки в цьому режимі сховані. Мобілка й далі тримає /api/chat/ws.
+  const realtimeTransport = ref<'ably' | 'poll' | null>(null)
+  const wsConnected = ref(false)
+  let ablyClient: any = null
+  let ablyDetach: (() => void) | null = null
+  let pollTimer: number | null = null
 
-  const closeChatWs = () => {
-    if (wsReconnectTimer) { window.clearInterval(wsReconnectTimer); wsReconnectTimer = null }
-    if (chatWs) { chatWs.close(); chatWs = null }
-    wsConnected.value = false
-  }
+  const POLL_INTERVAL_MS = 5000
 
-  const sendWs = (payload: any) => {
-    if (chatWs && chatWs.readyState === WebSocket.OPEN) chatWs.send(JSON.stringify(payload))
-  }
-
-  const connectChatWs = (matchId: string) => {
-    closeChatWs()
-    wsConnected.value = false
+  const loadRealtimeConfig = async (): Promise<'ably' | 'poll'> => {
+    if (realtimeTransport.value) return realtimeTransport.value
     try {
-      const token = localStorage.getItem('constella_token') || ''
-      const params = new URLSearchParams({ matchId })
-      if (token) params.set('token', token)
-      chatWs = new WebSocket(`${wsUrl}/api/chat/ws?${params.toString()}`)
-      chatWs.binaryType = 'arraybuffer'
-      chatWs.onopen = () => {
-        wsConnected.value = true
-        if (wsReconnectTimer) { window.clearInterval(wsReconnectTimer); wsReconnectTimer = null }
-        void loadChatMessages()
+      const config = await $trpc.social.realtimeConfig.query()
+      realtimeTransport.value = config?.transport === 'ably' ? 'ably' : 'poll'
+    } catch {
+      realtimeTransport.value = 'poll'
+    }
+    return realtimeTransport.value
+  }
+
+  const closeRealtime = () => {
+    if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null }
+    if (ablyDetach) { ablyDetach(); ablyDetach = null }
+    if (ablyClient) { try { ablyClient.close() } catch {} ; ablyClient = null }
+    wsConnected.value = false
+  }
+
+  /** Прочитані «вхідні» повідомки — лише коли вкладку видно, як і з сокетом. */
+  const markIncomingRead = (message: any) => {
+    const matchId = selectedMatch.value?.id
+    if (!message || !matchId || message.matchId !== matchId) return
+    if (message.senderId === getUserId()) return
+    if (document.visibilityState !== 'visible') return
+    void $trpc.social.markRead.mutate({ matchId, messageIds: [message.id] }).catch(() => {})
+  }
+
+  const applyReadReceipt = (data: any) => {
+    const ids: number[] = Array.isArray(data.messageIds) ? data.messageIds : [data.messageId]
+    for (const id of ids) {
+      const m = chatMessages.value.find((x: any) => x.id === id)
+      if (m) m.readAt = data.readAt
+    }
+  }
+
+  const handleRealtimeEvent = (data: any) => {
+    if (!data || typeof data !== 'object') return
+    // Спільний канал не може пропустити автора, як `exceptUserId` у сокетів,
+    // тому подію, яку ми самі й спричинили, відкидаємо тут.
+    if (data.actorId && data.actorId === getUserId()) return
+    if (data.type === 'chat.message') {
+      appendMessage(data.message)
+      markIncomingRead(data.message)
+      if (notificationsEnabled.value && data.message && data.message.senderId !== getUserId() && document.visibilityState !== 'visible') {
+        void showNewMessageNotification(data.message, selectedMatch.value)
       }
-      chatWs.onmessage = (event) => {
-        try {
-          const data = typeof event.data === 'string' ? JSON.parse(event.data) : null
-          if (!data) return
-          if (data.type === 'error') {
-            if (data.code === 'rate_limited') showError({ message: data.message })
-            return
-          }
-          if (data.type === 'chat.message') {
-            appendMessage(data.message)
-            const incoming = data.message
-            if (incoming && incoming.senderId !== getUserId() && selectedMatch.value && incoming.matchId === selectedMatch.value.id && document.visibilityState === 'visible') {
-              sendWs({ type: 'send.read', matchId: selectedMatch.value.id, messageId: incoming.id })
-            }
-          } else if (data.type === 'chat.typing') {
-            peerTyping.value = true
-            window.setTimeout(() => { peerTyping.value = false }, 3000)
-          } else if (data.type === 'call.incoming') {
-            options.onCallIncoming?.({ matchId: data.matchId, roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName })
-          } else if (data.type === 'call.accepted') {
-            options.onCallAccepted?.({ matchId: data.matchId, roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName })
-          } else if (data.type === 'call.rejected') {
-            options.onCallRejected?.({ matchId: data.matchId, roomId: data.roomId })
-          } else if (data.type === 'call.ended') {
-            options.onCallEnded?.({ matchId: data.matchId, roomId: data.roomId, reason: data.reason, durationSec: data.durationSec })
-          } else if (data.type === 'presence.read') {
-            const m = chatMessages.value.find((x: any) => x.id === data.messageId)
-            if (m) m.readAt = data.readAt
-          }
-          if (notificationsEnabled.value && data.type === 'chat.message' && data.message.senderId !== getUserId() && document.visibilityState !== 'visible') {
-            void showNewMessageNotification(data.message, selectedMatch.value)
-          }
-        } catch {}
-      }
-      chatWs.onclose = () => {
-        wsConnected.value = false
-        wsReconnectTimer = window.setInterval(() => { void connectChatWs(matchId) }, 3000)
-      }
-      chatWs.onerror = () => { wsConnected.value = false }
-    } catch { wsConnected.value = false }
+    } else if (data.type === 'chat.typing') {
+      peerTyping.value = true
+      window.setTimeout(() => { peerTyping.value = false }, 3000)
+    } else if (data.type === 'call.incoming') {
+      options.onCallIncoming?.({ matchId: data.matchId, roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName })
+    } else if (data.type === 'call.accepted') {
+      options.onCallAccepted?.({ matchId: data.matchId, roomId: data.roomId, callType: data.callType, fromId: data.fromId, fromName: data.fromName })
+    } else if (data.type === 'call.rejected') {
+      options.onCallRejected?.({ matchId: data.matchId, roomId: data.roomId })
+    } else if (data.type === 'call.ended') {
+      options.onCallEnded?.({ matchId: data.matchId, roomId: data.roomId, reason: data.reason, durationSec: data.durationSec })
+    } else if (data.type === 'presence.read') {
+      applyReadReceipt(data)
+    }
+  }
+
+  /**
+   * `ably` тягнеться лише динамічно: ChatPanel рендериться під SSR, а SDK
+   * чіпляється до `window` іще на імпорті — той самий прийом, що в `useCallRoom`.
+   */
+  const connectAbly = async (matchId: string) => {
+    const Ably = await import('ably')
+    const onMessage = (message: any) => handleRealtimeEvent(message?.data)
+    const client = new Ably.Realtime({
+      authCallback: (_params: unknown, callback: (error: any, token: any) => void) => {
+        $trpc.social.chatToken
+          .mutate({ matchId })
+          .then((token: any) => callback(null, token))
+          .catch((error: any) => callback(error?.message || 'chatToken failed', null))
+      },
+    })
+    client.connection.on('statusChange', (status: any) => {
+      wsConnected.value = status?.current === 'connected'
+    })
+    const channel = client.channels.get(`match:${matchId}`)
+    try {
+      await channel.attach()
+      channel.subscribe(onMessage)
+    } catch (error) {
+      try { client.close() } catch {}
+      throw error
+    }
+    ablyClient = client
+    ablyDetach = () => { try { channel.unsubscribe(onMessage) } catch {} }
+  }
+
+  /** Хвіст гілки через наявний курсор `afterId`: витягуємо нові рядки, а не всю історію. */
+  const pollChatTail = async (matchId: string) => {
+    if (document.visibilityState !== 'visible') return
+    const lastId = chatMessages.value.reduce((max: number, m: any) => Math.max(max, Number(m.id) || 0), 0)
+    try {
+      const res = await $trpc.social.chatMessages.query({ matchId, afterId: lastId })
+      const tail = Array.isArray(res) ? res : res?.messages || []
+      for (const message of tail) { appendMessage(message); markIncomingRead(message) }
+    } catch {}
+  }
+
+  const connectRealtime = async (matchId: string) => {
+    closeRealtime()
+    const transport = await loadRealtimeConfig()
+    if (transport === 'ably') {
+      try {
+        await connectAbly(matchId)
+        return
+      } catch { /* Ably не піднявся — переходимо на опитування */ }
+    }
+    // «Під'єднано» тут означає «гілка жива»: дані приходять, просто не миттєво.
+    wsConnected.value = true
+    pollTimer = window.setInterval(() => { void pollChatTail(matchId) }, POLL_INTERVAL_MS)
+    void pollChatTail(matchId)
   }
 
   // --- Typing ---
   let lastTypingSentAt = 0
   const onComposerInput = () => {
-    if (!selectedMatch.value || !wsConnected.value) return
+    const matchId = selectedMatch.value?.id
+    if (!matchId || !wsConnected.value || realtimeTransport.value !== 'ably') return
     const now = Date.now()
     if (now - lastTypingSentAt < 1500) return
     lastTypingSentAt = now
-    sendWs({ type: 'send.typing', matchId: selectedMatch.value.id })
+    void $trpc.social.notifyTyping.mutate({ matchId }).catch(() => {})
   }
 
   // --- Messages ---
@@ -320,11 +376,11 @@ export function useChat(options: ChatOptions = {}) {
   const openChat = (match: Match) => {
     selectedMatch.value = match
     void loadChatMessages()
-    if (match.id) void connectChatWs(match.id)
+    if (match.id) void connectRealtime(match.id)
   }
 
   const closeChat = () => {
-    closeChatWs()
+    closeRealtime()
     stopAllVoices()
     selectedMatch.value = null
     chatMessages.value = []
@@ -353,11 +409,11 @@ export function useChat(options: ChatOptions = {}) {
   return {
     // State
     selectedMatch, chatMessages, chatDraft, isLoading, isSending,
-    wsConnected, peerTyping, contactInfo, isSharingContact,
+    wsConnected, realtimeTransport, peerTyping, contactInfo, isSharingContact,
     pinnedMedia, notificationPermission, notificationsEnabled,
     // Actions
     openChat, closeChat, loadChatMessages, sendMessage, appendMessage,
-    connectChatWs, closeChatWs, sendWs, onComposerInput,
+    connectRealtime, closeRealtime, loadRealtimeConfig, onComposerInput,
     shareContact, sendMediaMessage,
     // Audio
     playVoice, pauseVoice, togglePlaybackSpeed, isVoicePlaying,

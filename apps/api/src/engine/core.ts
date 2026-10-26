@@ -1,12 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { and, eq, gt, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   blockedUsers,
   events,
   gifts,
   identities,
   matches,
+  messages,
   questProgress,
   userAchievements,
   userBoosts,
@@ -430,6 +431,31 @@ export const getMatchForUser = async (db: any, matchId: string, userId: string) 
     .limit(1);
   if (block) throw new TRPCError({ code: 'NOT_FOUND', message: 'Match not found.' });
   return match;
+};
+
+/**
+ * Acknowledge the peer's messages in one match and return the rows that changed.
+ *
+ * Two realtime paths need the same statement: the `send.read` frame on the chat
+ * WebSocket and the `chatMessages` query that marks a freshly opened thread read.
+ * Already-read rows are excluded, so a client that re-acknowledges a thread cannot
+ * replay read receipts to the peer.
+ */
+export const markMessagesRead = async (
+  db: any,
+  matchId: string,
+  userId: string,
+  messageIds?: number[],
+): Promise<{ id: number; readAt: Date }[]> => {
+  const conditions = [eq(messages.matchId, matchId), ne(messages.senderId, userId), isNull(messages.readAt)];
+  if (messageIds?.length) conditions.push(inArray(messages.id, messageIds));
+  const readAt = new Date();
+  const rows = await db
+    .update(messages)
+    .set({ readAt, deliveredAt: sql`COALESCE(${messages.deliveredAt}, NOW())` })
+    .where(and(...conditions))
+    .returning({ id: messages.id, readAt: messages.readAt });
+  return rows.map((row: any) => ({ id: row.id, readAt: row.readAt }));
 };
 
 export { gt };

@@ -1,21 +1,21 @@
 /**
  * @module realtime
- * @description In-memory registry of live chat WebSocket connections.
+ * @description Fan-out of chat and call events to the peers of one match.
  *
- * The registry is the single source of truth for "who is currently connected to
- * which match". Two call sites share it:
+ * Two transports, always published together when configured:
  *
- *  - the `/api/chat/ws` route handler in `index.ts`, which registers and
- *    unregisters connections as sockets open/close;
- *  - the tRPC layer (`routers/social.ts`), which broadcasts so that messages
- *    sent over plain HTTP still reach a peer that has a live socket.
+ *  - the in-memory registry below — sockets that attached to `/api/chat/ws`,
+ *    which is how the mobile app receives events;
+ *  - Ably (`realtime/ably.ts`) — the shared bus the browser subscribes to,
+ *    because a Vercel instance cannot see the sockets of another instance.
  *
- * State is per-process. With more than one API replica, cross-replica delivery
- * needs a shared broker (see the known limitations in README.md).
+ * Delivery to Ably is awaited: Vercel freezes the instance as soon as the HTTP
+ * response is flushed, and an unawaited publish would die mid-flight.
  */
 
 import type { ChatSocket } from '@constella/shared';
 import { broadcastToClients } from '@constella/shared';
+import { isAblyConfigured, publishToMatch } from './realtime/ably.js';
 
 /** A single authenticated socket attached to a match. */
 export interface ChatConnection {
@@ -70,6 +70,29 @@ export function broadcastToMatch(
   const bucket = rooms.get(matchId);
   if (!bucket) return 0;
   return broadcastToClients(bucket, payload, exceptUserId);
+}
+
+/**
+ * Publish `payload` for `matchId` on every transport this deployment has: the
+ * sockets in this process, plus the Ably channel the browsers listen on.
+ *
+ * Must be awaited. On Vercel the instance is frozen once the response is
+ * flushed, so a fire-and-forget publish would be cut off mid-request.
+ *
+ * @returns how many local sockets accepted the payload (Ably is not counted).
+ */
+export async function deliverToMatch(
+  matchId: string,
+  payload: Record<string, unknown> & { type: string },
+  exceptUserId?: string | null,
+): Promise<number> {
+  const delivered = broadcastToMatch(matchId, payload, exceptUserId);
+  if (isAblyConfigured()) {
+    // A shared channel cannot skip a recipient the way `exceptUserId` does for
+    // sockets, so the actor is named in the envelope and filters itself out.
+    await publishToMatch(matchId, { ...payload, actorId: exceptUserId ?? null });
+  }
+  return delivered;
 }
 
 /** Number of live sockets for a match; used by tests and health logging. */

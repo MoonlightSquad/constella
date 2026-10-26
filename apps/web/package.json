@@ -18,6 +18,7 @@
     "@sentry/nuxt": "^11.9.0",
     "@trpc/client": "^11.19.0",
     "@trpc/server": "11.19.0",
+    "ably": "^2.30.0",
     "dotenv": "^16.4.5",
     "livekit-client": "^2.23.0",
     "nuxt": "^3.12.3",
