@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import { useDashboard } from '~/composables/useDashboard'
 import { useChat } from '~/composables/useChat'
 import { useCallRoom } from '~/composables/useCallRoom'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
@@ -70,6 +71,11 @@ const chat = useChat({
 
 const closeRoom = () => chat.closeChat()
 
+// Layout ховає рамку застосунку, коли відкрита кімната: стан живе в `useState`,
+// бо сторів у вебі немає, а frame і сторінка мають читати одні й ті самі рефи.
+const dash = useDashboard()
+watchEffect(() => { dash.chatRoomOpen.value = Boolean(chat.selectedMatch.value) })
+
 // ---------- Voice / note recorder ----------
 const recorder = useVoiceRecorder({
   onToast: (msg) => emit('toast', msg),
@@ -84,6 +90,10 @@ const recorder = useVoiceRecorder({
     emit('refresh')
   },
 })
+
+// Панель при закритті кімнати не розмонтовується (`closeChat` лише обнулює `selectedMatch`),
+// тому живий запис знімаємо явно: інакше мікрофон лишається гарячим, а таймер сам надсилає.
+watch(() => chat.selectedMatch.value?.id, () => recorder.cancelLiveRecording())
 
 // ---------- Calls ----------
 /** Рінг тримає браузер ініціатора: серверного воркера для таймаута на Vercel немає. */
@@ -226,6 +236,8 @@ const onPickFile = (file: File) => { void chat.sendMediaMessage(file) }
 onMounted(() => { void loadCallConfig() })
 
 onUnmounted(() => {
+  // Розмонтаж із відкритою кімнатою інакше залишив би рамку застосунку прихованою.
+  dash.chatRoomOpen.value = false
   chat.closeRealtime()
   chat.stopAllVoices()
   // Закрита вкладка не повинна залишати піра у стані «дзвінок йде».
@@ -234,7 +246,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="view chats-view">
+  <section class="view chats-view" :class="{ 'is-room': chat.selectedMatch.value }">
     <div v-if="chat.selectedMatch.value" class="chat-panel">
       <ChatRoomHeader
         :match="chat.selectedMatch.value"
@@ -273,7 +285,7 @@ onUnmounted(() => {
         :chat-draft="chat.chatDraft.value"
         :is-recording="recorder.isRecording.value"
         :is-recording-video="recorder.isRecordingVideo.value"
-        :is-sending="chat.isSending.value"
+        :is-sending="chat.isSending.value || recorder.isSending.value"
         :hold-label="recorder.holdLabel.value"
         :note-stream="recorder.noteStream.value"
         @update:chat-draft="(v: string) => chat.chatDraft.value = v"
@@ -286,7 +298,6 @@ onUnmounted(() => {
         @record-cancel="recorder.onRecordPointerCancel"
         @set-mode="(m: 'voice' | 'note') => recorder.chatMode.value = m"
       />
-      <p class="chat-footnote">{{ chat.wsConnected.value ? t('dashboard.reconnected') : t('dashboard.connecting') }}</p>
     </div>
 
     <template v-else>
@@ -352,5 +363,7 @@ h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
 .empty-state p { max-width: 400px; margin: 7px 0 15px; line-height: 1.55; }
 .empty-star { color: #e4b46c; font-size: 30px; }
 .text-button { min-height: 44px; border: 0; background: none; color: #85c9b9; font-size: 13px; font-weight: 700; cursor: pointer; }
-.chat-footnote { margin: 0; padding: 0 12px 9px; color: #7d8c89; font-size: 9px; }
+/* Кімната на весь в'юпорт: панель обмежена по висоті, тому скролиться саме список. */
+.chats-view.is-room { display: flex; width: 100%; max-width: none; min-height: 0; flex: 1 1 auto; flex-direction: column; margin: 0; }
+.is-room .chat-panel { min-height: 0; flex: 1 1 auto; border: 0; border-radius: 0; }
 </style>

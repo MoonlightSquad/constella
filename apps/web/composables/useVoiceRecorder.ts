@@ -1,5 +1,6 @@
-import { computed, nextTick, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import { CONSENT_STORAGE_KEY, decideCancel, decideHoldAction, isVoiceUploadable, normalizeMime, pickAudioMime, pickVideoMime } from './media-decisions.mjs'
 
 const MAX_VOICE_SEC = 300
 const MAX_NOTE_SEC = 60
@@ -25,9 +26,13 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   const recordingVideoDuration = ref(0)
   const holdCancelling = ref(false)
   const noteStream = ref<MediaStream | null>(null)
-  const notePreview = ref<HTMLVideoElement | null>(null)
   const isSending = ref(false)
+  /** Палець досі притиснутий. Єдині ворота для будь-якого старту після `await`. */
+  const holdActive = ref(false)
+  /** Діалог дозволу з'їдає жест: реліз під час нього — не «короткий тап». */
+  const awaitingPermission = ref(false)
 
+  let liveStream: MediaStream | null = null
   let mediaRecorder: MediaRecorder | null = null
   let audioChunks: Blob[] = []
   let videoChunks: Blob[] = []
@@ -35,6 +40,13 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   let recordingVideoTimer: number | null = null
   let holdStartedAt = 0
   let holdOrigin = { x: 0, y: 0 }
+
+  const releaseStream = () => {
+    awaitingPermission.value = false
+    liveStream?.getTracks().forEach((track) => track.stop())
+    liveStream = null
+    noteStream.value = null
+  }
 
   // --- Format helper ---
   const formatDuration = (sec: number) => {
@@ -52,109 +64,160 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
     return `${t('dashboard.releaseToSend')} · ${formatDuration(seconds)}`
   })
 
+  const unsupported = () => {
+    toast(t('dashboard.voiceUnsupported'))
+    return null
+  }
+
+  /**
+   * `getUserMedia` резолвиться після того, як системний діалог уже забрав pointer-потік,
+   * тому викликані звідси record-старти завжди перечитують `holdActive`.
+   */
+  const acquire = async (constraints: MediaStreamConstraints): Promise<MediaStream | null> => {
+    if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      return unsupported()
+    }
+    awaitingPermission.value = true
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      liveStream = stream
+      return stream
+    } catch (error: any) {
+      releaseStream()
+      const previouslyDenied = localStorage.getItem(CONSENT_STORAGE_KEY) === 'denied'
+      toast(previouslyDenied ? t('dashboard.callMicDenied') : (error?.message || t('dashboard.voiceUnsupported')))
+      return null
+    }
+  }
+
+  /** Деякі рушії підтверджують тип в `isTypeSupported`, але кидають у конструкторі. */
+  const createRecorder = (stream: MediaStream, mime: string) => {
+    try {
+      return new MediaRecorder(stream, mime ? { mimeType: mime } : {})
+    } catch {
+      return new MediaRecorder(stream)
+    }
+  }
+
+  const toDataUrl = (blob: Blob) => new Promise<string>((resolve) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result as string)
+    reader.readAsDataURL(blob)
+  })
+
   // --- Voice recording ---
   const startVoiceRecording = async () => {
-    if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
-      toast(t('dashboard.voiceUnsupported'))
-      return
-    }
+    const stream = await acquire({ audio: true })
+    if (!stream || !holdActive.value) return releaseStream()
+    const mime = pickAudioMime((type) => MediaRecorder.isTypeSupported(type))
+    const recorder = createRecorder(stream, mime)
+    audioChunks = []
+    recordingDuration.value = 0
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data) }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg'
-      mediaRecorder = new MediaRecorder(stream, { mimeType })
-      audioChunks = []
-      recordingDuration.value = 0
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data) }
-      mediaRecorder.start(100)
-      isRecording.value = true
-      recordingTimer = window.setInterval(() => {
-        recordingDuration.value += 1
-        if (recordingDuration.value >= MAX_VOICE_SEC) void stopVoiceRecording(true)
-      }, 1000)
-    } catch (error: any) { toast(error?.message) }
+      recorder.start(100)
+    } catch {
+      releaseStream()
+      return unsupported()
+    }
+    mediaRecorder = recorder
+    isRecording.value = true
+    awaitingPermission.value = false
+    recordingTimer = window.setInterval(() => {
+      recordingDuration.value += 1
+      if (recordingDuration.value >= MAX_VOICE_SEC) void stopVoiceRecording(true)
+    }, 1000)
   }
 
   const stopVoiceRecording = async (send = true) => {
-    if (!mediaRecorder || !isRecording.value) return
-    if (recordingTimer) clearInterval(recordingTimer)
+    if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null }
     isRecording.value = false
+    const recorder = mediaRecorder
+    mediaRecorder = null
+    if (!recorder) return releaseStream()
     const duration = recordingDuration.value || 1
-    mediaRecorder.onstop = async () => {
-      mediaRecorder?.stream?.getTracks().forEach((t) => t.stop())
+    // `recorder.mimeType` несе кодеки: API хоче голий тип, а `Blob` — повний, як і `Content-Type` PUT.
+    const rawMime = recorder.mimeType || 'audio/webm'
+    const contentType = normalizeMime(rawMime)
+    recorder.onstop = async () => {
+      releaseStream()
       if (!send || audioChunks.length === 0) return
       const matchId = options.getSelectedMatchId?.()
       if (!matchId) return
-      const mime = mediaRecorder?.mimeType || 'audio/webm'
-      const blob = new Blob(audioChunks, { type: mime })
+      const blob = new Blob(audioChunks, { type: rawMime })
       isSending.value = true
       try {
-        let audioUrl: string | null = null
-        try {
-          const uploadMeta = await $trpc.photos.createVoiceUpload.mutate({ contentType: mime as any })
-          await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': mime } })
-          const processed = await $trpc.photos.confirmVoiceUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: mime as any })
-          audioUrl = processed.publicUrl
-        } catch {
-          audioUrl = await new Promise<string>((resolve) => { const r = new FileReader(); r.onloadend = () => resolve(r.result as string); r.readAsDataURL(blob) })
+        let audioUrl: string
+        if (isVoiceUploadable(contentType)) {
+          try {
+            const uploadMeta = await $trpc.photos.createVoiceUpload.mutate({ contentType })
+            await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': contentType } })
+            const processed = await $trpc.photos.confirmVoiceUpload.mutate({ objectKey: uploadMeta.objectKey, contentType })
+            audioUrl = processed.publicUrl
+          } catch {
+            audioUrl = await toDataUrl(blob)
+          }
+        } else {
+          audioUrl = await toDataUrl(blob)
         }
-        if (audioUrl) {
-          await options.onSend?.('voice', { matchId, audioUrl, durationSec: duration })
-        }
+        await options.onSend?.('voice', { matchId, audioUrl, durationSec: duration })
       } catch (err: any) { toast(err?.message) } finally { isSending.value = false }
     }
-    mediaRecorder.stop()
+    recorder.stop()
   }
 
   const cancelVoiceRecording = () => { void stopVoiceRecording(false) }
 
   // --- Note recording ---
   const startNoteRecording = async () => {
-    if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      toast(t('dashboard.voiceUnsupported'))
-      return
-    }
+    const stream = await acquire({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } }, audio: true })
+    if (!stream || !holdActive.value) return releaseStream()
+    noteStream.value = stream
+    const mime = pickVideoMime((type) => MediaRecorder.isTypeSupported(type))
+    const recorder = createRecorder(stream, mime)
+    videoChunks = []
+    recordingVideoDuration.value = 0
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) videoChunks.push(e.data) }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } }, audio: true })
-      noteStream.value = stream
-      const mime = MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'video/mp4'
-      mediaRecorder = new MediaRecorder(stream, { mimeType: mime })
-      videoChunks = []
-      recordingVideoDuration.value = 0
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) videoChunks.push(e.data) }
-      mediaRecorder.start(250)
-      isRecordingVideo.value = true
-      recordingVideoTimer = window.setInterval(() => {
-        recordingVideoDuration.value += 1
-        if (recordingVideoDuration.value >= MAX_NOTE_SEC) void stopNoteRecording(true)
-      }, 1000)
-      await nextTick()
-      void notePreview.value?.play()
-    } catch (error: any) { toast(error?.message) }
+      recorder.start(250)
+    } catch {
+      releaseStream()
+      return unsupported()
+    }
+    mediaRecorder = recorder
+    isRecordingVideo.value = true
+    awaitingPermission.value = false
+    recordingVideoTimer = window.setInterval(() => {
+      recordingVideoDuration.value += 1
+      if (recordingVideoDuration.value >= MAX_NOTE_SEC) void stopNoteRecording(true)
+    }, 1000)
   }
 
   const stopNoteRecording = async (send = true) => {
-    if (!mediaRecorder || !isRecordingVideo.value) return
-    if (recordingVideoTimer) clearInterval(recordingVideoTimer)
+    if (recordingVideoTimer) { clearInterval(recordingVideoTimer); recordingVideoTimer = null }
     isRecordingVideo.value = false
+    const recorder = mediaRecorder
+    mediaRecorder = null
+    if (!recorder) return releaseStream()
     const duration = recordingVideoDuration.value || 1
-    mediaRecorder.onstop = async () => {
-      mediaRecorder?.stream?.getTracks().forEach((t) => t.stop())
-      noteStream.value = null
+    const contentType = normalizeMime(recorder.mimeType) || 'video/webm'
+    const extension = contentType === 'video/mp4' ? 'mp4' : 'webm'
+    recorder.onstop = async () => {
+      releaseStream()
       if (!send || videoChunks.length === 0) return
       const matchId = options.getSelectedMatchId?.()
       if (!matchId) return
-      const mime = (mediaRecorder?.mimeType || 'video/webm').split(';')[0]!
-      const extension = mime === 'video/mp4' ? 'mp4' : 'webm'
-      const blob = new Blob(videoChunks, { type: mime })
+      // `confirmVideoUpload` звіряє точний `Content-Type`, тому `Blob` і заголовок беруть той самий тип.
+      const blob = new Blob(videoChunks, { type: contentType })
       isSending.value = true
       try {
-        const uploadMeta = await $trpc.photos.createVideoUpload.mutate({ contentType: mime as 'video/mp4' | 'video/webm' })
-        await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': mime } })
-        const processed = await $trpc.photos.confirmVideoUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: mime as 'video/mp4' | 'video/webm' })
+        const uploadMeta = await $trpc.photos.createVideoUpload.mutate({ contentType })
+        await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': contentType } })
+        const processed = await $trpc.photos.confirmVideoUpload.mutate({ objectKey: uploadMeta.objectKey, contentType })
         await options.onSend?.('note', { matchId, body: JSON.stringify({ kind: 'video', round: true, url: processed.publicUrl, fileName: `note-${Date.now()}.${extension}`, size: blob.size, durationSec: duration }) })
       } catch (err: any) { toast(err?.message) } finally { isSending.value = false }
     }
-    mediaRecorder.stop()
+    recorder.stop()
   }
 
   const cancelNoteRecording = () => { void stopNoteRecording(false) }
@@ -162,36 +225,49 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   // --- Hold handlers ---
   const onHoldStart = (event: PointerEvent) => {
     if (isSending.value) return
+    // Другий палець по тій самій кнопці інакше перезаписав би `mediaRecorder` і залишив
+    // перший запис із гарячим мікрофоном.
+    if (isRecording.value || isRecordingVideo.value) return
     const target = event.currentTarget as HTMLElement | null
     target?.setPointerCapture?.(event.pointerId)
     holdOrigin = { x: event.clientX, y: event.clientY }
     holdStartedAt = Date.now()
     holdCancelling.value = false
+    holdActive.value = true
     if (chatMode.value === 'note') void startNoteRecording()
     else void startVoiceRecording()
   }
 
   const onHoldMove = (event: PointerEvent) => {
-    if (!isRecording.value && !isRecordingVideo.value) return
-    const up = holdOrigin.y - event.clientY
-    const aside = Math.abs(event.clientX - holdOrigin.x)
-    holdCancelling.value = up > 60 || aside > 120
+    if (!holdActive.value && !isRecording.value && !isRecordingVideo.value) return
+    holdCancelling.value = decideCancel({
+      dx: event.clientX - holdOrigin.x,
+      dy: event.clientY - holdOrigin.y,
+    })
   }
 
   const onHoldEnd = () => {
-    const tooShort = Date.now() - holdStartedAt < MIN_HOLD_MS
-    const keep = !holdCancelling.value && !tooShort
-    const mode = chatMode.value
-    if (mode === 'note') void stopNoteRecording(keep)
-    else void stopVoiceRecording(keep)
+    if (isRecordingVideo.value) void stopNoteRecording(true)
+    else void stopVoiceRecording(true)
     holdCancelling.value = false
-    if (tooShort) toast(t(mode === 'note' ? 'dashboard.holdToNote' : 'dashboard.holdToRecord'))
   }
 
-  const onHoldCancel = () => {
-    if (chatMode.value === 'note') void cancelNoteRecording()
-    else void cancelVoiceRecording()
+  /**
+   * Гілка за фактом запису, а не за `chatMode`: чип ⭕ у меню 📎 вміє змінити режим,
+   * коли запис уже йде.
+   *
+   * `lostpointercapture` приходить слідом за `pointerup`, коли запис уже відданий
+   * `recorder.stop()`: зупинити стрімі раніше за `onstop` — означатиме обрізаний файл.
+   */
+  const cancelLiveRecording = () => {
+    const live = holdActive.value || isRecording.value || isRecordingVideo.value
+    holdActive.value = false
     holdCancelling.value = false
+    if (!live) return
+    if (isRecordingVideo.value) void cancelNoteRecording()
+    else if (isRecording.value) void cancelVoiceRecording()
+    // Стрім уже взято, а `MediaRecorder` ще ні — це діалог дозволу, пускати його у запис не можна.
+    else releaseStream()
   }
 
   // --- Record button unified handlers ---
@@ -206,26 +282,45 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}) {
   }
 
   const onRecordPointerUp = () => {
-    const elapsed = Date.now() - holdStartedAt
-    if (elapsed < MIN_HOLD_MS) {
-      if (isRecording.value) void cancelVoiceRecording()
-      if (isRecordingVideo.value) void cancelNoteRecording()
-      cycleChatMode()
+    const action = decideHoldAction({
+      elapsedMs: Date.now() - holdStartedAt,
+      awaitingPermission: awaitingPermission.value,
+      cancelling: holdCancelling.value,
+      minMs: MIN_HOLD_MS,
+    })
+    holdActive.value = false
+    if (action === 'dismiss') {
+      toast(t(chatMode.value === 'note' ? 'dashboard.holdToNote' : 'dashboard.holdToRecord'))
       holdCancelling.value = false
       return
     }
-    onHoldEnd()
+    if (action === 'send') return onHoldEnd()
+    cancelLiveRecording()
+    if (action === 'tooShort') cycleChatMode()
   }
 
-  const onRecordPointerCancel = () => { onHoldCancel() }
+  const onRecordPointerCancel = () => { cancelLiveRecording() }
+
+  /** Згорнутий екран: `pointerup` може не дійти, а мікрофон лишитися гарячим. */
+  const abandonHold = () => {
+    if (document.visibilityState === 'hidden') cancelLiveRecording()
+  }
+
+  onMounted(() => document.addEventListener('visibilitychange', abandonHold))
+  onBeforeUnmount(() => {
+    document.removeEventListener('visibilitychange', abandonHold)
+    if (recordingTimer) clearInterval(recordingTimer)
+    if (recordingVideoTimer) clearInterval(recordingVideoTimer)
+    cancelLiveRecording()
+  })
 
   return {
     chatMode, isRecording, isRecordingVideo,
     recordingDuration, recordingVideoDuration,
-    holdCancelling, noteStream, notePreview, isSending,
+    holdCancelling, noteStream, isSending,
     holdLabel, formatDuration,
     onRecordPointerDown, onRecordPointerUp, onRecordPointerCancel,
-    onHoldMove, cycleChatMode,
+    onHoldMove, cycleChatMode, cancelLiveRecording,
     startNoteRecording, stopNoteRecording, cancelNoteRecording,
     startVoiceRecording, stopVoiceRecording, cancelVoiceRecording,
     MIN_HOLD_MS,

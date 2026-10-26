@@ -27,8 +27,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="product-shell">
-    <header class="topbar">
+  <div class="product-shell" :class="{ 'room-open': dash.chatRoomOpen.value }">
+    <header v-show="!dash.chatRoomOpen.value" class="topbar">
       <NuxtLink class="brand" to="/" @click.prevent="dash.goTab('orbit')">
         <span class="brand-mark">✦</span>
         <span>{{ t('dashboard.brand') }}</span>
@@ -76,7 +76,7 @@ onUnmounted(() => {
       </form>
     </div>
 
-    <nav class="tabbar" :aria-label="t('dashboard.navigation')">
+    <nav v-show="!dash.chatRoomOpen.value" class="tabbar" :aria-label="t('dashboard.navigation')">
       <button v-for="tab in tabList" :key="tab.id" type="button" :class="{ active: activeTab === tab.id }" @click="dash.goTab(tab.id)">
         <span class="tab-symbol">{{ tab.symbol }}</span>
         <span>{{ t(tab.label) }}</span>
@@ -117,4 +117,8 @@ onUnmounted(() => {
 .send-report { border: 0; background: #d9ad6d; color: #18211e; }
 @media (min-width: 760px) { .main-content { padding-top: 45px; } }
 @media (max-width: 450px) { .main-content { padding: 23px 14px calc(96px + env(safe-area-inset-bottom)); } .topbar { padding: 0 15px; } .orbit-date { font-size: 10px; } }
+/* Відкрита кімната чату: рамки застосунку немає, скролиться лише список повідомлень. */
+.product-shell.room-open { display: flex; height: var(--app-h, 100svh); min-height: 0; flex-direction: column; padding-bottom: 0; overflow: hidden; }
+.room-open .main-content { display: flex; width: 100%; min-height: 0; flex: 1 1 auto; flex-direction: column; margin: 0; padding: env(safe-area-inset-top) 0 0; }
+.room-open .toast-floating { top: calc(12px + env(safe-area-inset-top)); }
 </style>

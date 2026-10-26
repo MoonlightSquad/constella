@@ -56,6 +56,8 @@ export function useDashboard() {
 
   // --- Shared dashboard data ---
   const supportOpen = useState<boolean>('dash:supportOpen', () => false)
+  /** Відкрита кімната чату: layout ховає рамку і розгортає вміст на весь в'юпорт. */
+  const chatRoomOpen = useState<boolean>('dash:chatRoomOpen', () => false)
   const orbitProfiles = useState<DashProfile[]>('dash:orbitProfiles', () => [])
   const matches = useState<DashMatch[]>('dash:matches', () => [])
   const quests = useState<{ xp: number; level: number; achievements: any[]; daily: any[]; referralCode?: string | null; botUsername?: string | null } | null>('dash:quests', () => null)
@@ -278,7 +280,7 @@ export function useDashboard() {
     // session
     account, isAdmin, editingProfile,
     // data
-    supportOpen, orbitProfiles, matches, quests, billingStatus, incomingSparks, incomingLikes,
+    supportOpen, chatRoomOpen, orbitProfiles, matches, quests, billingStatus, incomingSparks, incomingLikes,
     orbitRemaining, orbitDate, releasePending, isLoading, isBuying,
     isLinkingTelegram, telegramLinkError, currentProfile,
     // notices + report
