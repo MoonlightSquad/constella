@@ -79,3 +79,30 @@ export function mediaKindOf({ type, name }) {
  * UA markers: `telegram/android-…`, `telegram/ios-…`, `TelegramAndroid` in Mini Apps.
  */
 export const isTelegramWebview = (userAgent) => /telegram/i.test(userAgent || '');
+
+/**
+ * `capture="environment"` is non-standard: WebKit ignores it, Android WebViews often answer
+ * with a gallery+camera chooser, and a desktop has no rear camera at all. The in-app camera
+ * therefore needs `getUserMedia`, which itself needs a secure context — everywhere else the
+ * attribute stays as the fallback.
+ */
+export const isCameraCaptureSupported = ({ secureContext, hasGetUserMedia }) =>
+  Boolean(secureContext && hasGetUserMedia);
+
+/**
+ * Centre square crop of a live frame, downscaled so neither edge exceeds `maxSide`. Even
+ * output edges keep `drawImage` off half-pixel resampling; a stream that has not reported
+ * its size yet yields `null` so the caller can skip the shot instead of baking NaN.
+ */
+export function shotRect({ videoWidth, videoHeight, maxSide = 1080 }) {
+  const side = Math.min(videoWidth || 0, videoHeight || 0);
+  if (side <= 0) return null;
+  const out = Math.max(2, Math.floor(Math.min(side, maxSide) / 2) * 2);
+  return {
+    sx: Math.round((videoWidth - side) / 2),
+    sy: Math.round((videoHeight - side) / 2),
+    sw: side,
+    sh: side,
+    out,
+  };
+}

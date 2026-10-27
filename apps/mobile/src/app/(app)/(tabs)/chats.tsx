@@ -8,7 +8,7 @@ import { useLocale } from '@/i18n/locale-provider';
 import type { TranslationKey } from '@/i18n/messages';
 import { useDashboard } from '@/state/dashboard';
 import { colors, radius, spacing, typography } from '@/theme/tokens';
-import { formatTime } from '@/utils/dates';
+import { chatStampText, initialsOf } from '@/utils/chat-stamp';
 
 /** Прев'ю останнього повідомлення — той самий розбір `kind`, що в бульбашках чату. */
 const previewKey = (kind: string | null | undefined): TranslationKey | null => {
@@ -63,14 +63,16 @@ export default function ChatsScreen() {
             >
               {match.profile?.photos[0] ? (
                 <Image
-                  accessibilityLabel={t('dashboard.verifiedProfile')}
+                  accessibilityLabel={match.profile?.displayName || t('dashboard.newMatch')}
                   contentFit="cover"
                   source={{ uri: match.profile.photos[0] }}
                   style={styles.avatar}
                 />
               ) : (
                 <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarMark}>✦</Text>
+                  <Text style={styles.avatarMark}>
+                    {initialsOf(match.profile?.displayName) || '✦'}
+                  </Text>
                 </View>
               )}
               <View style={styles.copy}>
@@ -78,8 +80,8 @@ export default function ChatsScreen() {
                   <Text numberOfLines={1} style={styles.name}>
                     {match.profile?.displayName || t('dashboard.newMatch')}
                   </Text>
-                  <Text style={styles.time}>
-                    {formatTime(match.lastMessage?.createdAt ?? match.createdAt)}
+                  <Text numberOfLines={1} style={styles.time}>
+                    {chatStampText(match.lastMessage?.createdAt ?? match.createdAt, t)}
                   </Text>
                 </View>
                 <Text numberOfLines={2} style={styles.preview}>
@@ -135,7 +137,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.bgDeep,
   },
-  avatarMark: { color: colors.goldDim, fontSize: 18 },
+  avatarMark: { color: colors.goldDim, fontSize: 15, fontWeight: '700', letterSpacing: 0.5 },
   copy: { flex: 1, gap: 2 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   name: { ...typography.title, color: colors.text, fontSize: 16, flex: 1 },

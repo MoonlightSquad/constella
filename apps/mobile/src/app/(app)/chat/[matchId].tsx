@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { useVideoPlayer, VideoView, type VideoPlayer } from 'expo-video';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -124,6 +125,123 @@ function VoiceBubble({ body, mine }: { body: string; mine: boolean }) {
       >
         <Text style={styles.voiceRateText}>{`${rate}×`}</Text>
       </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Глобальний «хто сейчас грає»: кожен кружок — окремий плеєер, тож без цього двоє
+ * звучали б одночасно.
+ */
+let activeNotePlayer: VideoPlayer | null = null;
+
+/**
+ * Кружок з власним плеєером, як голосове: `nativeControls={false}`, тап — гра/пауза,
+ * затискання — 2×. `useVideoPlayer` — хук, тому один компонент на один кружок.
+ */
+function NoteBubble({ mine, url, durationSec = 0 }: { mine: boolean; url: string; durationSec?: number }) {
+  const { t } = useLocale();
+  const player = useVideoPlayer(url, (instance) => {
+    instance.loop = true;
+    instance.timeUpdateEventInterval = 0.2;
+  });
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [percent, setPercent] = useState(0);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const held = useRef(false);
+
+  useEffect(() => {
+    const onPlaying = player.addListener('playingChange', ({ isPlaying }) => setPlaying(isPlaying));
+    const onTime = player.addListener('timeUpdate', ({ currentTime }) => {
+      const total = player.duration || durationSec;
+      setPercent(total ? Math.min(100, (currentTime / total) * 100) : 0);
+    });
+    return () => {
+      onPlaying.remove();
+      onTime.remove();
+    };
+  }, [player, durationSec]);
+
+  // Вихід із кімнати не залишає кружок на звуці.
+  useEffect(
+    () => () => {
+      player.pause();
+      if (activeNotePlayer === player) activeNotePlayer = null;
+    },
+    [player],
+  );
+
+  const toggle = () => {
+    if (player.playing) {
+      player.pause();
+      return;
+    }
+    activeNotePlayer?.pause();
+    activeNotePlayer = player;
+    player.play();
+  };
+
+  const onPressIn = () => {
+    held.current = false;
+    holdTimer.current = setTimeout(() => {
+      held.current = true;
+      if (!player.playing) toggle();
+      player.playbackRate = 2;
+    }, 350);
+  };
+
+  const onPressOut = () => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    // Затискання з'їло тап: швидкість повертаємо, гру не перериваємо.
+    if (held.current) {
+      held.current = false;
+      player.playbackRate = 1;
+      return;
+    }
+    toggle();
+  };
+
+  return (
+    <View style={[styles.note, mine && styles.noteMine]}>
+      <VideoView
+        player={player}
+        contentFit="cover"
+        nativeControls={false}
+        surfaceType={Platform.OS === 'android' ? 'textureView' : 'surfaceView'}
+        style={StyleSheet.absoluteFill}
+      />
+      <Pressable
+        accessibilityLabel={t(playing ? 'dashboard.notePause' : 'dashboard.notePlay')}
+        accessibilityRole="button"
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        style={({ pressed }) => [styles.noteOverlay, pressed && styles.pressed]}
+      >
+        {playing ? null : <Text style={styles.noteMark}>▶</Text>}
+      </Pressable>
+      {playing ? (
+        <>
+          <View style={styles.noteTrack}>
+            <View style={[styles.noteTrackFill, { width: `${percent}%` }]} />
+          </View>
+          <Pressable
+            accessibilityLabel={t(muted ? 'dashboard.unmute' : 'dashboard.mute')}
+            accessibilityRole="button"
+            hitSlop={hit}
+            onPress={() => {
+              player.muted = !player.muted;
+              setMuted(player.muted);
+            }}
+            style={styles.noteMute}
+          >
+            <Text style={styles.noteMuteText}>{muted ? '🔇' : '🔊'}</Text>
+          </Pressable>
+        </>
+      ) : durationSec ? (
+        <Text style={styles.noteTime}>{formatDuration(durationSec)}</Text>
+      ) : null}
     </View>
   );
 }
@@ -634,28 +752,20 @@ export default function ChatScreen() {
                     style={styles.media}
                   />
                 ) : shown === 'video' && media ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    hitSlop={hit}
-                    onPress={() => void Linking.openURL(media.url)}
-                    style={({ pressed }) => [
-                      media.round ? styles.note : styles.bubble,
-                      media.round && mine && styles.noteMine,
-                      !media.round && styles.system,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    {media.round ? (
-                      <>
-                        <Text style={styles.noteMark}>▶</Text>
-                        {media.durationSec ? <Text style={styles.noteTime}>{formatDuration(media.durationSec)}</Text> : null}
-                      </>
-                    ) : (
+                  media.round ? (
+                    <NoteBubble mine={mine} url={media.url} durationSec={media.durationSec} />
+                  ) : (
+                    <Pressable
+                      accessibilityRole="button"
+                      hitSlop={hit}
+                      onPress={() => void Linking.openURL(media.url)}
+                      style={({ pressed }) => [styles.bubble, styles.system, pressed && styles.pressed]}
+                    >
                       <Text style={styles.systemText}>
                         {t('dashboard.videoMessage')} · {t('chats.openVideo')}
                       </Text>
-                    )}
-                  </Pressable>
+                    </Pressable>
+                  )
                 ) : shown === 'call' ? (
                   <Text style={styles.systemText}>
                     📞 {message.body.includes('video') ? t('dashboard.videoCall') : t('dashboard.audioCall')}
@@ -918,10 +1028,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgDeep,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   noteMine: { borderColor: colors.mint },
   noteMark: { color: colors.text, fontSize: 22 },
   noteTime: { ...typography.caption, color: colors.mutedSoft, position: 'absolute', bottom: 12 },
+  noteOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
+  noteTrack: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 12,
+    height: 3,
+    borderRadius: radius.pill,
+    backgroundColor: '#00000080',
+  },
+  noteTrackFill: { height: 3, borderRadius: radius.pill, backgroundColor: colors.gold },
+  noteMute: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 22,
+    height: 22,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00000080',
+  },
+  noteMuteText: { fontSize: 10, color: colors.text },
   system: { alignSelf: 'flex-start' },
   systemText: { ...typography.caption, color: colors.mutedSoft, fontSize: 12 },
   typing: { ...typography.caption, color: colors.mintSoft },

@@ -15,7 +15,7 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Constella показує знайомства поблизу — потрібен ваш приблизний населений пункт.",
         "NSPhotoLibraryUsageDescription": "Ви обираєте фото профію зі своєї галереї.",
-        "NSCameraUsageDescription": "Ви можете зробити фото для профію просто в застосунку.",
+        "NSCameraUsageDescription": "Ви можете зробити фото для профію або в чат просто в застосунку.",
         "NSMicrophoneUsageDescription": "Ви записуєте голосові повідомлення в чаті."
       }
     },
@@ -32,7 +32,8 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "POST_NOTIFICATIONS",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "CAMERA"
       ]
     },
     "plugins": [
@@ -57,7 +58,9 @@
         {
           "color": "#d9b879"
         }
-      ]
+      ],
+      "expo-image-picker",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

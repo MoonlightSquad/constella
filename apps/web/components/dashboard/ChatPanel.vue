@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import type { TranslationKey } from '~/composables/useLocale'
 import { useDashboard } from '~/composables/useDashboard'
 import { useChat } from '~/composables/useChat'
 import { useCallRoom } from '~/composables/useCallRoom'
@@ -8,12 +9,14 @@ import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 import ChatRoomHeader from './ChatRoomHeader.vue'
 import ChatMessageList from './ChatMessageList.vue'
 import ChatComposer from './ChatComposer.vue'
+import CameraSheet from './CameraSheet.vue'
 import CallOverlay from './CallOverlay.vue'
+import { chatStampOf, initialsOf } from '~/composables/chat-list.mjs'
 
 type Match = {
   id: string
   createdAt: string
-  profile: { id: string; displayName: string; age: number; city: string | null } | null
+  profile: { id: string; displayName: string; age: number; city: string | null; photos: string[] } | null
   lastMessage: { body: string; kind: string | null; sentByMe: boolean; createdAt: string } | null
 }
 
@@ -38,6 +41,17 @@ const { locale, t } = useLocale()
 const localeTag: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', de: 'de-DE', fr: 'fr-FR' }
 const formatTime = (date: string | Date) =>
   new Intl.DateTimeFormat(localeTag[locale.value], { hour: '2-digit', minute: '2-digit' }).format(new Date(date))
+
+/** Мітка рядка чату: сьогодні — час, далі — «Вчора», день тижня, дата (`chatStampOf`). */
+const lastActivityOf = (match: Match) => match.lastMessage?.createdAt ?? match.createdAt
+const stampOf = (match: Match) => {
+  const at = lastActivityOf(match)
+  const shown = chatStampOf({ at })
+  if (!shown) return ''
+  if (shown.kind === 'time') return formatTime(at)
+  if (shown.kind === 'label') return t(shown.key as TranslationKey)
+  return shown.text
+}
 
 const getUserId = () => props.account?.userId as string | undefined
 
@@ -265,6 +279,22 @@ const blockProfile = async (profileId: string, matchId?: string) => {
 
 const onPickFile = (file: File) => { void chat.sendMediaMessage(file) }
 
+// Власна камера замість `capture`: атрибут ігнорується на iOS і дає chooser на Android.
+const cameraOpen = ref(false)
+const openCamera = () => {
+  // Теплий ⭕-стрім тримає камеру: другий `getUserMedia` впав би в `NotReadableError`.
+  recorder.dropWarm('note')
+  cameraOpen.value = true
+}
+const closeCamera = () => {
+  cameraOpen.value = false
+  rewarmComposer()
+}
+const onCameraError = (kind: 'denied' | 'busy') => {
+  emit('toast', t(kind === 'busy' ? 'dashboard.cameraBusy' : 'dashboard.cameraDenied'))
+  closeCamera()
+}
+
 onMounted(() => {
   document.addEventListener('visibilitychange', rewarmOnReturn)
   void loadCallConfig()
@@ -317,6 +347,12 @@ onUnmounted(() => {
         @toggle-speed="(id) => chat.togglePlaybackSpeed(id)"
         @toggle-pin="(m) => chat.togglePinMedia(m)"
       />
+      <CameraSheet
+        v-if="cameraOpen"
+        @shot="(file: File) => { cameraOpen = false; void chat.sendMediaMessage(file) }"
+        @close="closeCamera"
+        @error="onCameraError"
+      />
       <ChatComposer
         :chat-mode="recorder.chatMode.value"
         :chat-draft="chat.chatDraft.value"
@@ -329,6 +365,7 @@ onUnmounted(() => {
         @send="chat.sendMessage()"
         @composer-input="chat.onComposerInput()"
         @pick-file="onPickFile"
+        @camera="openCamera"
         @record-down="recorder.onRecordPointerDown"
         @record-move="recorder.onHoldMove"
         @record-up="recorder.onRecordPointerUp"
@@ -343,10 +380,11 @@ onUnmounted(() => {
       <div v-if="isLoading" class="empty-state">{{ t('dashboard.loadingChats') }}</div>
       <div v-else-if="matches.length" class="match-list">
         <button v-for="match in matches" :key="match.id" class="match-row" type="button" @click="chat.openChat(match)">
-          <div class="mini-avatar">{{ match.profile?.city?.slice(0, 1)?.toUpperCase() || '✦' }}</div>
+          <img v-if="match.profile?.photos[0]" :src="match.profile.photos[0]" :alt="match.profile.displayName || t('dashboard.newMatch')" class="mini-avatar mini-avatar-photo">
+          <div v-else class="mini-avatar">{{ initialsOf(match.profile?.displayName) || '✦' }}</div>
           <div class="match-copy">
-            <div class="match-title"><strong>{{ match.profile?.displayName || t('dashboard.newMatch') }}</strong><time>{{ match.lastMessage ? formatTime(match.lastMessage.createdAt) : formatTime(match.createdAt) }}</time></div>
-            <p>{{ match.lastMessage ? `${match.lastMessage.sentByMe ? t('dashboard.you') : ''}${chat.previewBody(match.lastMessage.body, match.lastMessage.kind)}` : t('dashboard.matchStart') }}</p>
+            <div class="match-title"><strong>{{ match.profile?.displayName || t('dashboard.newMatch') }}</strong><time :datetime="lastActivityOf(match)">{{ stampOf(match) }}</time></div>
+            <p>{{ match.lastMessage ? `${match.lastMessage.sentByMe ? `${t('dashboard.you')} ` : ''}${chat.previewBody(match.lastMessage.body, match.lastMessage.kind)}` : t('dashboard.matchStart') }}</p>
           </div>
           <span class="row-arrow">›</span>
         </button>
@@ -388,11 +426,13 @@ h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
 .chat-panel { display: flex; min-height: min(72svh, 720px); flex-direction: column; border: 1px solid #2b3c3d; border-radius: 10px; background: #121f20; }
 .match-list { border-top: 1px solid #2a393a; }
 .match-row { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid #2a393a; padding: 14px 3px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-.mini-avatar { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid #587169; border-radius: 50%; background: #24423d; color: #dbf0e6; font-size: 16px; font-weight: 700; }
+.mini-avatar { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid #587169; border-radius: 50%; background: #24423d; color: #dbf0e6; font-size: 15px; font-weight: 700; }
+.mini-avatar-photo { display: block; padding: 0; object-fit: cover; }
 .match-copy { min-width: 0; flex: 1; }
 .match-title { display: flex; justify-content: space-between; gap: 12px; }
-.match-title strong { font-size: 14px; }
+.match-title strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .match-title time, .match-copy p { color: #879894; font-size: 11px; }
+.match-title time { flex-shrink: 0; white-space: nowrap; }
 .match-copy p { overflow: hidden; margin: 4px 0 0; text-overflow: ellipsis; white-space: nowrap; }
 .row-arrow { color: #80918c; font-size: 23px; }
 .empty-state { display: grid; min-height: 300px; align-content: center; justify-items: center; padding: 28px 22px; color: #a8b8b4; text-align: center; }
