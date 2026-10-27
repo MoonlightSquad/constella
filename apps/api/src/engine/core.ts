@@ -147,6 +147,22 @@ export const awardAchievement = async (db: any, userId: string, code: string) =>
   return Boolean(earned);
 };
 
+/**
+ * Whether a one-time achievement is already on the account.
+ *
+ * `awardAchievement` is an indexed `on conflict do nothing`, but the history scans that
+ * decide whether it *may* be awarded are not — one full `GROUP BY` per message sent. The
+ * guard turns every later message into this single indexed read.
+ */
+export const hasAchievement = async (db: any, userId: string, code: string) => {
+  const [row] = await db
+    .select({ code: userAchievements.code })
+    .from(userAchievements)
+    .where(and(eq(userAchievements.userId, userId), eq(userAchievements.code, code)))
+    .limit(1);
+  return Boolean(row);
+};
+
 export const bumpQuest = async (db: any, userId: string, timeZone: string, code: string, amount = 1) => {
   const quest = DAILY_QUESTS.find((item) => item.code === code);
   if (!quest) return;
@@ -431,6 +447,33 @@ export const getMatchForUser = async (db: any, matchId: string, userId: string) 
     .limit(1);
   if (block) throw new TRPCError({ code: 'NOT_FOUND', message: 'Match not found.' });
   return match;
+};
+
+/**
+ * Acknowledge that the peer's device received messages, without claiming they were read.
+ *
+ * `messages.delivered_at` used to be stamped by the sender's own insert, which made it
+ * mean "stored on the server" — the same thing the mutation response already says. It is
+ * now written only here (and backfilled by `markMessagesRead`), so the client can render
+ * a single tick for "sent" and a double tick for "reached the other device". Rows that
+ * already carry a timestamp are excluded, so a client that re-acks a thread cannot
+ * replay delivery receipts.
+ */
+export const markMessagesDelivered = async (
+  db: any,
+  matchId: string,
+  userId: string,
+  messageIds?: number[],
+): Promise<{ id: number; deliveredAt: Date }[]> => {
+  const conditions = [eq(messages.matchId, matchId), ne(messages.senderId, userId), isNull(messages.deliveredAt)];
+  if (messageIds?.length) conditions.push(inArray(messages.id, messageIds));
+  const deliveredAt = new Date();
+  const rows = await db
+    .update(messages)
+    .set({ deliveredAt })
+    .where(and(...conditions))
+    .returning({ id: messages.id, deliveredAt: messages.deliveredAt });
+  return rows.map((row: any) => ({ id: row.id, deliveredAt: row.deliveredAt }));
 };
 
 /**

@@ -25,7 +25,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toast: [msg: string]
+  /** Повний рефреш дашборда: блокування, завершене дзвінка. */
   refresh: []
+  /** Лише превʼю матчу й квести — те, що змінює надіслане повідомлення. */
+  chatRefresh: []
   report: [profile: any, matchId?: string]
   backToOrbit: []
 }>()
@@ -41,8 +44,7 @@ const getUserId = () => props.account?.userId as string | undefined
 // ---------- Chat (WS, messages, media, audio) ----------
 const chat = useChat({
   onToast: (msg) => emit('toast', msg),
-  onMatchRefresh: async () => { emit('refresh') },
-  onQuestRefresh: async () => { emit('refresh') },
+  onChatRefresh: () => { emit('chatRefresh') },
   getUserId,
   onCallIncoming: (payload) => {
     if (callPhase.value !== 'idle') return
@@ -81,24 +83,48 @@ const recorder = useVoiceRecorder({
   onToast: (msg) => emit('toast', msg),
   getSelectedMatchId: () => chat.selectedMatch.value?.id ?? null,
   onSend: async (type, payload) => {
-    if (type === 'voice') {
-      await $trpc.social.sendVoiceMessage.mutate({ matchId: payload.matchId, audioUrl: payload.audioUrl, durationSec: payload.durationSec })
-    } else {
-      await $trpc.social.sendMessage.mutate({ matchId: payload.matchId, body: payload.body })
+    // Голос і кружок теж оптимістичні: файл уже в R2, тож бульбашка з'являється
+    // миттєво, а ◷ тримається лише на час одного запиту до API.
+    const tempId = chat.appendPending(type === 'voice'
+      ? { kind: 'voice', body: JSON.stringify({ audioUrl: payload.audioUrl, durationSec: Math.round(payload.durationSec) }) }
+      : { body: payload.body })
+    try {
+      const message = type === 'voice'
+        ? await $trpc.social.sendVoiceMessage.mutate({ matchId: payload.matchId, audioUrl: payload.audioUrl, durationSec: payload.durationSec })
+        : await $trpc.social.sendMessage.mutate({ matchId: payload.matchId, body: payload.body })
+      chat.settlePending(tempId, message)
+      emit('chatRefresh')
+    } catch (err) {
+      chat.dropPending(tempId)
+      throw err
     }
-    await chat.loadChatMessages()
-    emit('refresh')
   },
 })
 
 // Панель при закритті кімнати не розмонтовується (`closeChat` лише обнулює `selectedMatch`),
 // тому живий запис знімаємо явно: інакше мікрофон лишається гарячим, а таймер сам надсилає.
 // Вхід навпаки гріє мікрофон: WebView Telegram видає дозвіл на кожен `getUserMedia`, тож
-// один діалог на кімнату тут, де жест вже витрачений на навігацію.
+// діалог стається тут, де жест вже витрачений на навігацію (камеру гріє watch нижче).
+const rewarmComposer = () => {
+  if (!chat.selectedMatch.value) return
+  recorder.warmUp()
+  if (recorder.chatMode.value === 'note') recorder.warmUp('note')
+}
+
 watch(() => chat.selectedMatch.value?.id, (matchId) => {
   recorder.cancelLiveRecording()
-  if (matchId) recorder.warmUp()
+  if (matchId) rewarmComposer()
   else recorder.dropWarm()
+})
+
+// Камера з OS-додатка (📎 → 📷) відправляє сторінку у фон, і `useVoiceRecorder` гасить теплі
+// стріми. Повертаючись, гріємо знову — інакше перше затискання після фото питало б дозвіл.
+const rewarmOnReturn = () => { if (document.visibilityState === 'visible') rewarmComposer() }
+
+// Камера жива лише в режимі ⭕: вихід із нього одразу гасить і стрім, і індикатор.
+watch(() => recorder.chatMode.value, (mode) => {
+  if (mode === 'note') recorder.warmUp('note')
+  else recorder.dropWarm('note')
 })
 
 // ---------- Calls ----------
@@ -239,9 +265,13 @@ const blockProfile = async (profileId: string, matchId?: string) => {
 
 const onPickFile = (file: File) => { void chat.sendMediaMessage(file) }
 
-onMounted(() => { void loadCallConfig() })
+onMounted(() => {
+  document.addEventListener('visibilitychange', rewarmOnReturn)
+  void loadCallConfig()
+})
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', rewarmOnReturn)
   // Розмонтаж із відкритою кімнатою інакше залишив би рамку застосунку прихованою.
   dash.chatRoomOpen.value = false
   chat.closeRealtime()
@@ -281,6 +311,7 @@ onUnmounted(() => {
         :voice-progress-percent="chat.voiceProgressPercent"
         :message-speed="chat.messageSpeed"
         :is-pinned="chat.isPinned"
+        :message-tick="chat.messageTick"
         @play-voice="(id, url, dur) => chat.playVoice(id, url, dur)"
         @pause-voice="(id) => chat.pauseVoice(id)"
         @toggle-speed="(id) => chat.togglePlaybackSpeed(id)"

@@ -26,7 +26,9 @@ export type PublicProfile = {
 };
 
 export type ChatMessage = {
+  /** Від'ємний `id` — локальна бульбашка, ще не підтверджена сервером (див. `sendText`). */
   id: number;
+  pending?: boolean;
   matchId: string;
   senderId: string;
   body: string;

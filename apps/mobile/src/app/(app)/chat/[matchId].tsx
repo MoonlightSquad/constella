@@ -56,6 +56,26 @@ const formatDuration = (seconds: number) => {
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
 };
 
+/**
+ * Галочки як у WhatsApp: ◷ — рядок ще не підтверджений сервером, ✓ — збережено,
+ * ✓✓ — пір підтвердив доставку, сині ✓✓ — прочитано. Чужому повідомленню статусу
+ * немає, інакше ми показували б стан піра у своїй бульбашці.
+ */
+const TICKS = {
+  pending: { glyph: '◷', label: 'dashboard.messagePending' },
+  sent: { glyph: '✓', label: 'dashboard.messageSent' },
+  delivered: { glyph: '✓✓', label: 'dashboard.messageDelivered' },
+  read: { glyph: '✓✓', label: 'dashboard.messageRead' },
+} as const;
+
+const tickOf = (message: ChatMessage, myId: string) => {
+  if (message.senderId !== myId) return null;
+  if (message.pending) return 'pending' as const;
+  if (message.readAt) return 'read' as const;
+  if (message.deliveredAt) return 'delivered' as const;
+  return 'sent' as const;
+};
+
 /** Голосова бульбашка: `useAudioPlayer` — хук, тому кожен файл має свій компонент. */
 function VoiceBubble({ body, mine }: { body: string; mine: boolean }) {
   const { t } = useLocale();
@@ -143,6 +163,11 @@ export default function ChatScreen() {
   const typingAt = useRef(0);
   const typingHide = useRef<ReturnType<typeof setTimeout> | null>(null);
   const socketRef = useRef<ChatSocketHandle | null>(null);
+  /** Локальні рядки, ще не підтверджені сервером: WS-кадр не має відповіді, зводимо за `body`. */
+  const pending = useRef<{ id: number; body: string }[]>([]);
+  const pendingSeq = useRef(0);
+  /** Read-галку ставимо лише коли кімнату справді видно, а не коли вона просто змонтована. */
+  const roomVisible = useRef(false);
 
   const match = matches.find((entry) => entry.id === matchId) ?? null;
   const myId = me?.userId ?? '';
@@ -184,10 +209,37 @@ export default function ChatScreen() {
     }, [loadThread, loadMatches]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      roomVisible.current = true;
+      return () => {
+        roomVisible.current = false;
+      };
+    }, []),
+  );
+
+  /** Знімає локальний рядок, ставлячи на його місце серверний (якщо той ще не прийшов). */
+  const resolvePending = (id: number, message?: ChatMessage) => {
+    pending.current = pending.current.filter((row) => row.id !== id);
+    setThread((current) => {
+      const rest = current.filter((entry) => entry.id !== id);
+      return message && !rest.some((entry) => entry.id === message.id) ? [...rest, message] : rest;
+    });
+  };
+
   const onFrame = useCallback(
     (frame: ChatFrame) => {
       if (frame.type === 'chat.message') {
         const incoming = frame.message;
+        if (incoming.senderId === myId) {
+          // Ехо свого рядка: підтвердження шукаємо за `body`, бо WS-надсилання не
+          // повертає id. Нема пари — звичайна вставка, дедуплікація далі по `id`.
+          const row = pending.current.find((entry) => entry.body === incoming.body);
+          if (row) {
+            resolvePending(row.id, incoming);
+            return;
+          }
+        }
         setThread((current) =>
           current.some((entry) => entry.id === incoming.id)
             ? current
@@ -196,7 +248,13 @@ export default function ChatScreen() {
               ),
         );
         if (incoming.senderId !== myId) {
-          socketRef.current?.send({ type: 'send.read', messageId: incoming.id });
+          // Прочитане підтверджує й доставку (`markMessagesRead` доповнює `delivered_at`),
+          // тому кадри не дублюємо: невидима кімната надсилає лише ✓✓ сірі.
+          socketRef.current?.send(
+            roomVisible.current
+              ? { type: 'send.read', messageId: incoming.id }
+              : { type: 'send.delivered', messageId: incoming.id },
+          );
           void loadMatches();
         }
         return;
@@ -207,19 +265,26 @@ export default function ChatScreen() {
         typingHide.current = setTimeout(() => setPeerTyping(false), 3000);
         return;
       }
-      if (frame.type === 'presence.read') {
-        setThread((current) =>
-          current.map((entry) => (entry.id === frame.messageId ? { ...entry, readAt: frame.readAt } : entry)),
-        );
+      if (frame.type === 'presence.read' || frame.type === 'presence.delivered') {
+        const ids = frame.messageIds?.length ? frame.messageIds : [frame.messageId];
+        const stamp = frame.type === 'presence.read' ? { readAt: frame.readAt } : { deliveredAt: frame.deliveredAt };
+        setThread((current) => current.map((entry) => (ids.includes(entry.id) ? { ...entry, ...stamp } : entry)));
         return;
       }
       if (frame.type === 'error') {
         // Сервер відмовляє кадром із машинним кодом (index.ts:390-405): rate_limited
         // перекладаємо (як і веб `:623`), решта — тихо, як у вебі.
         setIssue(frame.code === 'rate_limited' ? t('chats.rateLimited') : frame.message || t('chats.badRoom'));
+        // Кадру з помилкою відповідає останнє надсилання: знімаємо ◷, повертаємо текст.
+        const unresolved = pending.current;
+        if (!unresolved.length) return;
+        pending.current = [];
+        const ids = unresolved.map((row) => row.id);
+        setThread((current) => current.filter((entry) => !ids.includes(entry.id)));
+        setDraft((current) => (current.trim() ? current : unresolved[unresolved.length - 1]!.body));
       }
     },
-    // Через ref: шлем `send.read` із сокетом, не перепідписуючись на кожен ререндер.
+    // Через ref: шлем кадри зі сокетом, не перепідписуючись на кожен ререндер.
     [loadMatches, myId],
   );
 
@@ -233,21 +298,35 @@ export default function ChatScreen() {
   const sendText = async () => {
     const body = draft.trim();
     if (!body || !matchId || sending) return;
+    const tempId = -(++pendingSeq.current);
+    pending.current.push({ id: tempId, body });
+    setThread((current) => [
+      ...current,
+      {
+        id: tempId,
+        pending: true,
+        matchId,
+        senderId: myId,
+        body,
+        kind: 'text',
+        createdAt: new Date().toISOString(),
+        readAt: null,
+        deliveredAt: null,
+      },
+    ]);
+    setDraft('');
     setSending(true);
     try {
       if (!socket.send({ type: 'send.message', body })) {
         // Фолбек вебу (`ConstellaDashboard.vue:349`): REST, коли сокет не відкритий.
         const message = await trpc.social.sendMessage.mutate({ matchId, body });
-        setThread((current) =>
-          current.some((entry) => entry.id === message.id)
-            ? current
-            : [...current, message as ChatMessage],
-        );
+        resolvePending(tempId, message as ChatMessage);
       }
-      setDraft('');
       setIssue('');
       void loadMatches();
     } catch (error) {
+      resolvePending(tempId);
+      if (!draft.trim()) setDraft(body);
       setIssue(chatError(error));
     } finally {
       setSending(false);
@@ -540,6 +619,7 @@ export default function ChatScreen() {
           </Text>
           {thread.map((message) => {
             const mine = message.senderId === myId;
+            const tick = tickOf(message, myId);
             const shown = displayKind(message);
             const media = shown === 'image' || shown === 'video' ? mediaFromBody(message.body) : null;
             return (
@@ -587,10 +667,21 @@ export default function ChatScreen() {
                     <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.body}</Text>
                   </View>
                 )}
-                <Text style={styles.messageMeta}>
-                  {formatTime(message.createdAt)}
-                  {mine ? ` · ${message.readAt ? t('dashboard.messageRead') : message.deliveredAt ? t('dashboard.messageSent') : ''}` : ''}
-                </Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.messageMeta}>{formatTime(message.createdAt)}</Text>
+                  {tick ? (
+                    <Text
+                      accessibilityLabel={t(TICKS[tick].label)}
+                      style={[
+                        styles.metaTick,
+                        tick === 'read' && styles.metaTickRead,
+                        tick === 'pending' && styles.metaTickPending,
+                      ]}
+                    >
+                      {TICKS[tick].glyph}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
             );
           })}
@@ -813,6 +904,10 @@ const styles = StyleSheet.create({
   messageText: { ...typography.body, color: colors.text },
   messageTextMine: { color: colors.text },
   messageMeta: { ...typography.caption, color: colors.muted, fontSize: 10 },
+  metaRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-end', gap: 4 },
+  metaTick: { color: colors.muted, fontSize: 11, letterSpacing: -1.5 },
+  metaTickRead: { color: colors.mintBright },
+  metaTickPending: { opacity: 0.6 },
   media: { width: 220, height: 220, borderRadius: radius.md, backgroundColor: colors.bgDeep },
   note: {
     width: 88,

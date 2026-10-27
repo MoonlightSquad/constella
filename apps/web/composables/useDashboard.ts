@@ -157,6 +157,13 @@ export function useDashboard() {
     } catch (error) { showError(error) } finally { isLoading.value = false }
   }
 
+  // Після надісланого повідомлення потрібні лише превʼю матчу й прогрес квестів.
+  // `refreshAll` до того ж знову ставить `isLoading`, а це сплеск «завантаження чатів»
+  // під час набору — саме він виглядав як зависання відправки.
+  const refreshChatSideEffects = async () => {
+    try { await Promise.all([loadMatches(), loadQuests()]) } catch (error) { showError(error) }
+  }
+
   const reactToProfile = async (kind: 'spark' | 'pass' | 'super') => {
     const profile = currentProfile.value
     if (!profile) return
@@ -288,7 +295,7 @@ export function useDashboard() {
     // nav
     activeTab, goTab,
     // actions
-    showError, showToast, refreshAll, loadOrbit, applyOrbitFilters, clearOrbitFilters,
+    showError, showToast, refreshAll, refreshChatSideEffects, loadOrbit, applyOrbitFilters, clearOrbitFilters,
     loadMatches, loadQuests, loadBilling, loadSparks, reactToProfile, likeIncomingProfile, blockProfile,
     openReport, submitReport, linkTelegramAccount, cancelVip, buyProduct,
     refreshAfterBrowserPayment, formatOrbitDate, openAdmin, requestEditProfile,

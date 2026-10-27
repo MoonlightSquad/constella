@@ -14,7 +14,7 @@ import { eq, and, gt, isNull, or, sql } from 'drizzle-orm';
 import { AuthRequestSchema, AuthTokenSchema, WebLoginSchema, WebPasswordResetSchema, WebRegisterSchema, createLogger, notifyClient, type ClientPayload } from '@constella/shared';
 import { verifyTelegramInitData } from './utils/telegram.js';
 import { registerConnection, unregisterConnection, deliverToMatch } from './realtime.js';
-import { markMessagesRead } from './engine/core.js';
+import { markMessagesDelivered, markMessagesRead } from './engine/core.js';
 import { appRouter } from './routers/_app.js';
 import { createContext, isConfiguredAdmin } from './trpc.js';
 import { registerTelegramPaymentRoutes } from './payments/routes.js';
@@ -374,7 +374,7 @@ async function initialize() {
             // senderId always comes from the verified token, never the frame.
             const [m] = await db
               .insert(messages)
-              .values({ matchId, senderId: userId, body, kind: 'text', deliveredAt: new Date() })
+              .values({ matchId, senderId: userId, body, kind: 'text' })
               .returning();
             if (m) await deliverToMatch(matchId, { type: 'chat.message', message: m });
             break;
@@ -397,6 +397,25 @@ async function initialize() {
                 messageId: updated.id,
                 messageIds: marked.map((row) => row.id),
                 readAt: updated.readAt,
+                matchId,
+              });
+            }
+            break;
+          }
+          case 'send.delivered': {
+            // Cheaper promise than `send.read`: the device got the message, the user has
+            // not necessarily seen it. Already-acked rows are filtered in the UPDATE, so a
+            // reconnect that replays the thread cannot re-send the receipt.
+            const messageId = Number(data.messageId);
+            if (!Number.isSafeInteger(messageId) || messageId <= 0) return;
+            const marked = await markMessagesDelivered(db, matchId, userId, [messageId]);
+            const updated = marked[0];
+            if (updated) {
+              await deliverToMatch(matchId, {
+                type: 'presence.delivered',
+                messageId: updated.id,
+                messageIds: marked.map((row) => row.id),
+                deliveredAt: updated.deliveredAt,
                 matchId,
               });
             }
@@ -433,7 +452,6 @@ async function initialize() {
                 matchId,
                 senderId: userId,
                 body: JSON.stringify({ kind: mediaKind, url: data.url, fileName: data.fileName, size: data.size, localPath: data.localPath, icon: data.icon }),
-                deliveredAt: new Date(),
               })
               .returning();
             if (m) await deliverToMatch(matchId, { type: 'chat.message', message: m });

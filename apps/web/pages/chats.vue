@@ -4,7 +4,7 @@ import { useDashboard } from '~/composables/useDashboard'
 definePageMeta({ layout: 'dashboard' })
 const dash = useDashboard()
 const { matches, account, isLoading } = dash
-const { showToast, refreshAll, openReport, goTab } = dash
+const { showToast, refreshAll, refreshChatSideEffects, openReport, goTab } = dash
 </script>
 
 <template>
@@ -14,6 +14,7 @@ const { showToast, refreshAll, openReport, goTab } = dash
     :is-loading="isLoading"
     @toast="showToast"
     @refresh="refreshAll"
+    @chat-refresh="refreshChatSideEffects"
     @report="openReport"
     @back-to-orbit="goTab('orbit')"
   />

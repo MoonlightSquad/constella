@@ -29,7 +29,19 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const attachMenuOpen = ref(false)
 
 const toggleAttach = () => { attachMenuOpen.value = !attachMenuOpen.value }
-const openFilePicker = () => { attachMenuOpen.value = false; fileInput.value?.click() }
+/**
+ * `capture` — єдиний перемикач, що змушує WebView відкрити камеру: без нього
+ * `onShowFileChooser` (Telegram на Android, WKWebView на iOS) показує лише галерею.
+ * Атрибут ставимо саме перед `click()`, інакше наступний вибір із галереї теж пішов би в камеру.
+ */
+const openFilePicker = (source: 'gallery' | 'camera') => {
+  attachMenuOpen.value = false
+  const input = fileInput.value
+  if (!input) return
+  if (source === 'camera') input.setAttribute('capture', 'environment')
+  else input.removeAttribute('capture')
+  input.click()
+}
 const onFileSelected = (event: Event) => {
   const input = event.target as HTMLInputElement
   if (!input.files || input.files.length === 0) return
@@ -47,7 +59,8 @@ const onFileSelected = (event: Event) => {
     <div class="attach-wrap">
       <button type="button" class="composer-icon" :aria-label="t('dashboard.attachMedia')" :aria-expanded="attachMenuOpen" @click="toggleAttach">📎</button>
       <div v-if="attachMenuOpen" class="attach-menu" role="menu">
-        <button type="button" class="attach-item" role="menuitem" @click="openFilePicker">🖼 {{ t('dashboard.photoVideo') }}</button>
+        <button type="button" class="attach-item" role="menuitem" @click="openFilePicker('gallery')">🖼 {{ t('photos.gallery') }}</button>
+        <button type="button" class="attach-item" role="menuitem" @click="openFilePicker('camera')">📷 {{ t('photos.camera') }}</button>
         <button type="button" class="attach-item" role="menuitem" @click="attachMenuOpen = false; emit('setMode', 'note')">⭕ {{ t('dashboard.videoNote') }}</button>
       </div>
     </div>

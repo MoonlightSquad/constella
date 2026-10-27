@@ -52,7 +52,12 @@ export interface CallSignal {
 }
 
 export interface ClientPayload {
-  type: 'send.message' | 'send.typing' | 'send.read' | 'send.linked' | 'send.media' | 'send.pin';
+  /**
+   * `send.read` and `send.delivered` are the two receipts a device can give: the message
+   * reached it, and the user looked at it. Read implies delivered (`markMessagesRead`
+   * backfills `delivered_at`), so the pair never contradicts itself.
+   */
+  type: 'send.message' | 'send.typing' | 'send.read' | 'send.delivered' | 'send.linked' | 'send.media' | 'send.pin';
   matchId: string;
   senderId?: string;
   body?: string;
