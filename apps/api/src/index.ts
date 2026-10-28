@@ -16,7 +16,7 @@ import { verifyTelegramInitData } from './utils/telegram.js';
 import { registerConnection, unregisterConnection, deliverToMatch } from './realtime.js';
 import { markMessagesDelivered, markMessagesRead } from './engine/core.js';
 import { appRouter } from './routers/_app.js';
-import { createContext, isConfiguredAdmin } from './trpc.js';
+import { createContext, isAdminAccount, type UserPayload } from './trpc.js';
 import { registerTelegramPaymentRoutes } from './payments/routes.js';
 import { registerBlogRoutes } from './blog/routes.js';
 import { authTokens, closeDb, db, users, identities, webCredentials, photoAssets, swipes, events, userAchievements, paymentIntents, supportMessages, matches, messages } from '@constella/db';
@@ -270,9 +270,9 @@ async function initialize() {
     const token = url.searchParams.get('token') || cookieToken;
     if (!token) return null;
 
-    let claims: { id: string; sessionVersion?: number };
+    let claims: UserPayload;
     try {
-      claims = fastify.jwt.verify<{ id: string; sessionVersion?: number }>(token);
+      claims = fastify.jwt.verify<UserPayload>(token);
     } catch {
       return null;
     }
@@ -281,13 +281,13 @@ async function initialize() {
     // Mirror the tRPC `protectedProcedure` guard: reject revoked sessions and
     // banned accounts so a socket cannot outlive its credentials.
     const [account] = await db
-      .select({ sessionVersion: users.sessionVersion, bannedAt: users.bannedAt })
+      .select({ sessionVersion: users.sessionVersion, bannedAt: users.bannedAt, role: users.role })
       .from(users)
       .where(eq(users.id, claims.id))
       .limit(1);
     if (!account) return null;
     if ((claims.sessionVersion ?? 0) !== account.sessionVersion) return null;
-    if (account.bannedAt && !isConfiguredAdmin({ id: claims.id, telegramId: null })) return null;
+    if (account.bannedAt && !isAdminAccount(claims, account.role)) return null;
 
     return { id: claims.id };
   };
@@ -673,9 +673,17 @@ async function initialize() {
 
       const configuredEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
       const configuredPassword = process.env.ADMIN_PASSWORD;
-      if (!configuredEmail || !configuredPassword) {
-        request.log.error({ requestId: request.id }, 'Admin login credentials are not configured.');
-        return reply.status(503).send({ error: 'Admin login is not configured.' });
+      const hasEnv = Boolean(configuredEmail && configuredPassword);
+
+      // DB admins make the console usable without env credentials, but the env pair stays the
+      // root: it always signs in and its account is the one nobody can revoke from the console.
+      if (!hasEnv) {
+        const [anyAdmin] = await db.select({ id: users.id }).from(users)
+          .where(eq(users.role, 'admin')).limit(1);
+        if (!anyAdmin) {
+          request.log.error({ requestId: request.id }, 'Admin login credentials are not configured.');
+          return reply.status(503).send({ error: 'Admin login is not configured.' });
+        }
       }
 
       const matchesConfiguredValue = (provided: string, configured: string) =>
@@ -683,55 +691,98 @@ async function initialize() {
           createHash('sha256').update(provided).digest(),
           createHash('sha256').update(configured).digest()
         );
-      const emailMatches = matchesConfiguredValue(parsed.data.email, configuredEmail);
-      const passwordMatches = matchesConfiguredValue(parsed.data.password, configuredPassword);
-      if (!emailMatches || !passwordMatches) {
+
+      const signAdminToken = (account: { userId: string; email: string; sessionVersion: number }) =>
+        fastify.jwt.sign({
+          id: account.userId,
+          telegramId: null,
+          email: account.email,
+          authProvider: 'admin',
+          sessionVersion: account.sessionVersion,
+        }, { expiresIn: '8h' });
+
+      // When the email is the configured root, only the env password is accepted — a second
+      // credential on that address would be a way around the root.
+      if (hasEnv && configuredEmail && configuredPassword
+        && matchesConfiguredValue(parsed.data.email, configuredEmail)) {
+        if (!matchesConfiguredValue(parsed.data.password, configuredPassword)) {
+          return reply.status(401).send({ error: 'Email or password is incorrect.' });
+        }
+
+        const findAdminAccount = async () => {
+          const [account] = await db.select({
+            userId: webCredentials.userId,
+            sessionVersion: users.sessionVersion,
+            role: users.role,
+          }).from(webCredentials)
+            .innerJoin(users, eq(users.id, webCredentials.userId))
+            .where(eq(webCredentials.email, configuredEmail))
+            .limit(1);
+          return account;
+        };
+
+        let account = await findAdminAccount();
+        if (!account) {
+          const unusablePasswordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
+          try {
+            account = await db.transaction(async (tx) => {
+              const [user] = await tx.insert(users)
+                .values({ birthdate: new Date('2000-01-01'), gender: 'none', lookingFor: [], role: 'admin' })
+                .returning({ userId: users.id, sessionVersion: users.sessionVersion, role: users.role });
+              await tx.insert(webCredentials).values({
+                userId: user.userId,
+                email: configuredEmail,
+                passwordHash: unusablePasswordHash,
+                emailVerifiedAt: new Date(),
+              });
+              return user;
+            });
+          } catch (error: any) {
+            if (error?.code !== '23505') throw error;
+            account = await findAdminAccount();
+            if (!account) throw error;
+          }
+        }
+        if (!account) throw new Error('Admin account resolution failed after successful credential validation.');
+
+        // An account created before roles existed, or demoted in SQL, must still administer.
+        if (account.role !== 'admin') {
+          await db.update(users).set({ role: 'admin' }).where(eq(users.id, account.userId));
+        }
+
+        return reply.send({
+          token: signAdminToken({ userId: account.userId, email: configuredEmail, sessionVersion: account.sessionVersion }),
+          userId: account.userId,
+        });
+      }
+
+      const [credential] = await db
+        .select({
+          userId: webCredentials.userId,
+          email: webCredentials.email,
+          passwordHash: webCredentials.passwordHash,
+          emailVerifiedAt: webCredentials.emailVerifiedAt,
+          sessionVersion: users.sessionVersion,
+          role: users.role,
+        })
+        .from(webCredentials)
+        .innerJoin(users, eq(users.id, webCredentials.userId))
+        .where(eq(webCredentials.email, parsed.data.email))
+        .limit(1);
+      const passwordMatches = await bcrypt.compare(
+        parsed.data.password,
+        credential?.passwordHash ?? DUMMY_PASSWORD_HASH
+      );
+
+      if (!credential || !passwordMatches || credential.role !== 'admin' || !credential.emailVerifiedAt) {
         return reply.status(401).send({ error: 'Email or password is incorrect.' });
       }
 
-      const findAdminAccount = async () => {
-        const [account] = await db.select({
-          userId: webCredentials.userId,
-          sessionVersion: users.sessionVersion,
-        }).from(webCredentials)
-          .innerJoin(users, eq(users.id, webCredentials.userId))
-          .where(eq(webCredentials.email, configuredEmail))
-          .limit(1);
-        return account;
-      };
-
-      let account = await findAdminAccount();
-      if (!account) {
-        const unusablePasswordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
-        try {
-          account = await db.transaction(async (tx) => {
-            const [user] = await tx.insert(users)
-              .values({ birthdate: new Date('2000-01-01'), gender: 'none', lookingFor: [] })
-              .returning({ userId: users.id, sessionVersion: users.sessionVersion });
-            await tx.insert(webCredentials).values({
-              userId: user.userId,
-              email: configuredEmail,
-              passwordHash: unusablePasswordHash,
-              emailVerifiedAt: new Date(),
-            });
-            return user;
-          });
-        } catch (error: any) {
-          if (error?.code !== '23505') throw error;
-          account = await findAdminAccount();
-          if (!account) throw error;
-        }
-      }
-      if (!account) throw new Error('Admin account resolution failed after successful credential validation.');
-
-      const token = fastify.jwt.sign({
-        id: account.userId,
-        telegramId: null,
-        email: configuredEmail,
-        authProvider: 'admin',
-        sessionVersion: account.sessionVersion,
-      }, { expiresIn: '8h' });
-      return reply.send({ token, userId: account.userId });
+      await db.update(webCredentials).set({ lastLoginAt: new Date() }).where(eq(webCredentials.userId, credential.userId));
+      return reply.send({
+        token: signAdminToken(credential),
+        userId: credential.userId,
+      });
     }
   );
 

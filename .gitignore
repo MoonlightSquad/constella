@@ -27,4 +27,8 @@ logs
 !.env.example
 .aider*
 
+# Python AI service (ai/nsfw): важі збираються на боксі, у git їх не пускаємо
+__pycache__/
+ai/nsfw/artifacts/
+
 *.png

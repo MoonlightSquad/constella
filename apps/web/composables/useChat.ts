@@ -452,6 +452,8 @@ export function useChat(options: ChatOptions = {}) {
       const processed = isVideo
         ? await $trpc.photos.confirmVideoUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'video/mp4' | 'video/webm' })
         : await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp' })
+      // Сервер видаляє відхилене фото, тож таке посилання було б бульбашкою на битий URL.
+      if (processed.status === 'rejected') { toast(t('photos.rejectedContent')); return }
       const message = await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind: media.kind, url: processed.publicUrl, fileName: file.name, size: file.size }) })
       // Рядок із відповіді — той самий, що й у стрічці, тож перезавантаження історії
       // тут зайве: воно прибирало б галочку «pending» на цілу секунду.

@@ -8,7 +8,6 @@ const props = defineProps<{
   isBuying: string | null
   isLinkingTelegram: boolean
   telegramLinkError: string
-  isAdmin?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -17,7 +16,6 @@ const emit = defineEmits<{
   linkTelegram: [payload: Record<string, string | number | boolean>]
   contactSupport: []
   editProfile: []
-  openAdmin: []
   logout: []
   deleteAccount: []
   backToOrbit: []
@@ -67,7 +65,6 @@ const genderLabel = (gender: string) => t(({
     </section>
     <button class="secondary-button wide-button" type="button" @click="emit('contactSupport')">{{ t('dashboard.contactSupport') }}</button>
     <button class="secondary-button wide-button" type="button" @click="emit('editProfile')">{{ t('dashboard.editProfile') }}</button>
-    <button v-if="isAdmin" class="secondary-button wide-button" type="button" @click="emit('openAdmin')">{{ t('dashboard.openAdmin') }}</button>
     <button class="logout-button" type="button" @click="emit('logout')">{{ t('dashboard.logout') }}</button>
     <button class="delete-account" type="button" @click="emit('deleteAccount')">{{ t('dashboard.deleteAccount') }}</button>
   </section>

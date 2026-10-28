@@ -1,0 +1,127 @@
+/* Self-hosted so a site served to de/fr users does not leak a third-party
+   request on first paint (DSGVO / AktM). */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/manrope-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/manrope-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/manrope-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
+:root {
+  color-scheme: dark;
+
+  --ink-900: #0d1718;
+  --ink-800: #0b1214;
+  --surface-700: #132122;
+  --surface-600: #12201f;
+  --surface-500: #172325;
+  --surface-400: #1b3631;
+  --hairline: #314343;
+  --hairline-strong: #3a504c;
+  --hairline-card: #344748;
+
+  --fg: #f3f5f2;
+  --fg-muted: #9aaba7;
+  --fg-muted-2: #aab9b6;
+
+  --gold: #d9ad6d;
+  --gold-hover: #c89d60;
+  --gold-eyebrow: #e4b46c;
+  --gold-on: #15201d;
+  --mint: #82c7b7;
+  --mint-2: #9bd5c5;
+  --mint-3: #85c9b9;
+  --tg: #2b7f9f;
+  --danger: #ff9c8f;
+  --success-bg: #1d332e;
+  --success-fg: #c7ebdd;
+
+  --sky: radial-gradient(ellipse at 50% -20%, #1b3631 0%, #0d1718 54%);
+  --glass: rgba(19, 33, 34, 0.78);
+  --glass-edge: rgba(155, 213, 197, 0.14);
+
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 18px;
+  --r-pill: 99px;
+
+  --h1: clamp(34px, 6.4vw, 68px);
+  --h2: clamp(26px, 3.6vw, 42px);
+  --h3: clamp(19px, 2.2vw, 24px);
+
+  --shadow-float: 0 28px 90px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.22);
+
+  --shell: min(100%, 1200px);
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ink-900);
+  color: var(--fg);
+  line-height: 1.6;
+  font-variant-ligatures: common-ligatures;
+  text-rendering: optimizeSpeed;
+}
+
+h1, h2, h3, h4, p, ul, ol, figure { margin: 0; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+:focus-visible {
+  outline: 2px solid var(--mint-2);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: -60px;
+  z-index: 50;
+  padding: 10px 16px;
+  background: var(--gold);
+  color: var(--gold-on);
+  border-radius: var(--r-sm);
+  font-weight: 700;
+  transition: top 0.15s ease;
+}
+.skip-link:focus { top: 12px; }

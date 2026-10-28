@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+artifacts/
+tools/
+README.md
+docker-compose.yml

@@ -1,0 +1,33 @@
+# Публічне обличчя бокса. Caddy бере TLS сам: потрібен A-запис на цю машину і
+# відкриті 80/443 (80 обов'язково через ACME challenge).
+#
+# Ми проксіємо лише два шляхи: решта не існує. Обмеження тіла стоїть тут і
+# всередині сервісу — завдання Caddy не в тому, щоб порахувати байти, а щоб не
+# пропустити 500 МБ до контейнера взагалі.
+{
+	admin off
+}
+
+{$AI_HOSTNAME} {
+	# Розкоментуйте, щоб отримувати нагадування про закінчення сертифіката.
+	# tls {$ACME_EMAIL}
+
+	@endpoint path /v1/classify-image /healthz
+	handle @endpoint {
+		request_body {
+			max_size 16MB
+		}
+		reverse_proxy nsfw:8000
+	}
+
+	handle {
+		respond "not found" 404
+	}
+
+	# Access-лог Caddy за замовчуванням не пише ні тіла, ні заголовки, тож x-ai-token
+	# у логи не потрапляє.
+	log {
+		output stdout
+		format console
+	}
+}

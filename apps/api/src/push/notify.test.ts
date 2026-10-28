@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, describe, it } from 'node:test';
-import { notifyUser } from './notify.js';
+import { notifyBroadcast, notifyUser } from './notify.js';
 
 const originalFetch = globalThis.fetch;
 const originalSecret = process.env.EXPO_PUSH_ACCESS_TOKEN;
@@ -113,5 +113,112 @@ describe('Expo push fan-out', () => {
       throw new Error('network down');
     }) as unknown as typeof fetch;
     await notifyUser(fakeDb(['ExponentPushToken[aaaaaaaaaaaa]']), 'user-1', { title: 'Constella', body: 'Привіт' });
+  });
+});
+
+/** 25 зон, що покривають усі зміщення від UTC — тож хоча б одна людина точно в тихій годині. */
+const ZONES = Array.from({ length: 25 }, (_, index) => {
+  const offset = index - 12;
+  return offset === 0 ? 'Etc/UTC' : offset > 0 ? `Etc/GMT-${offset}` : `Etc/GMT+${-offset}`;
+});
+const tokenFor = (index: number) => `ExponentPushToken[${String(index).padStart(12, '0')}]`;
+
+const broadcastDb = () => ({
+  delete: () => ({ where: () => Promise.resolve() }),
+});
+
+describe('admin push broadcast', () => {
+  it('sends nothing when the push secret is missing', async () => {
+    delete process.env.EXPO_PUSH_ACCESS_TOKEN;
+    delete process.env.EXPO_ACCESS_TOKEN;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return tickets(['ok']);
+    }) as typeof fetch;
+    const result = await notifyBroadcast(broadcastDb(), { title: 'Constella', body: 'Привіт' }, [
+      { userId: 'user-1', pushToken: tokenFor(1), timeZone: 'Etc/UTC' },
+    ]);
+    assert.equal(calls, 0);
+    assert.equal(result.recipients, 1);
+    assert.equal(result.accepted, 0);
+    assert.equal(result.dropped, 0);
+  });
+
+  it('drops tokens the registry should not have kept', async () => {
+    process.env.EXPO_PUSH_ACCESS_TOKEN = 'secret';
+    const sent: any[][] = [];
+    globalThis.fetch = (async (_url: any, init: any) => {
+      sent.push(JSON.parse(init.body));
+      return tickets(JSON.parse(init.body).map(() => 'ok'));
+    }) as typeof fetch;
+    const result = await notifyBroadcast(broadcastDb(), { title: 'Constella', body: 'Привіт' }, [
+      { userId: 'user-1', pushToken: 'ExpoPushToken[short]' },
+      { userId: 'user-2', pushToken: 'whatever://token' },
+      { userId: 'user-3', pushToken: tokenFor(3) },
+    ]);
+    assert.equal(result.recipients, 1);
+    assert.deepEqual(sent.flat().map((ticket) => ticket.to), [tokenFor(3)]);
+  });
+
+  it('judges the quiet hour per recipient, not per broadcast', async () => {
+    process.env.EXPO_PUSH_ACCESS_TOKEN = 'secret';
+    const sent: any[] = [];
+    globalThis.fetch = (async (_url: any, init: any) => {
+      const chunk = JSON.parse(init.body);
+      sent.push(...chunk);
+      return tickets(chunk.map(() => 'ok'));
+    }) as typeof fetch;
+    const result = await notifyBroadcast(
+      broadcastDb(),
+      { title: 'Constella', body: 'Реліз' },
+      ZONES.map((timeZone, index) => ({ userId: `user-${index}`, pushToken: tokenFor(index), timeZone })),
+    );
+
+    const silent = sent.filter((ticket) => ticket.sound === null);
+    assert.equal(sent.length, ZONES.length);
+    assert.equal(result.recipients, ZONES.length);
+    assert.equal(result.quiet, silent.length);
+    assert.ok(silent.length > 0 && silent.length < ZONES.length, `expected a mix of quiet and loud zones, got ${silent.length}`);
+    assert.ok(sent.every((ticket) => ticket.data.broadcast === true));
+  });
+
+  it('chunks a large audience and counts what Expo accepted', async () => {
+    process.env.EXPO_PUSH_ACCESS_TOKEN = 'secret';
+    const sizes: number[] = [];
+    globalThis.fetch = (async (_url: any, init: any) => {
+      const chunk = JSON.parse(init.body);
+      sizes.push(chunk.length);
+      // Один протухлий токен на чанк, решта — доставлено.
+      return tickets(chunk.map((_: unknown, index: number) => (index === 0 ? 'error' : 'ok')));
+    }) as typeof fetch;
+    const result = await notifyBroadcast(
+      broadcastDb(),
+      { title: 'Constella', body: 'Реліз' },
+      Array.from({ length: 250 }, (_, index) => ({ userId: `user-${index}`, pushToken: tokenFor(index), timeZone: 'Etc/UTC' })),
+    );
+
+    assert.deepEqual(sizes.sort((a, b) => b - a), [100, 100, 50]);
+    assert.equal(result.accepted, 247);
+    assert.equal(result.dropped, 3);
+  });
+
+  // `users.time_zone` пишеться з клієнта, тому сміття там — звична річ, і воно не має
+  // ні валити розсилку, ні заглушати її.
+  it('treats an unusable time zone as loud rather than throwing', async () => {
+    process.env.EXPO_PUSH_ACCESS_TOKEN = 'secret';
+    const sent: any[] = [];
+    globalThis.fetch = (async (_url: any, init: any) => {
+      const chunk = JSON.parse(init.body);
+      sent.push(...chunk);
+      return tickets(chunk.map(() => 'ok'));
+    }) as typeof fetch;
+    const result = await notifyBroadcast(broadcastDb(), { title: 'Constella', body: 'Реліз' }, [
+      { userId: 'user-1', pushToken: tokenFor(1), timeZone: 'Kyiv' },
+      { userId: 'user-2', pushToken: tokenFor(2), timeZone: '' },
+      { userId: 'user-3', pushToken: tokenFor(3), timeZone: null },
+    ]);
+    assert.equal(result.quiet, sent.filter((ticket) => ticket.sound === null).length);
+    assert.equal(result.accepted, 3);
   });
 });

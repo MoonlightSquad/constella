@@ -75,6 +75,7 @@ export const users = pgTable(
     incognitoUntil: timestamp('incognito_until', { withTimezone: true }),
     telegramUsername: text('telegram_username'),
     sessionVersion: integer('session_version').default(0).notNull(),
+    role: text('role').$type<'user' | 'admin'>().default('user').notNull(),
     referralCode: text('referral_code'),
     referredByUserId: uuid('referred_by_user_id'),
     lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
@@ -85,6 +86,7 @@ export const users = pgTable(
   },
   (table) => ({
     referralUnique: uniqueIndex('users_referral_code_unique').on(table.referralCode),
+    adminIdx: index('users_role_admin_created_idx').on(table.createdAt).where(sql`role = 'admin'`),
   })
 );
 

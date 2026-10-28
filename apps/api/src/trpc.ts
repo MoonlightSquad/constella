@@ -66,18 +66,20 @@ const isAuthed = t.middleware(async ({ ctx, next }) => {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
   }
   const [account] = await ctx.db.select({
-    bannedAt: users.bannedAt, sessionVersion: users.sessionVersion,
+    bannedAt: users.bannedAt, sessionVersion: users.sessionVersion, role: users.role,
   }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
   if (!account || (ctx.user.sessionVersion ?? 0) !== account.sessionVersion) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Session is no longer valid.' });
   }
-  if (account.bannedAt && !isConfiguredAdmin(ctx.user)) {
+  const isAdmin = isAdminAccount(ctx.user, account.role);
+  if (account.bannedAt && !isAdmin) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'This account is currently restricted.' });
   }
   return next({
     ctx: {
       ...ctx,
       user: ctx.user, // Автоматично виводить тип як non-null UserPayload
+      isAdmin,
     },
   });
 });
@@ -98,8 +100,12 @@ export const isConfiguredAdmin = (user: UserPayload | null) => {
       user.email?.trim().toLowerCase() === configuredAdminEmail);
 };
 
+/** A DB role is the primary grant; env allowlists stay as legacy overrides. */
+export const isAdminAccount = (user: UserPayload | null, role: string | null | undefined) =>
+  Boolean(user) && (role === 'admin' || isConfiguredAdmin(user));
+
 export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (!isConfiguredAdmin(ctx.user)) {
+  if (!ctx.isAdmin) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access is not configured for this account.' });
   }
   return next({ ctx });

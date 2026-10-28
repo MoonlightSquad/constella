@@ -137,6 +137,7 @@ export const messages = {
   'photos.remove': ['Видалити', 'Delete', 'Löschen', 'Supprimer'],
   'photos.selected': ['Для профілю потрібне щонайменше одне фото ({count}/6).', 'At least one photo is needed for your profile ({count}/6).', 'Für dein Profil brauchst du mindestens ein Foto ({count}/6).', 'Ton profil a besoin d’au moins une photo ({count}/6).'],
   'photos.camera': ['Камера', 'Camera', 'Kamera', 'Appareil photo'],
+  'photos.rejectedContent': ['Це фото містить заборонений контент і не було опубліковане.', 'This photo contains prohibited content and was not published.', 'Dieses Foto enthält unzulässige Inhalte und wurde nicht veröffentlicht.', "Cette photo contient un contenu interdit et n'a pas été publiée."],
   'photos.gallery': ['Галерея', 'Gallery', 'Galerie', 'Galerie'],
   'dashboard.brand': ['constella', 'constella', 'constella', 'constella'],
   'dashboard.profileAccessible': ['Відкрити профіль', 'Open profile', 'Profil öffnen', 'Ouvrir le profil'],

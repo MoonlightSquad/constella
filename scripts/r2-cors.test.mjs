@@ -53,7 +53,7 @@ test('updates and verifies policy through Cloudflare API', async () => {
     apiToken: 'test-token',
     accountId: 'account-id',
     bucketName: 'constella-media',
-    webOrigin: origin,
+    origins: [origin],
     fetchImpl,
   });
 
@@ -69,7 +69,7 @@ test('does not write a policy that is already configured', async () => {
     apiToken: 'test-token',
     accountId: 'account-id',
     bucketName: 'constella-media',
-    webOrigin: origin,
+    origins: [origin],
     fetchImpl: async (_url, options) => {
       methods.push(options.method ?? 'GET');
       return new Response(JSON.stringify({ success: true, result: policy }));
@@ -80,13 +80,57 @@ test('does not write a policy that is already configured', async () => {
   assert.deepEqual(methods, ['GET', 'GET']);
 });
 
+test('registers both upload origins and is idempotent on the second run', async () => {
+  const adminOrigin = 'https://admin.constella.pp.ua';
+  const methods = [];
+  let policy = { rules: [] };
+  const fetchImpl = async (_url, options) => {
+    methods.push(options.method ?? 'GET');
+    if (options.method === 'PUT') policy = JSON.parse(options.body);
+    return new Response(JSON.stringify({ success: true, result: policy }));
+  };
+
+  const first = await configureR2Cors({
+    apiToken: 'test-token',
+    accountId: 'account-id',
+    bucketName: 'constella-media',
+    origins: [origin, adminOrigin],
+    fetchImpl,
+  });
+  const second = await configureR2Cors({
+    apiToken: 'test-token',
+    accountId: 'account-id',
+    bucketName: 'constella-media',
+    origins: [origin, adminOrigin],
+    fetchImpl,
+  });
+
+  assert.deepEqual(first, { changed: true, rulesCount: 2 });
+  assert.deepEqual(second, { changed: false, rulesCount: 2 });
+  assert.deepEqual(methods, ['GET', 'PUT', 'GET', 'GET', 'GET']);
+});
+
+test('names every origin that failed verification', async () => {
+  const adminOrigin = 'https://admin.constella.pp.ua';
+  await assert.rejects(
+    configureR2Cors({
+      apiToken: 'test-token',
+      accountId: 'account-id',
+      bucketName: 'constella-media',
+      origins: [origin, adminOrigin],
+      fetchImpl: async () => new Response(JSON.stringify({ success: true, result: { rules: mergeCorsRules([], origin) } })),
+    }),
+    /verification failed for https:\/\/admin\.constella\.pp\.ua/,
+  );
+});
+
 test('explains that object-level R2 permission is insufficient', async () => {
   await assert.rejects(
     configureR2Cors({
       apiToken: 'test-token',
       accountId: 'account-id',
       bucketName: 'constella-media',
-      webOrigin: origin,
+      origins: [origin],
       fetchImpl: async () => new Response(JSON.stringify({ success: false, errors: [] }), { status: 403 }),
     }),
     /Workers R2 Storage Write permission; Bucket Item Write only grants object access/,

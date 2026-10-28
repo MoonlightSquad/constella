@@ -51,7 +51,6 @@ export function useDashboard() {
 
   // --- Auth / session (set by app.vue) ---
   const account = useState<Record<string, any> | null>('dash:account', () => null)
-  const isAdmin = useState<boolean>('dash:isAdmin', () => false)
   const editingProfile = useState<boolean>('dash:editingProfile', () => false)
 
   // --- Shared dashboard data ---
@@ -275,7 +274,6 @@ export function useDashboard() {
 
   // --- Session-level actions (provided by app.vue) ---
   const authActions = useState<{ logout?: () => void; deleteAccount?: () => void }>('dash:authActions', () => ({}))
-  const openAdmin = () => { void navigateTo('/admin') }
   const requestEditProfile = () => { editingProfile.value = true }
 
   const localeTag: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', de: 'de-DE', fr: 'fr-FR' }
@@ -285,7 +283,7 @@ export function useDashboard() {
   void config
   return {
     // session
-    account, isAdmin, editingProfile,
+    account, editingProfile,
     // data
     supportOpen, chatRoomOpen, orbitProfiles, matches, quests, billingStatus, incomingSparks, incomingLikes,
     orbitRemaining, orbitDate, releasePending, isLoading, isBuying,
@@ -298,7 +296,7 @@ export function useDashboard() {
     showError, showToast, refreshAll, refreshChatSideEffects, loadOrbit, applyOrbitFilters, clearOrbitFilters,
     loadMatches, loadQuests, loadBilling, loadSparks, reactToProfile, likeIncomingProfile, blockProfile,
     openReport, submitReport, linkTelegramAccount, cancelVip, buyProduct,
-    refreshAfterBrowserPayment, formatOrbitDate, openAdmin, requestEditProfile,
+    refreshAfterBrowserPayment, formatOrbitDate, requestEditProfile,
     completeInviteQuest, authActions,
   }
 }

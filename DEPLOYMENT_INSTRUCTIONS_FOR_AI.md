@@ -166,15 +166,16 @@ pnpm --filter @constella/db db:migrate
 ```
 
 ### Крок 2. Налаштування Vercel Projects
-`pnpm deploy:vercel` створює всі три проєкти автоматично; вручну імпортувати репозиторій не потрібно. Назви можна задати у `.env.vercel`:
+`pnpm deploy:vercel` створює всі чотири проєкти автоматично; вручну імпортувати репозиторій не потрібно. Назви можна задати у `.env.vercel`:
 
 | Project | Root Directory | Framework / Build |
 |---|---|---|
 | `constella-web` | `apps/web` | Nuxt.js; `pnpm --filter @constella/web build` |
 | `constella-landing` | `apps/landing` | Nuxt.js; build command з `apps/landing/vercel.json` |
+| `constella-admin` | `apps/admin` | Nuxt.js; build command з `apps/admin/vercel.json` |
 | `constella-api` | `apps/api` | Fastify auto-detect; build command з `apps/api/vercel.json` |
 
-За замовчуванням це `VERCEL_WEB_PROJECT=constella-web`, `VERCEL_LANDING_PROJECT=constella-landing` і `VERCEL_API_PROJECT=constella-api`. Скрипт задає Root Directory та build settings під час створення і зупиняється з помилкою, якщо знайдений однойменний проєкт має іншу Root Directory. Не вказуй для API `pnpm build`: це обходить граф залежностей Turbo й викликає `Cannot find module '@constella/db'` / `@constella/shared`. API запускає Fastify під Vercel; локально його, як і раніше, запускає `pnpm --filter @constella/api start`. Лендінг не має workspace-залежностей, але збирається тією самою командою Turbo, щоб кеш ключувався від `NUXT_PUBLIC_SITE_URL` (канонічні URL потрапляють у prerender-HTML).
+За замовчуванням це `VERCEL_WEB_PROJECT=constella-web`, `VERCEL_LANDING_PROJECT=constella-landing`, `VERCEL_ADMIN_PROJECT=constella-admin` і `VERCEL_API_PROJECT=constella-api`; всі чотири імена мають бути різні. Скрипт задає Root Directory та build settings під час створення і зупиняється з помилкою, якщо знайдений однойменний проєкт має іншу Root Directory. Не вказуй для API `pnpm build`: це обходить граф залежностей Turbo й викликає `Cannot find module '@constella/db'` / `@constella/shared`. API запускає Fastify під Vercel; локально його, як і раніше, запускає `pnpm --filter @constella/api start`. Лендінг не має workspace-залежностей, але збирається тією самою командою Turbo, щоб кеш ключувався від `NUXT_PUBLIC_SITE_URL` (канонічні URL потрапляють у prerender-HTML).
 
 ### Крок 3. Синхронізація Environment Variables
 Авторизуй Vercel CLI (`pnpm dlx vercel login`) і заповни локальний `.env` реальними production credentials. Скрипт читає root `.env` із перевизначеннями з `apps/api/.env` та `apps/web/.env`; токен бота також можна задати в `apps/bot/.env`. Секрети не друкуються й передаються до CLI через stdin. Якщо `TELEGRAM_WEBHOOK_SECRET` ще не задано, скрипт згенерує випадковий токен і збереже однакове значення у локальних `.env`, `apps/api/.env` та `apps/bot/.env` (усі ці файли виключені з Git).
@@ -189,12 +190,12 @@ pnpm vercel:env -- --dry-run
 pnpm vercel:env
 ```
 
-Скрипт лінкує `apps/api`, `apps/web` і `apps/landing` до проєктів із `VERCEL_API_PROJECT`, `VERCEL_WEB_PROJECT` та `VERCEL_LANDING_PROJECT`, після чого додає/оновлює лише allowlist Production variables через Vercel CLI. Для Team account задай `VERCEL_TEAM_ID` або `VERCEL_SCOPE`.
+Скрипт лінкує `apps/api`, `apps/web`, `apps/landing` і `apps/admin` до проєктів із `VERCEL_API_PROJECT`, `VERCEL_WEB_PROJECT`, `VERCEL_LANDING_PROJECT` та `VERCEL_ADMIN_PROJECT`, після чого додає/оновлює лише allowlist Production variables через Vercel CLI. Для Team account задай `VERCEL_TEAM_ID` або `VERCEL_SCOPE`.
 
-Обов'язкові значення для API: `DATABASE_URL`, `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `JWT_SECRET`, `PAYMENTS_INTERNAL_TOKEN`, R2 credentials і SMTP credentials. Для Web потрібен `BOT_USERNAME` або `NUXT_PUBLIC_BOT_USERNAME`; URLs за замовчуванням беруться з `.env` або використовують `app-test.constella.pp.ua` і `api-test.constella.pp.ua`. Для лендінгу синхронізуються чотири значення: `NUXT_PUBLIC_SITE_URL` (канонічний домен, за замовчуванням `constella.pp.ua`, локальний `localhost` відхиляється), `NUXT_API_INTERNAL_BASE` (той самий API URL — виклик іде server-to-server із nitro-проксі, тому браузерний CORS allowlist API не зачіпається), `NUXT_PUBLIC_APP_URL` і `NUXT_PUBLIC_BOT_USERNAME` для CTA-посилань. Публічного `NUXT_PUBLIC_API_URL` у лендінгу немає. Скрипт відхиляє порожні обов'язкові поля та очевидні шаблонні значення. `TELEGRAM_WEBHOOK_URL` потрібен лише локальній команді реєстрації webhook, а не Vercel runtime. Завантаження обкладинки в адмінці лендінгу відправляє `PUT` з браузера прямо в R2, тому origin лендінгу має бути в CORS-правилах бакета; `node scripts/r2-cors.mjs` прописує лише origin вебзастосунку, другий додається в Cloudflare вручну.
+Обов'язкові значення для API: `DATABASE_URL`, `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `JWT_SECRET`, `PAYMENTS_INTERNAL_TOKEN`, R2 credentials і SMTP credentials. Для Web потрібен `BOT_USERNAME` або `NUXT_PUBLIC_BOT_USERNAME`; URLs за замовчуванням беруться з `.env` або використовують `app-test.constella.pp.ua` і `api-test.constella.pp.ua`. Для лендінгу синхронізуються чотири значення: `NUXT_PUBLIC_SITE_URL` (канонічний домен, за замовчуванням `constella.pp.ua`, локальний `localhost` відхиляється), `NUXT_API_INTERNAL_BASE` (той самий API URL — виклик іде server-to-server із nitro-проксі, тому браузерний CORS allowlist API не зачіпається), `NUXT_PUBLIC_APP_URL` і `NUXT_PUBLIC_BOT_USERNAME` для CTA-посилань. Публічного `NUXT_PUBLIC_API_URL` у лендінгу немає. Для адмінки синхронізуються лише два: `NUXT_API_INTERNAL_BASE` і `NUXT_PUBLIC_SITE_URL` (потрібне тільки щоб посилання «відкрити на сайті» вела на правильний домен блогу). `ADMIN_EMAIL`/`ADMIN_PASSWORD` у цей проєкт не потрапляють — консоль лише пересилає логін на API, а кредитори живуть на боці API. Скрипт відхиляє порожні обов'язкові поля та очевидні шаблонні значення. `TELEGRAM_WEBHOOK_URL` потрібен лише локальній команді реєстрації webhook, а не Vercel runtime. Завантаження обкладинки в адмінці відправляє `PUT` з браузера прямо в R2, тому origin адмінки має бути в CORS-правилах бакета; `node scripts/r2-cors.mjs` прописує обидва origins — вебзастосунок і `domains.admin_url` (за замовчуванням `https://admin.constella.pp.ua`).
 
 ### Крок 4. Прив'язка кастомних доменів
-У **Settings → Domains** додай `app-test.constella.pp.ua` до web-проєкту, `api-test.constella.pp.ua` — до API-проєкту, `constella.pp.ua` — до лендінгу. Скопіюй DNS record type/value, які покаже Vercel, у DNS-панель домену та дочекайся **Valid Configuration**. Не спрямовуй обидва домени на один Project.
+У **Settings → Domains** додай `app-test.constella.pp.ua` до web-проєкту, `api-test.constella.pp.ua` — до API-проєкту, `constella.pp.ua` — до лендінгу, `admin.constella.pp.ua` — до адмінки. Скопіюй DNS record type/value, які покаже Vercel, у DNS-панель домену та дочекайся **Valid Configuration**. Не спрямовуй обидва домени на один Project.
 
 ### Крок 5. Деплой
 Для Git integration кожен Project створюватиме власний deployment після push. Через CLI зв'яжи кожен проект з відповідною директорією:
@@ -203,17 +204,19 @@ npx vercel link --cwd apps/web
 npx vercel deploy --prod --cwd apps/web
 npx vercel link --cwd apps/landing
 npx vercel deploy --prod --cwd apps/landing
+npx vercel link --cwd apps/admin
+npx vercel deploy --prod --cwd apps/admin
 npx vercel link --cwd apps/api
 npx vercel deploy --prod --cwd apps/api
 ```
-Окремий деплой одного проєкту: `pnpm deploy:vercel -- --landing-only` (разом із синхронізацією змінних для всіх трьох).
+Окремий деплой одного проєкту: `pnpm deploy:vercel -- --landing-only` або `--admin-only` (разом із синхронізацією змінних для всіх чотирьох).
 
 Після production-деплою API та додавання його домену виконай з кореня `pnpm webhook:set`, щоб зареєструвати webhook і налаштувати кнопку Mini App. Для цього локальний `apps/bot/.env` має містити `BOT_TOKEN`, `TELEGRAM_WEBHOOK_URL=https://api-test.constella.pp.ua/telegram/webhook`, той самий `TELEGRAM_WEBHOOK_SECRET` та `WEB_APP_URL=https://app-test.constella.pp.ua`; не додавай секрети до Git.
 
 Зверни увагу: Vercel не запускає постійний `startBackgroundScheduler`; для щоденних scheduler jobs потрібен окремий worker або окремо реалізований і захищений Cron endpoint. Наявні Vercel Cron налаштування видалені, бо в API ще немає такого endpoint.
 
 ### Крок 6. Мобільна збірка (EAS)
-Мобільний застосунок — четвертий учасник workspace (`apps/mobile`), але він не деплоїться на Vercel:
+Мобільний застосунок (`apps/mobile`) — учасник workspace, але він не деплоїться на Vercel:
 
 ```bash
 pnpm --filter @constella/shared build
