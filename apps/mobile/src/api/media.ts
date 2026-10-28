@@ -1,5 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { File, UploadType } from 'expo-file-system';
+import type { PermissionResponse } from 'expo';
 
 import { trpc } from './trpc';
 import type { TranslationKey } from '@/i18n/messages';
@@ -35,10 +36,15 @@ export const isVoiceType = (value: string | null | undefined): value is VoiceTyp
 export const isVideoType = (value: string | null | undefined): value is VideoType =>
   (VIDEO_TYPES as readonly string[]).includes(value ?? '');
 
+/**
+ * Дозвіл питаємо саме під вибране джерело: `requestMediaLibraryPermissionsAsync` нічого не
+ * дає для камери, а iOS без camera-grant тихо відкриває галерею замість об'єктива.
+ */
 const pick = async (
+  requestPermission: () => Promise<PermissionResponse>,
   launch: () => Promise<ImagePicker.ImagePickerResult>,
 ): Promise<PickedImage | null> => {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const permission = await requestPermission();
   if (!permission.granted) throw new MediaError('photos.permission');
 
   const result = await launch();
@@ -55,10 +61,16 @@ const pick = async (
 }
 
 export const pickFromGallery = () =>
-  pick(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, allowsMultipleSelection: false }));
+  pick(
+    () => ImagePicker.requestMediaLibraryPermissionsAsync(),
+    () => ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, allowsMultipleSelection: false }),
+  );
 
 export const pickFromCamera = () =>
-  pick(() => ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 }));
+  pick(
+    () => ImagePicker.requestCameraPermissionsAsync(),
+    () => ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 }),
+  );
 
 export type PickedVideo = { uri: string; mimeType: string; size: number; durationSec: number };
 

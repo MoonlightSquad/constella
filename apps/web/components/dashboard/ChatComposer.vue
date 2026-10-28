@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
+import { isCameraCaptureSupported } from '~/composables/media-decisions.mjs'
 
 const props = defineProps<{
   chatMode: 'voice' | 'note'
@@ -17,6 +18,7 @@ const emit = defineEmits<{
   send: []
   composerInput: []
   pickFile: [file: File]
+  camera: []
   recordDown: [event: PointerEvent]
   recordMove: [event: PointerEvent]
   recordUp: []
@@ -30,14 +32,22 @@ const attachMenuOpen = ref(false)
 
 const toggleAttach = () => { attachMenuOpen.value = !attachMenuOpen.value }
 /**
- * `capture` — єдиний перемикач, що змушує WebView відкрити камеру: без нього
- * `onShowFileChooser` (Telegram на Android, WKWebView на iOS) показує лише галерею.
- * Атрибут ставимо саме перед `click()`, інакше наступний вибір із галереї теж пішов би в камеру.
+ * Власна камера (`CameraSheet`) — основний шлях: `capture` позаспецифікаційний, iOS його
+ * ігнорує, а Android WebView часто відповідає вибором «галерея / камера». Атрибут лишається
+ * резервом там, де `getUserMedia` недоступний (http, старий рушій), і ставиться саме перед
+ * `click()`, інакше наступний вибір із галереї теж пішов би в камеру.
  */
 const openFilePicker = (source: 'gallery' | 'camera') => {
   attachMenuOpen.value = false
   const input = fileInput.value
   if (!input) return
+  if (source === 'camera' && isCameraCaptureSupported({
+    secureContext: window.isSecureContext,
+    hasGetUserMedia: Boolean(navigator?.mediaDevices?.getUserMedia),
+  })) {
+    emit('camera')
+    return
+  }
   if (source === 'camera') input.setAttribute('capture', 'environment')
   else input.removeAttribute('capture')
   input.click()

@@ -645,11 +645,18 @@ export const socialRouter = router({
 
   matches: protectedProcedure.query(async ({ ctx }) => {
     const excluded = new Set(await blockedIds(ctx.db, ctx.user.id));
+    // Порядок — за свіжістю розмови, а не знайомства: `limit(100)` інакше відрізав би
+    // старий матч, у щойно написаний який користувач міг просто не дійти.
+    const lastActivity = sql`(
+      select m.created_at from messages m
+      where m.match_id = ${matches.id}
+      order by m.created_at desc limit 1
+    )`;
     const userMatches = await ctx.db
       .select()
       .from(matches)
       .where(or(eq(matches.userOneId, ctx.user.id), eq(matches.userTwoId, ctx.user.id)))
-      .orderBy(desc(matches.createdAt))
+      .orderBy(sql`coalesce(${lastActivity}, ${matches.createdAt}) desc`)
       .limit(100);
     const visible = userMatches.filter((match: any) => !excluded.has(match.userOneId === ctx.user.id ? match.userTwoId : match.userOneId));
     if (!visible.length) return [];
