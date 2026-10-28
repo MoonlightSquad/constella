@@ -410,8 +410,14 @@ export function useChat(options: ChatOptions = {}) {
     isSharingContact.value = true
     try {
       const res = await $trpc.social.shareContact.mutate({ matchId: selectedMatch.value.id })
-      toast(res.mutual ? t('dashboard.contactMutual') : t('dashboard.contactSent'))
-      await loadChatMessages()
+      // reason замість помилки: «немає @username» і «акаунт не з Telegram» — різні поради,
+      // і обидва звучали б брехнею, якій показувати єдине «відкрий через Telegram».
+      if (res.reason === 'username_missing') toast(t('dashboard.contactNoUsername'))
+      else if (res.reason === 'not_linked') toast(t('dashboard.contactTelegramNeeded'))
+      else {
+        toast(res.mutual ? t('dashboard.contactMutual') : t('dashboard.contactSent'))
+        await loadChatMessages()
+      }
     } catch (err) { showError(err) } finally { isSharingContact.value = false }
   }
 

@@ -390,6 +390,8 @@ export const messages = {
   'chats.contactOffered': ['Telegram надіслано', 'Telegram sent', 'Telegram gesendet', 'Telegram envoyé'],
   'chats.contactOpen': ['Контакти відкрито!', 'Contacts unlocked!', 'Kontakte freigeschaltet!', 'Contacts débloqués !'],
   'chats.contactSent': ['Пропозицію Telegram надіслано!', 'The Telegram offer has been sent!', 'Das Telegram-Angebot wurde gesendet!', 'La proposition Telegram a été envoyée !'],
+  'chats.contactNoUsername': ['У твоєму Telegram немає публічного імені користувача (@username).', 'Your Telegram account has no public username (@username).', 'Dein Telegram-Konto hat keinen öffentlichen Benutzernamen (@username).', "Ton compte Telegram n'a pas de nom d'utilisateur public (@username)."],
+  'chats.contactTelegramNeeded': ['Відкрий Constella через Telegram, щоб поділитися контактом.', 'Open Constella in Telegram to share your contact.', 'Öffne Constella in Telegram, um deinen Kontakt zu teilen.', 'Ouvre Constella dans Telegram pour partager ton contact.'],
   'chats.playVoice': ['Прослухати', 'Play', 'Abspielen', 'Écouter'],
   'chats.pauseVoice': ['Пауза', 'Pause', 'Pause', 'Pause'],
   'chats.openVideo': ['Відкрити відео', 'Open video', 'Video öffnen', 'Ouvrir la vidéo'],

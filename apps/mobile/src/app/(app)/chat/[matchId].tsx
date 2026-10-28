@@ -638,8 +638,12 @@ export default function ChatScreen() {
     setSharing(true);
     try {
       const result = await trpc.social.shareContact.mutate({ matchId });
-      flash(result.mutual ? t('chats.contactOpen') : t('chats.contactSent'));
-      await loadThread();
+      if (result.reason === 'username_missing') flash(t('chats.contactNoUsername'));
+      else if (result.reason === 'not_linked') flash(t('chats.contactTelegramNeeded'));
+      else {
+        flash(result.mutual ? t('chats.contactOpen') : t('chats.contactSent'));
+        await loadThread();
+      }
     } catch (error) {
       setIssue(chatError(error));
     } finally {

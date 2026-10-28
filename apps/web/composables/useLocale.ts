@@ -273,6 +273,8 @@ const messages = {
   'dashboard.contactOffered': ['Telegram запропоновано', 'Telegram offered', 'Telegram angeboten', 'Telegram proposé'],
   'dashboard.contactMutual': ['Контакти відкрито', 'Contacts revealed', 'Kontakte geteilt', 'Contacts partagés'],
   'dashboard.contactSent': ['Пропозицію Telegram надіслано', 'Telegram offer sent', 'Telegram-Angebot gesendet', 'Offre Telegram envoyée'],
+  'dashboard.contactNoUsername': ['У твоєму Telegram немає публічного імені користувача (@username).', 'Your Telegram account has no public username (@username).', 'Dein Telegram-Konto hat keinen öffentlichen Benutzernamen (@username).', "Ton compte Telegram n'a pas de nom d'utilisateur public (@username)."],
+  'dashboard.contactTelegramNeeded': ['Відкрий Constella через Telegram, щоб поділитися контактом.', 'Open Constella in Telegram to share your contact.', 'Öffne Constella in Telegram, um deinen Kontakt zu teilen.', 'Ouvre Constella dans Telegram pour partager ton contact.'],
   'dashboard.telegramShared': ['Контакт відкрито', 'Contact revealed', 'Kontakt geteilt', 'Contact partagé'],
   'dashboard.voiceUnsupported': ['Запис звуку недоступний на цьому пристрої.', 'Audio recording is unavailable on this device.', 'Audioaufnahme ist auf diesem Gerät nicht verfügbar.', 'Enregistrement audio indisponible sur cet appareil.'],
   'dashboard.videoMessage': ['Відеоповідомлення', 'Video message', 'Videonachricht', 'Message vidéo'],
