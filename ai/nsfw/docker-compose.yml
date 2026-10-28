@@ -54,6 +54,8 @@ services:
       - "443:443"
     environment:
       AI_HOSTNAME: ${AI_HOSTNAME:?AI_HOSTNAME is the public hostname the API calls}
+      # Порожній ACME_EMAIL — нормально, поки в Caddyfile закоментований `tls`.
+      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
