@@ -25,7 +25,6 @@ import os
 import platform
 import shutil
 import statistics
-import subprocess
 import time
 from pathlib import Path
 
@@ -80,16 +79,19 @@ def synthetic_image(size: int):
 
 
 def export_with_optimum(model_id: str, revision: str, opset: int, workdir: Path) -> Path:
+    # CLI `optimum-cli export onnx` не має --revision (ні в 1.x, ні в 2.x), а пін
+    # revision для нас обов'язковий, тому кличемо main_export напряму.
+    from optimum.exporters.onnx import main_export
+
     target = workdir / "fp32"
-    cmd = [
-        "optimum-cli", "export", "onnx",
-        "--model", model_id,
-        "--revision", revision,
-        "--task", "image-classification",
-        "--opset", str(opset),
-        str(target),
-    ]
-    subprocess.run(cmd, check=True)
+    main_export(
+        model_name_or_path=model_id,
+        output=target,
+        task="image-classification",
+        opset=opset,
+        revision=revision,
+        use_subprocess=True,
+    )
     return target / "model.onnx"
 
 
