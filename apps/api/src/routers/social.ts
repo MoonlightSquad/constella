@@ -1068,7 +1068,9 @@ export const socialRouter = router({
     await getMatchForUser(ctx.db, input.matchId, ctx.user.id);
     const [me] = await ctx.db.select({ telegramUsername: users.telegramUsername }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
     if (!me?.telegramUsername) {
-      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Open Constella from Telegram so we can share your username.' });
+      // JWT із Telegram без юзернейма = у акаунта немає публічного @; без telegramId —
+      // акаунт браузерний і до Telegram не прив'язаний. Клієнти показують локалізований текст за reason.
+      return { mutual: false, reason: ctx.user.telegramId ? 'username_missing' : 'not_linked' };
     }
     await ctx.db
       .insert(contactShares)
@@ -1083,7 +1085,7 @@ export const socialRouter = router({
         body: shares.map((row: any) => `@${row.telegramUsername}`).join(' · '),
       });
     }
-    return { mutual: shares.length >= 2 };
+    return { mutual: shares.length >= 2, reason: null };
   }),
 
   sendGift: protectedProcedure

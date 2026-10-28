@@ -593,6 +593,12 @@ async function initialize() {
       });
     }
 
+    // Telegram віддає @username тільки тут, а `social.shareContact` читає саме
+    // `users.telegram_username`. Оновлюємо щоразу, бо юзернейм може з'явитись уже після реєстрації.
+    if (tgUser.username) {
+      await db.update(users).set({ telegramUsername: tgUser.username }).where(eq(users.id, userId));
+    }
+
     const [account] = await db.select({ sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, userId)).limit(1);
     if (!account) return reply.status(401).send({ error: 'Authentication failed.', requestId: request.id });
     const token = fastify.jwt.sign({ id: userId, telegramId: tgUser.id, sessionVersion: account.sessionVersion, authProvider: 'telegram' });
