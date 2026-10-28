@@ -8,7 +8,8 @@ const DESC_LIMIT = 160;
 
 const previewUrl = computed(() => {
   const path = props.locale === 'uk' ? '/blog' : `/${props.locale}/blog`;
-  return `${new URL(props.siteUrl).host}${path}/${props.slug || '—'}`;
+  const host = props.siteUrl ? new URL(props.siteUrl).host : '';
+  return `${host}${path}/${props.slug || '—'}`;
 });
 const previewTitle = computed(() => props.draft.seoTitle || props.draft.title || 'Заголовок поста');
 const previewDescription = computed(() => props.draft.seoDescription || props.draft.excerpt || 'Опис, який побачить людина в пошуку.');
