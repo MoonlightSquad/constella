@@ -32,6 +32,7 @@ const deploymentEnv = readEnv(['.env.vercel']);
 const apiFileEnv = readEnv(['apps/api/.env']);
 const webFileEnv = readEnv(['apps/web/.env']);
 const landingFileEnv = readEnv(['apps/landing/.env']);
+const adminFileEnv = readEnv(['apps/admin/.env']);
 const botFileEnv = readEnv(['apps/bot/.env']);
 const deploymentConfig = loadDeploymentConfig(rootDir);
 const webhookSecrets = [rootEnv, apiFileEnv, botFileEnv, process.env]
@@ -68,6 +69,7 @@ const writeEnvValue = (relativePath, name, value) => {
 const apiEnv = { ...rootEnv, ...apiFileEnv, ...deploymentEnv, ...process.env, TELEGRAM_WEBHOOK_SECRET: webhookSecret };
 const webEnv = { ...rootEnv, ...webFileEnv, ...deploymentEnv, ...process.env };
 const landingEnv = { ...rootEnv, ...landingFileEnv, ...deploymentEnv, ...process.env };
+const adminEnv = { ...rootEnv, ...adminFileEnv, ...deploymentEnv, ...process.env };
 const configVercelToken = deploymentConfig.vercel?.api_token;
 
 const webUrl = [webEnv.NUXT_PUBLIC_APP_URL, webEnv.WEB_APP_URL]
@@ -87,6 +89,8 @@ const landingUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configur
   : configuredLandingUrl;
 const landingBotUsername = [landingEnv.NUXT_PUBLIC_BOT_USERNAME, landingEnv.BOT_USERNAME, botFileEnv.BOT_USERNAME]
   .find((value) => value && !isPlaceholder(value));
+// The console's own origin: only used to name the Vercel project's domain, never sent to the API.
+const adminUrl = adminEnv.ADMIN_APP_URL || 'https://admin.constella.pp.ua';
 
 const projects = {
   api: {
@@ -163,11 +167,23 @@ const projects = {
       NUXT_PUBLIC_BOT_USERNAME: { value: landingBotUsername, required: true },
     },
   },
+  admin: {
+    name: process.env.VERCEL_ADMIN_PROJECT || rootEnv.VERCEL_ADMIN_PROJECT || 'constella-admin',
+    cwd: path.join(rootDir, 'apps/admin'),
+    env: adminEnv,
+    variables: {
+      // Server-to-server only, exactly like the landing: the console's browser bundle never
+      // calls the API, so no NUXT_PUBLIC_* API origin exists here and CORS stays as it is.
+      NUXT_API_INTERNAL_BASE: { value: apiUrl, required: true },
+      // Only used to render "open on site" links for published posts.
+      NUXT_PUBLIC_SITE_URL: { value: landingUrl, required: true },
+    },
+  },
 };
 
-const projectKeys = selectedProject === 'all' ? ['api', 'web', 'landing'] : [selectedProject];
+const projectKeys = selectedProject === 'all' ? ['api', 'web', 'landing', 'admin'] : [selectedProject];
 if (projectKeys.some((key) => !Object.hasOwn(projects, key))) {
-  console.error('Usage: pnpm vercel:env [all|api|web|landing] [--dry-run]');
+  console.error('Usage: pnpm vercel:env [all|api|web|landing|admin] [--dry-run]');
   process.exit(2);
 }
 
@@ -232,6 +248,7 @@ const runVercel = (project, command, input) => {
       VERCEL_API_PROJECT: process.env.VERCEL_API_PROJECT || deploymentEnv.VERCEL_API_PROJECT || rootEnv.VERCEL_API_PROJECT || projects.api.name,
       VERCEL_WEB_PROJECT: process.env.VERCEL_WEB_PROJECT || deploymentEnv.VERCEL_WEB_PROJECT || rootEnv.VERCEL_WEB_PROJECT || projects.web.name,
       VERCEL_LANDING_PROJECT: process.env.VERCEL_LANDING_PROJECT || deploymentEnv.VERCEL_LANDING_PROJECT || rootEnv.VERCEL_LANDING_PROJECT || projects.landing.name,
+      VERCEL_ADMIN_PROJECT: process.env.VERCEL_ADMIN_PROJECT || deploymentEnv.VERCEL_ADMIN_PROJECT || rootEnv.VERCEL_ADMIN_PROJECT || projects.admin.name,
       ...(!process.env.VERCEL_TOKEN && deploymentEnv.VERCEL_TOKEN ? { VERCEL_TOKEN: deploymentEnv.VERCEL_TOKEN } : {}),
     },
     input,

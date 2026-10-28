@@ -58,12 +58,18 @@ export const supportRouter = router({
     return { ok: true };
   }),
 
-  adminQueue: adminProcedure.input(supportQueueSchema).query(async ({ ctx, input }) => ctx.db.select({
-    ...ticketSummary, userId: supportTickets.userId, displayName: users.displayName,
-  }).from(supportTickets).innerJoin(users, eq(users.id, supportTickets.userId))
-    .where(input.status === 'all' ? undefined : eq(supportTickets.status, input.status))
-    .orderBy(sql`CASE WHEN ${supportTickets.priority} = 'high' THEN 0 ELSE 1 END`, desc(supportTickets.updatedAt))
-    .limit(input.limit).offset(input.offset)),
+  adminQueue: adminProcedure.input(supportQueueSchema).query(async ({ ctx, input }) => {
+    const where = input.status === 'all' ? undefined : eq(supportTickets.status, input.status);
+    const [total] = await ctx.db.select({ count: sql<number>`count(*)::int` }).from(supportTickets)
+      .innerJoin(users, eq(users.id, supportTickets.userId)).where(where);
+    const rows = await ctx.db.select({
+      ...ticketSummary, userId: supportTickets.userId, displayName: users.displayName,
+    }).from(supportTickets).innerJoin(users, eq(users.id, supportTickets.userId))
+      .where(where)
+      .orderBy(sql`CASE WHEN ${supportTickets.priority} = 'high' THEN 0 ELSE 1 END`, desc(supportTickets.updatedAt))
+      .limit(input.limit).offset(input.offset);
+    return { total: total.count, rows };
+  }),
 
   adminThread: adminProcedure.input(supportTicketIdSchema).query(async ({ ctx, input }) => {
     const [ticket] = await ctx.db.select({

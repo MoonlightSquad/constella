@@ -15,9 +15,10 @@ const configEnv = readEnv('.env.vercel');
 const apiEnv = readEnv('apps/api/.env');
 const webEnv = readEnv('apps/web/.env');
 const landingEnv = readEnv('apps/landing/.env');
+const adminEnv = readEnv('apps/admin/.env');
 const botEnv = readEnv('apps/bot/.env');
 const deploymentConfig = loadDeploymentConfig(rootDir);
-const env = { ...rootEnv, ...apiEnv, ...webEnv, ...landingEnv, ...botEnv, ...configEnv, ...process.env };
+const env = { ...rootEnv, ...apiEnv, ...webEnv, ...landingEnv, ...adminEnv, ...botEnv, ...configEnv, ...process.env };
 const configVercelToken = deploymentConfig.vercel?.api_token;
 if (configVercelToken && !/YOUR_|replace-with|CHANGE_ME|placeholder|your[-_ ]|^<[^>]+>$/i.test(configVercelToken)) {
   env.VERCEL_TOKEN = configVercelToken;
@@ -78,27 +79,33 @@ function domainFromUrl(value, override, label) {
 const configuredWebUrl = firstValid(env.NUXT_PUBLIC_APP_URL, env.WEB_APP_URL) || 'https://app-test.constella.pp.ua';
 const configuredApiUrl = firstValid(env.NUXT_PUBLIC_API_URL, env.API_PROXY_TARGET, env.API_INTERNAL_URL) || 'https://api-test.constella.pp.ua';
 const configuredLandingUrl = firstValid(env.NUXT_PUBLIC_SITE_URL, env.SITE_URL) || 'https://constella.pp.ua';
+const configuredAdminUrl = firstValid(env.ADMIN_APP_URL) || 'https://admin.constella.pp.ua';
 const apiProject = env.VERCEL_API_PROJECT || 'constella-api';
 const webProject = env.VERCEL_WEB_PROJECT || 'constella-web';
 const landingProject = env.VERCEL_LANDING_PROJECT || 'constella-landing';
+const adminProject = env.VERCEL_ADMIN_PROJECT || 'constella-admin';
 for (const [label, name] of [
   ['VERCEL_API_PROJECT', apiProject],
   ['VERCEL_WEB_PROJECT', webProject],
   ['VERCEL_LANDING_PROJECT', landingProject],
+  ['VERCEL_ADMIN_PROJECT', adminProject],
 ]) {
   if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(name)) {
     throw new Error(`${label} must be a lowercase Vercel project slug (letters, numbers, and hyphens).`);
   }
 }
-if (apiProject === webProject || apiProject === landingProject || webProject === landingProject) {
-  throw new Error('VERCEL_API_PROJECT, VERCEL_WEB_PROJECT and VERCEL_LANDING_PROJECT must be different names.');
+const projectNames = [apiProject, webProject, landingProject, adminProject];
+if (new Set(projectNames).size !== projectNames.length) {
+  throw new Error('VERCEL_API_PROJECT, VERCEL_WEB_PROJECT, VERCEL_LANDING_PROJECT and VERCEL_ADMIN_PROJECT must all be different names.');
 }
 const webDomain = domainFromUrl(configuredWebUrl, env.VERCEL_WEB_DOMAIN, 'VERCEL_WEB_DOMAIN');
 const apiDomain = domainFromUrl(configuredApiUrl, env.VERCEL_API_DOMAIN, 'VERCEL_API_DOMAIN');
 const landingDomain = domainFromUrl(configuredLandingUrl, env.VERCEL_LANDING_DOMAIN, 'VERCEL_LANDING_DOMAIN');
+const adminDomain = domainFromUrl(configuredAdminUrl, env.VERCEL_ADMIN_DOMAIN, 'VERCEL_ADMIN_DOMAIN');
 const webUrl = env.VERCEL_WEB_DOMAIN ? `https://${webDomain}` : configuredWebUrl;
 const apiUrl = env.VERCEL_API_DOMAIN ? `https://${apiDomain}` : configuredApiUrl;
 const landingUrl = env.VERCEL_LANDING_DOMAIN ? `https://${landingDomain}` : configuredLandingUrl;
+const adminUrl = env.VERCEL_ADMIN_DOMAIN ? `https://${adminDomain}` : configuredAdminUrl;
 const webhookUrl = `${apiUrl.replace(/\/$/, '')}/telegram/webhook`;
 const projects = [
   {
@@ -125,10 +132,18 @@ const projects = [
     domain: landingDomain,
     buildCommand: 'cd ../.. && pnpm exec turbo run build --filter=@constella/landing...',
   },
+  {
+    key: 'admin',
+    name: adminProject,
+    rootDirectory: 'apps/admin',
+    framework: 'nuxtjs',
+    domain: adminDomain,
+    buildCommand: 'cd ../.. && pnpm exec turbo run build --filter=@constella/admin...',
+  },
 ];
-const onlyFlags = ['--api-only', '--web-only', '--landing-only'].filter((flag) => args.has(flag));
+const onlyFlags = ['--api-only', '--web-only', '--landing-only', '--admin-only'].filter((flag) => args.has(flag));
 if (onlyFlags.length > 1) {
-  throw new Error(`Choose only one of --api-only, --web-only and --landing-only, got ${onlyFlags.join(' and ')}.`);
+  throw new Error(`Choose only one of --api-only, --web-only, --landing-only and --admin-only, got ${onlyFlags.join(' and ')}.`);
 }
 const deploymentProjects = onlyFlags.length
   ? projects.filter(({ key }) => key === onlyFlags[0].replace(/^--/, '').replace(/-only$/, ''))
@@ -136,7 +151,7 @@ const deploymentProjects = onlyFlags.length
 
 function logPlan() {
   console.log(`Vercel projects: ${projects.map(({ key, name, rootDirectory }) => `${key}=${name} (${rootDirectory})`).join(', ')}`);
-  console.log(`Custom domains: ${webProject}=${webDomain}, ${apiProject}=${apiDomain}, ${landingProject}=${landingDomain}`);
+  console.log(`Custom domains: ${webProject}=${webDomain}, ${apiProject}=${apiDomain}, ${landingProject}=${landingDomain}, ${adminProject}=${adminDomain}`);
 }
 
 const preflight = ['vercel:env', '--', '--dry-run'];
@@ -249,8 +264,10 @@ const authEnv = {
   VERCEL_API_PROJECT: apiProject,
   VERCEL_WEB_PROJECT: webProject,
   VERCEL_LANDING_PROJECT: landingProject,
+  VERCEL_ADMIN_PROJECT: adminProject,
   WEB_APP_URL: webUrl,
   NUXT_PUBLIC_APP_URL: webUrl,
+  ADMIN_APP_URL: adminUrl,
   API_INTERNAL_URL: apiUrl,
   API_PROXY_TARGET: apiUrl,
   NUXT_PUBLIC_API_URL: apiUrl,

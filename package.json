@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "test": "pnpm --filter @constella/api test && pnpm --filter @constella/web test && pnpm --filter @constella/landing test",
+    "test": "pnpm --filter @constella/api test && pnpm --filter @constella/web test && pnpm --filter @constella/landing test && pnpm --filter @constella/admin test",
     "start:api": "pnpm --filter @constella/api start",
     "start:bot": "pnpm --filter @constella/bot start",
     "start:web": "pnpm --filter @constella/web start",

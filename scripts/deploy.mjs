@@ -119,6 +119,9 @@ const appUrl = config.domains?.web_app_url || config.urls?.app_url || config.url
 const apiUrl = config.domains?.api_url || config.urls?.backend_api_url || 'https://api-test.constella.pp.ua';
 // Without an explicit host the landing would silently keep its build-time default.
 const landingUrl = config.domains?.landing_url || config.urls?.landing_url || 'https://constella.pp.ua';
+// The admin console is its own Vercel project on its own origin; nothing in the code reads
+// this back, it exists so r2-cors and deploy-vercel agree on one hostname.
+const adminUrl = config.domains?.admin_url || config.urls?.admin_url || 'https://admin.constella.pp.ua';
 
 if (warnings.length > 0) {
   console.warn('\n⚠️  Preflight Warnings:');
@@ -150,6 +153,7 @@ const envLines = [
   `API_INTERNAL_URL=${apiUrl}`,
   `NUXT_API_INTERNAL_BASE=${apiUrl}`,
   `NUXT_PUBLIC_SITE_URL=${landingUrl}`,
+  `ADMIN_APP_URL=${adminUrl}`,
   `JWT_SECRET=${config.security?.jwt_secret || ''}`,
   `PAYMENTS_INTERNAL_TOKEN=${config.security?.payments_internal_token || ''}`,
   `PHOTO_BUCKET=${config.storage?.photo_bucket || 'constella-media'}`,
@@ -188,9 +192,11 @@ const deploymentOnlyKeys = [
   'VERCEL_API_PROJECT',
   'VERCEL_WEB_PROJECT',
   'VERCEL_LANDING_PROJECT',
+  'VERCEL_ADMIN_PROJECT',
   'VERCEL_API_DOMAIN',
   'VERCEL_WEB_DOMAIN',
-  'VERCEL_LANDING_DOMAIN'
+  'VERCEL_LANDING_DOMAIN',
+  'VERCEL_ADMIN_DOMAIN'
 ];
 const deploymentEnvLines = [
   envLines,
@@ -201,11 +207,13 @@ const deploymentEnvLines = [
     .map((name) => `${name}=${existingDeploymentEnv[name]}`)
 ].join('\n');
 
-// 4. Sync .env to root, apps/web, apps/landing, apps/api, apps/bot
+// 4. Sync .env to root, apps/web, apps/landing, apps/admin, apps/api, apps/bot
 const targetPaths = [
   { path: path.join(rootDir, '.env'), includeAdminCredentials: true },
   { path: path.join(rootDir, 'apps/web/.env'), includeAdminCredentials: false },
   { path: path.join(rootDir, 'apps/landing/.env'), includeAdminCredentials: false },
+  // The console never sees ADMIN_*: it forwards the login to the API, which owns the credentials.
+  { path: path.join(rootDir, 'apps/admin/.env'), includeAdminCredentials: false },
   { path: path.join(rootDir, 'apps/api/.env'), includeAdminCredentials: true },
   { path: path.join(rootDir, 'apps/bot/.env'), includeAdminCredentials: false }
 ];

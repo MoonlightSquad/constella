@@ -59,8 +59,6 @@ export default defineNuxtConfig({
   },
 
   sitemap: {
-    // /admin must never reach a public sitemap.
-    exclude: ['/admin', '/admin/**'],
     autoLastmod: false,
     // Published posts live in the database, so their URLs are a source, not pages.
     sources: ['/api/__sitemap__/blog-urls'],
@@ -76,11 +74,6 @@ export default defineNuxtConfig({
     '/blog': { isr: 60 },
     '/blog/**': { isr: 60 },
     '/feed/**': { isr: 600 },
-    // Internal SPA: no content for crawlers, and no session logic on the server.
-    // X-Robots-Tag rather than only the layout's meta: ssr:false means a crawler that
-    // does not execute JS would receive a shell with no noindex in it at all.
-    '/admin': { ssr: false, headers: { 'x-robots-tag': 'noindex, nofollow' } },
-    '/admin/**': { ssr: false, headers: { 'x-robots-tag': 'noindex, nofollow' } },
     '/_nuxt/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
     '/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
   },
@@ -92,7 +85,7 @@ export default defineNuxtConfig({
       // Blog URLs come from the database, so the crawler must not stop on them:
       // they are rendered on demand and served through ISR instead. The feed is
       // linked from every blog page, and a build-time snapshot would freeze it.
-      ignore: ['/blog', '/blog/**', '/feed/**', '/admin', '/admin/**'],
+      ignore: ['/blog', '/blog/**', '/feed/**'],
     },
   },
 

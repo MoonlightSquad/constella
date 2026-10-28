@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { after, describe, it } from 'node:test';
 
 process.env.DATABASE_URL ??= 'postgres://constella:test@127.0.0.1:5432/constella';
-const { adminProcedure, isConfiguredAdmin, protectedProcedure, router } = await import('./trpc.js');
+const { adminProcedure, isAdminAccount, isConfiguredAdmin, protectedProcedure, router } = await import('./trpc.js');
 
-const makeContext = (user: any, session: any = { bannedAt: null, sessionVersion: 1 }) => ({
+const makeContext = (user: any, session: any = { bannedAt: null, sessionVersion: 1, role: 'user' }) => ({
   req: {} as any,
   res: {} as any,
   user,
@@ -77,5 +77,34 @@ describe('tRPC authorization middleware', () => {
     const testRouter = router({ value: protectedProcedure.query(() => 'ok') });
     await assert.rejects(testRouter.createCaller(makeContext({ id: 'user', telegramId: null, sessionVersion: 1 }, { bannedAt: new Date(), sessionVersion: 1 })).value(), { code: 'FORBIDDEN' });
     assert.equal(await testRouter.createCaller(makeContext({ id: 'admin', telegramId: null, sessionVersion: 1 }, { bannedAt: new Date(), sessionVersion: 1 })).value(), 'ok');
+  });
+  it('treats the database role as a grant without any env allowlist', async () => {
+    delete process.env.ADMIN_USER_IDS;
+    delete process.env.ADMIN_TELEGRAM_IDS;
+    delete process.env.ADMIN_EMAIL;
+    const testRouter = router({
+      value: adminProcedure.query(() => 'admin'),
+      guarded: protectedProcedure.query(() => 'ok'),
+    });
+    assert.equal(await testRouter.createCaller(makeContext(
+      { id: 'db-admin', telegramId: null, sessionVersion: 1 },
+      { bannedAt: null, sessionVersion: 1, role: 'admin' },
+    )).value(), 'admin');
+    await assert.rejects(testRouter.createCaller(makeContext(
+      { id: 'db-user', telegramId: null, sessionVersion: 1 },
+      { bannedAt: null, sessionVersion: 1, role: 'user' },
+    )).value(), { code: 'FORBIDDEN' });
+    assert.equal(await testRouter.createCaller(makeContext(
+      { id: 'db-admin', telegramId: null, sessionVersion: 1 },
+      { bannedAt: new Date(), sessionVersion: 1, role: 'admin' },
+    )).guarded(), 'ok');
+  });
+  it('lets a role win over env checks only for a real account', () => {
+    delete process.env.ADMIN_USER_IDS;
+    delete process.env.ADMIN_TELEGRAM_IDS;
+    delete process.env.ADMIN_EMAIL;
+    assert.equal(isAdminAccount({ id: 'db-admin', telegramId: null }, 'admin'), true);
+    assert.equal(isAdminAccount({ id: 'db-user', telegramId: null }, 'user'), false);
+    assert.equal(isAdminAccount(null, 'admin'), false);
   });
 });

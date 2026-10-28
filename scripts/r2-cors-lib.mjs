@@ -30,7 +30,7 @@ export async function configureR2Cors({
   apiToken,
   accountId,
   bucketName,
-  webOrigin,
+  origins,
   fetchImpl = fetch,
 }) {
   const endpoint = `${cloudflareApi}/accounts/${encodeURIComponent(accountId)}/r2/buckets/${encodeURIComponent(bucketName)}/cors`;
@@ -41,7 +41,7 @@ export async function configureR2Cors({
 
   const current = await requestJson(fetchImpl, endpoint, { headers });
   const currentRules = current.rules ?? [];
-  const updatedRules = mergeCorsRules(currentRules, webOrigin);
+  const updatedRules = origins.reduce((rules, origin) => mergeCorsRules(rules, origin), currentRules);
   const changed = JSON.stringify(currentRules) !== JSON.stringify(updatedRules);
 
   if (changed) {
@@ -53,8 +53,9 @@ export async function configureR2Cors({
   }
 
   const verified = await requestJson(fetchImpl, endpoint, { headers });
-  if (!hasRequiredCorsRule(verified.rules ?? [], webOrigin)) {
-    throw new Error('Cloudflare R2 CORS verification failed: the required origin, methods, or headers are missing.');
+  const missing = origins.filter((origin) => !hasRequiredCorsRule(verified.rules ?? [], origin));
+  if (missing.length) {
+    throw new Error(`Cloudflare R2 CORS verification failed for ${missing.join(', ')}: the required origin, methods, or headers are missing.`);
   }
 
   return { changed, rulesCount: verified.rules.length };

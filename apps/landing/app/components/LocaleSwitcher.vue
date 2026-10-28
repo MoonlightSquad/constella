@@ -19,7 +19,7 @@ const onSwitch = (event: Event) => {
   const code = (event.target as HTMLSelectElement).value;
   if (code === locale.value) return;
   // switchLocalePath() returns an empty string when the current route is not localized
-  // (/admin, nitro-generated feeds), so the bare locale root is the last resort.
+  // (/legal, nitro-generated feeds), so the bare locale root is the last resort.
   const generated = switchLocalePath(code);
   const target = alternates.value?.find((entry) => entry.locale === code)?.path ?? (generated || `/${code}`);
   navigateTo(target);

@@ -23,10 +23,19 @@ const config = loadDeploymentConfig(rootDir);
 const apiToken = configuredValue(config.cloudflare?.api_token) || env.CLOUDFLARE_API_TOKEN;
 const bucketName = configuredValue(config.storage?.photo_bucket) || env.PHOTO_BUCKET;
 const endpoint = configuredValue(config.storage?.s3_endpoint) || env.S3_ENDPOINT;
-const webOrigin = configuredValue(config.domains?.web_app_url)
-  || configuredValue(config.urls?.app_url)
-  || env.NUXT_PUBLIC_APP_URL
-  || env.WEB_APP_URL;
+// Two browsers write into this bucket with presigned PUTs: the web app (photos) and the
+// admin console (blog covers). Both origins must be listed or the second upload is blocked
+// by CORS before it ever reaches storage.
+const origins = [
+  configuredValue(config.domains?.web_app_url)
+    || configuredValue(config.urls?.app_url)
+    || env.NUXT_PUBLIC_APP_URL
+    || env.WEB_APP_URL,
+  configuredValue(config.domains?.admin_url)
+    || configuredValue(config.urls?.admin_url)
+    || env.ADMIN_APP_URL
+    || 'https://admin.constella.pp.ua',
+];
 const accountId = config.cloudflare?.account_id || env.CLOUDFLARE_ACCOUNT_ID || accountIdFromEndpoint(endpoint);
 
 if (!apiToken) {
@@ -36,19 +45,21 @@ if (!bucketName) throw new Error('PHOTO_BUCKET is missing.');
 if (!accountId) {
   throw new Error('CLOUDFLARE_ACCOUNT_ID is missing and could not be derived from S3_ENDPOINT.');
 }
-if (!isHttpsOrigin(webOrigin)) {
-  throw new Error('NUXT_PUBLIC_APP_URL or WEB_APP_URL must be a valid HTTPS origin.');
+const invalid = origins.filter((value) => !isHttpsOrigin(value));
+if (invalid.length) {
+  throw new Error(`Each upload origin must be a valid HTTPS origin, got: ${invalid.map((value) => value || '(empty)').join(', ')}.`);
 }
+const normalized = [...new Set(origins.map((value) => new URL(value).origin))];
 
 const result = await configureR2Cors({
   apiToken,
   accountId,
   bucketName,
-  webOrigin: new URL(webOrigin).origin,
+  origins: normalized,
 });
 
 console.log(
-  `R2 CORS ${result.changed ? 'updated' : 'already configured'} for ${bucketName} at ${new URL(webOrigin).origin}.`,
+  `R2 CORS ${result.changed ? 'updated' : 'already configured'} for ${bucketName} at ${normalized.join(', ')}.`,
 );
 
 function accountIdFromEndpoint(value) {

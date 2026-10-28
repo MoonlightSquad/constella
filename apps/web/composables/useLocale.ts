@@ -353,7 +353,6 @@ const messages = {
   'dashboard.contactSupport': ['Звернутися до підтримки', 'Contact support', 'Support kontaktieren', 'Contacter le support'],
   'dashboard.superlike': ['Суперлайк', 'Super Like', 'Super Like', 'Super Like'],
   'dashboard.freeze': ['Захист стріку', 'Streak Freeze', 'Streak-Schutz', 'Gel de série'],
-  'dashboard.openAdmin': ['Відкрити адмінпанель', 'Open admin panel', 'Admin-Panel öffnen', 'Ouvrir le panneau admin'],
   'dashboard.deleteAccount': ['Видалити акаунт і дані', 'Delete account and data', 'Konto und Daten löschen', 'Supprimer le compte et les données'],
 
   // Landing Page Translations
