@@ -10,6 +10,7 @@
 
 {$AI_HOSTNAME} {
 	# Розкоментуйте, щоб отримувати нагадування про закінчення сертифіката.
+	# ACME_EMAIL мусить бути заповнений: `tls` без аргументу не адаптується.
 	# tls {$ACME_EMAIL}
 
 	@endpoint path /v1/classify-image /healthz
