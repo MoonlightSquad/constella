@@ -6,6 +6,7 @@ This file provides guidance to the AI agent when working with code in this repos
 
 - `README.md` is an untouched Nuxt starter stub — ignore it. The real docs are `DEPLOYMENT_INSTRUCTIONS_FOR_AI.md` and `.env*.example`.
 - `apps/tma/`, `apps/worker/` and `packages/api-client/` are reserved placeholders containing only a `.gitignore`. They are not workspace packages — do not add code there expecting it to build.
+- `ai/` is a real directory but deliberately **not** a pnpm workspace member: `ai/nsfw/` is Python (FastAPI + ONNX Runtime) deployed with docker compose on the dedicated AI box, so `pnpm build`/turbo never touch it and it has no `package.json`. Its wire contract pairs with `apps/api/src/photos/ai-client.ts`; the deployment and model-pinning story is `ai/nsfw/README.md`. Future services go in sibling dirs (`ai/assistant/`), not in `apps/`.
 
 ## Commands
 

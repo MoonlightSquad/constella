@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useLocale } from '~/composables/useLocale'
 const props = defineProps<{ modelValue: string[] }>()
 const emit = defineEmits<{ 'update:modelValue': [photos: string[]] }>()
 const { $trpc } = useNuxtApp() as any
+const { t } = useLocale()
 const assets = ref<any[]>([]), busy = ref(false), error = ref('')
 const approved = () => {
   const set = new Set(assets.value.filter((a) => a.status === 'approved').map((a) => a.publicUrl))
@@ -23,8 +25,9 @@ const upload = async (event: Event) => {
     const target = await $trpc.photos.createUpload.mutate({ contentType: file.type })
     const response = await fetch(target.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
     if (!response.ok) throw new Error('Не вдалося завантажити фото у сховище.')
-    await $trpc.photos.confirmUpload.mutate({ objectKey: target.objectKey, contentType: file.type })
+    const asset = await $trpc.photos.confirmUpload.mutate({ objectKey: target.objectKey, contentType: file.type })
     await refresh()
+    if (asset.status === 'rejected') error.value = t('photos.rejectedContent')
   } catch (e: any) { error.value = e?.message || 'Не вдалося обробити фото.' }
   finally { busy.value = false }
 }

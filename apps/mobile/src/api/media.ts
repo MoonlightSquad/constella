@@ -119,7 +119,8 @@ export async function uploadPhoto(image: PickedImage): Promise<void> {
   if (!isPhotoType(image.mimeType)) throw new MediaError('photos.badType');
   const target = await trpc.photos.createUpload.mutate({ contentType: image.mimeType });
   await putToStorage(image.uri, target.uploadUrl, image.mimeType);
-  await trpc.photos.confirmUpload.mutate({ objectKey: target.objectKey, contentType: image.mimeType });
+  const asset = await trpc.photos.confirmUpload.mutate({ objectKey: target.objectKey, contentType: image.mimeType });
+  if (asset.status === 'rejected') throw new MediaError('photos.rejectedContent');
 }
 
 /**
@@ -136,6 +137,9 @@ export async function uploadChatImage(
   const target = await trpc.photos.createUpload.mutate({ contentType: image.mimeType });
   await putToStorage(image.uri, target.uploadUrl, image.mimeType);
   const asset = await trpc.photos.confirmUpload.mutate({ objectKey: target.objectKey, contentType: image.mimeType });
+  // Відхилене модерацією фото вже видалене зі сховища: кидаємо до `sendMessage`,
+  // щоб екран не показав бульбашку на битий URL.
+  if (asset.status === 'rejected') throw new MediaError('photos.rejectedContent');
   return { url: asset.publicUrl, fileName, size: image.size };
 }
 

@@ -213,7 +213,9 @@ export const processPhotoUpload = async (userId: string, objectKey: string, cont
     Bucket: bucket(),
     Delete: { Objects: [{ Key: objectKey }], Quiet: true },
   }));
-  return { imageKey, publicUrl, width: output.info.width, height: output.info.height };
+  // `bytes` — той самий нормалізований webp, що пішов у сховище: він вже без EXIF-
+  // орієнтації, ≤1600 px і в одному форматі, тому саме він годиться класифікатору.
+  return { imageKey, publicUrl, width: output.info.width, height: output.info.height, bytes: output.data };
 };
 
 export const removePhotoObjects = async (keys: string[]) => {

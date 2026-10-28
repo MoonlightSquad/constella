@@ -282,6 +282,7 @@ const messages = {
   'dashboard.photoVideo': ['Фото / Відео', 'Photo / Video', 'Foto / Video', 'Photo / Vidéo'],
   'photos.gallery': ['Галерея', 'Gallery', 'Galerie', 'Galerie'],
   'photos.camera': ['Камера', 'Camera', 'Kamera', 'Appareil photo'],
+  'photos.rejectedContent': ['Це фото містить заборонений контент і не було опубліковане.', 'This photo contains prohibited content and was not published.', 'Dieses Foto enthält unzulässige Inhalte und wurde nicht veröffentlicht.', "Cette photo contient un contenu interdit et n'a pas été publiée."],
   'dashboard.mediaUnsupported': ['Підтримуються JPEG, PNG, WebP, MP4 і WebM.', 'JPEG, PNG, WebP, MP4 and WebM are supported.', 'JPEG, PNG, WebP, MP4 und WebM werden unterstützt.', 'JPEG, PNG, WebP, MP4 et WebM sont pris en charge.'],
   'dashboard.playbackSpeed': ['Швидкість відтворення', 'Playback speed', 'Geschwindigkeit', 'Vitesse de lecture'],
   'dashboard.play': ['Прослухати', 'Play', 'Abspielen', 'Écouter'],

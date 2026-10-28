@@ -1,0 +1,64 @@
+# Розгортання на AI-boxі. Сам образ збирається тут (`MODEL_SOURCE`), бо квантизація
+# і швидкість залежать від архітектури машини.
+#
+#   cp .env.example .env   # AI_INTERNAL_TOKEN + AI_HOSTNAME
+#   docker compose up -d --build
+#
+# nsfw-сервіс навмисно не має ports: ззовні видно тільки Caddy на 443.
+services:
+  nsfw:
+    build:
+      context: .
+      args:
+        MODEL_SOURCE: ${MODEL_SOURCE:-hf}
+        MODEL_QUANT: ${MODEL_QUANT:-int8}
+        HUB_ONNX_SHA256: ${HUB_ONNX_SHA256:-}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    image: constella-nsfw:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    environment:
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:?AI_INTERNAL_TOKEN must be at least 32 characters}
+      AI_INTRA_OP_THREADS: ${AI_INTRA_OP_THREADS:-2}
+      AI_MAX_BODY_BYTES: ${AI_MAX_BODY_BYTES:-16777216}
+      AI_QUEUE_TIMEOUT_MS: ${AI_QUEUE_TIMEOUT_MS:-700}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${NSFW_MEMORY_LIMIT:-4g}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      nsfw:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      AI_HOSTNAME: ${AI_HOSTNAME:?AI_HOSTNAME is the public hostname the API calls}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
