@@ -475,6 +475,8 @@
 .post-head { max-width: 760px; margin-inline: auto; }
 .post-head__back { color: var(--fg-muted); font-size: 14px; }
 .post-head__back:hover { color: var(--mint-2); }
+.post-head__cats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; font-size: 13px; color: var(--fg-muted-2); }
+.post-head__cats-label { margin-inline-end: 2px; }
 .post-head__meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: var(--fg-muted-2); font-size: 13px; }
 .post-head__excerpt { margin-top: 16px; color: var(--fg-muted); font-size: 16.5px; }
 .post-head__cover { width: 100%; height: auto; margin-top: 24px; border: 1px solid var(--hairline); border-radius: var(--r-md); }

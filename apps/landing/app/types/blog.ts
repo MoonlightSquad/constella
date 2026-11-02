@@ -1,5 +1,25 @@
 export type BlogLocale = 'uk' | 'en' | 'de' | 'fr';
 
+/** Категорія/теґ, прикріплені до рядка статті — вже перекладені мовою цього рядка. */
+export type TermRef = { id: string; slug: string; name: string };
+
+export type BlogCategory = { id: string; slug: string; name: string; description: string | null; postCount: number };
+
+export type BlogTag = { id: string; slug: string; name: string; postCount: number };
+
+/** One language in which this term has published posts — an hreflang entry point. */
+export type TermAlternate = { locale: BlogLocale; slug: string };
+
+/** `/blog/categories/:slug` — the archive page payload. */
+export type BlogCategoryArchive = BlogCategory & {
+  seoTitle: string | null;
+  seoDescription: string | null;
+  alternates: TermAlternate[];
+};
+
+/** `/blog/tags/:slug` — tags carry no SEO extras; the name is the description. */
+export type BlogTagArchive = BlogTag & { alternates: TermAlternate[] };
+
 /** Mirrors the public columns of `/blog/posts`; the body never reaches this side. */
 export type BlogPostSummary = {
   id: string;
@@ -8,7 +28,8 @@ export type BlogPostSummary = {
   slug: string;
   title: string;
   excerpt: string;
-  tags: string[];
+  categories: TermRef[];
+  tags: TermRef[];
   coverUrl: string | null;
   coverAlt: string | null;
   publishedAt: string | null;

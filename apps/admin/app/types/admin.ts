@@ -1,4 +1,4 @@
-import type { BlogLocale } from './blog';
+import type { BlogLocale, TermRef } from './blog';
 
 export type BlogStatus = 'draft' | 'published' | 'archived';
 
@@ -9,7 +9,8 @@ export type AdminPostRow = {
   slug: string;
   title: string;
   excerpt: string;
-  tags: string[];
+  categories: TermRef[];
+  tags: TermRef[];
   coverUrl: string | null;
   coverAlt: string | null;
   publishedAt: string | null;
@@ -41,13 +42,35 @@ export type CreatedAdmin = { id: string; email: string; password: string };
 
 export type AdminList = { total: number; items: AdminPostRow[] };
 
+/** One language of a category/tag as the API returns it: cleared optional fields are null. */
+export type AdminCategoryTranslation = {
+  categoryId: string;
+  locale: BlogLocale;
+  slug: string;
+  name: string;
+  description: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+};
+
+export type AdminTagTranslation = { tagId: string; locale: BlogLocale; slug: string; name: string };
+
+export type AdminCategoryRow = { id: string; createdAt: string; postCount: number; translations: AdminCategoryTranslation[] };
+
+export type AdminTagRow = { id: string; createdAt: string; postCount: number; translations: AdminTagTranslation[] };
+
+export type AdminCategoryList = { total: number; items: AdminCategoryRow[] };
+
+export type AdminTagList = { total: number; items: AdminTagRow[] };
+
 /** The editable projection: what the form holds and what a PATCH sends. */
 export type PostDraft = {
   slug: string;
   title: string;
   excerpt: string;
   bodyMarkdown: string;
-  tags: string[];
+  categoryIds: string[];
+  tagIds: string[];
   coverUrl: string;
   coverAlt: string;
   authorName: string;

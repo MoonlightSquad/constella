@@ -6,7 +6,8 @@ export const emptyDraft = (): PostDraft => ({
   title: '',
   excerpt: '',
   bodyMarkdown: '',
-  tags: [],
+  categoryIds: [],
+  tagIds: [],
   coverUrl: '',
   coverAlt: '',
   authorName: '',
@@ -24,7 +25,8 @@ export const draftFromPost = (post: AdminPostDetail | null): PostDraft => {
     title: post.title,
     excerpt: post.excerpt,
     bodyMarkdown: post.bodyMarkdown,
-    tags: [...post.tags],
+    categoryIds: post.categories.map((term) => term.id),
+    tagIds: post.tags.map((term) => term.id),
     coverUrl: post.coverUrl ?? '',
     coverAlt: post.coverAlt ?? '',
     authorName: post.authorName ?? '',
@@ -45,13 +47,18 @@ const TEXT_FIELDS = [
  * A PATCH carries only what changed, and an empty string means "clear this field"
  * upstream — so sending the whole draft would wipe untouched optional SEO rows.
  */
+/** Чипи можна переставляти — порядок не значущий, тому порівнюємо як множини id. */
+const sameIdSet = (a: string[], b: string[]) =>
+  a.length === b.length && [...a].sort().join('\u0000') === [...b].sort().join('\u0000');
+
 export const patchFromDraft = (post: AdminPostDetail, draft: PostDraft): Record<string, unknown> => {
   const patch: Record<string, unknown> = {};
   for (const field of TEXT_FIELDS) {
     if (draft[field] !== (post[field] ?? '')) patch[field] = draft[field];
   }
 
-  if (draft.tags.join('\u0000') !== post.tags.join('\u0000')) patch.tags = draft.tags;
+  if (!sameIdSet(draft.categoryIds, post.categories.map((term) => term.id))) patch.categoryIds = draft.categoryIds;
+  if (!sameIdSet(draft.tagIds, post.tags.map((term) => term.id))) patch.tagIds = draft.tagIds;
   if (draft.noindex !== post.noindex) patch.noindex = draft.noindex;
   return patch;
 };
@@ -64,7 +71,8 @@ export const createFromDraft = (locale: string, draft: PostDraft, groupId?: stri
   title: draft.title,
   excerpt: draft.excerpt,
   bodyMarkdown: draft.bodyMarkdown,
-  tags: draft.tags,
+  categoryIds: draft.categoryIds,
+  tagIds: draft.tagIds,
   authorName: draft.authorName || undefined,
   coverUrl: draft.coverUrl || undefined,
   coverAlt: draft.coverAlt || undefined,

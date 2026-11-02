@@ -438,7 +438,6 @@ export const blogPosts = pgTable('blog_posts', {
   title: text('title').notNull(),
   excerpt: text('excerpt').notNull(),
   bodyMarkdown: text('body_markdown').notNull(),
-  tags: text('tags').array().default(sql`'{}'::text[]`),
   coverUrl: text('cover_url'),
   coverAlt: text('cover_alt'),
   status: text('status').$type<'draft' | 'published' | 'archived'>().default('draft').notNull(),
@@ -459,6 +458,61 @@ export const blogPosts = pgTable('blog_posts', {
   groupLocaleIdx: uniqueIndex('blog_posts_group_locale_unique').on(table.groupId, table.locale),
   listIdx: index('blog_posts_locale_status_published_idx').on(table.locale, table.status, table.publishedAt),
   groupIdx: index('blog_posts_group_idx').on(table.groupId),
+}));
+
+// Категорії й теґи — окремі сутності з перекладами на мову; приналежність статті
+// тримається на групі (blog_post_categories / blog_post_tags), тож переклад рядка
+// blog_posts успадковує таксономію без копіювання. Слаг архіву живe в окремих
+// namespace (/blog/category/…, /blog/tag/…), тому з слагами статей не конфліктує.
+export const blogCategories = pgTable('blog_categories', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const blogCategoryTranslations = pgTable('blog_category_translations', {
+  categoryId: uuid('category_id').references(() => blogCategories.id, { onDelete: 'cascade' }).notNull(),
+  locale: text('locale').$type<BlogLocale>().notNull(),
+  slug: text('slug').notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  seoTitle: text('seo_title'),
+  seoDescription: text('seo_description'),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.categoryId, table.locale] }),
+  slugLocaleIdx: uniqueIndex('blog_category_translations_slug_locale_unique').on(table.slug, table.locale),
+  localeIdx: index('blog_category_translations_locale_idx').on(table.locale),
+}));
+
+export const blogTags = pgTable('blog_tags', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const blogTagTranslations = pgTable('blog_tag_translations', {
+  tagId: uuid('tag_id').references(() => blogTags.id, { onDelete: 'cascade' }).notNull(),
+  locale: text('locale').$type<BlogLocale>().notNull(),
+  slug: text('slug').notNull(),
+  name: text('name').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tagId, table.locale] }),
+  slugLocaleIdx: uniqueIndex('blog_tag_translations_slug_locale_unique').on(table.slug, table.locale),
+  localeIdx: index('blog_tag_translations_locale_idx').on(table.locale),
+}));
+
+export const blogPostCategories = pgTable('blog_post_categories', {
+  postGroupId: uuid('post_group_id').references(() => blogPostGroups.id, { onDelete: 'cascade' }).notNull(),
+  categoryId: uuid('category_id').references(() => blogCategories.id, { onDelete: 'cascade' }).notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.postGroupId, table.categoryId] }),
+  categoryIdx: index('blog_post_categories_category_group_idx').on(table.categoryId, table.postGroupId),
+}));
+
+export const blogPostTags = pgTable('blog_post_tags', {
+  postGroupId: uuid('post_group_id').references(() => blogPostGroups.id, { onDelete: 'cascade' }).notNull(),
+  tagId: uuid('tag_id').references(() => blogTags.id, { onDelete: 'cascade' }).notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.postGroupId, table.tagId] }),
+  tagIdx: index('blog_post_tags_tag_group_idx').on(table.tagId, table.postGroupId),
 }));
 
 // Один рядок на пристрій: Expo-токен глобально унікальний, бо повторний реєстр

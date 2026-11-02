@@ -61,7 +61,7 @@ export default defineNuxtConfig({
   sitemap: {
     autoLastmod: false,
     // Published posts live in the database, so their URLs are a source, not pages.
-    sources: ['/api/__sitemap__/blog-urls'],
+    sources: ['/api/__sitemap__/blog-urls', '/api/__sitemap__/blog-taxonomy-urls'],
   },
 
   routeRules: {
