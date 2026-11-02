@@ -55,7 +55,17 @@ export type AdminCategoryTranslation = {
 
 export type AdminTagTranslation = { tagId: string; locale: BlogLocale; slug: string; name: string };
 
-export type AdminCategoryRow = { id: string; createdAt: string; postCount: number; translations: AdminCategoryTranslation[] };
+/**
+ * `pinnedPostGroupId` — pillar «почати тут»; id *групи* статті, не рядка й не слага.
+ * Список його не віддає, тому поле необовʼязкове: редактор читає його лише з деталі.
+ */
+export type AdminCategoryRow = {
+  id: string;
+  createdAt: string;
+  pinnedPostGroupId?: string | null;
+  postCount: number;
+  translations: AdminCategoryTranslation[];
+};
 
 export type AdminTagRow = { id: string; createdAt: string; postCount: number; translations: AdminTagTranslation[] };
 

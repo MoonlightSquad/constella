@@ -3,6 +3,7 @@ import {
   blogCategories,
   blogCategoryTranslations,
   blogPostCategories,
+  blogPostGroups,
   blogPostTags,
   blogPosts,
   blogTagTranslations,
@@ -170,10 +171,31 @@ export const getTagForAdmin = async (id: string) => {
   return { ...entity, postCount: counts.get(id) ?? 0, translations };
 };
 
+/**
+ * Pin — це чужий id у тілі запиту, тому валідується до запису: група має існувати, а
+ * категорія (коли вона вже створена) має мати цю групу серед своїх статей. Інакше редактор
+ * побачив би збережену категорію з pillar, якого в ній немає, а лендінг би його мовчки
+ * не рендерив — тобто тиша там, де має бути 400.
+ */
+const assertPinnedGroup = async (tx: any, groupId: string, categoryId: string | null) => {
+  const [group] = await tx.select({ id: blogPostGroups.id }).from(blogPostGroups).where(eq(blogPostGroups.id, groupId)).limit(1);
+  if (!group) throw httpError('Unknown pinnedPostGroupId.', 400);
+  if (!categoryId) return;
+  const [attached] = await tx
+    .select({ postId: blogPostCategories.postGroupId })
+    .from(blogPostCategories)
+    .where(and(eq(blogPostCategories.categoryId, categoryId), eq(blogPostCategories.postGroupId, groupId)))
+    .limit(1);
+  if (!attached) throw httpError('The pinned article is not in this category.', 400);
+};
+
 export const createCategory = async (input: CreateCategoryInput, actorUserId: string) => {
-  const { translations = [], ...primary } = input;
+  const { translations = [], pinnedPostGroupId, ...primary } = input;
   const id = await db.transaction(async (tx) => {
-    const [entity] = await tx.insert(blogCategories).values({}).returning({ id: blogCategories.id });
+    // На створенні категорія ще не має статей, тому перевірка приналежності тут неможлива:
+    // валідуємо існування групи, а лендінг і так не показує pillar, якого в категорії немає.
+    if (pinnedPostGroupId) await assertPinnedGroup(tx, pinnedPostGroupId, null);
+    const [entity] = await tx.insert(blogCategories).values({ pinnedPostGroupId: pinnedPostGroupId ?? null }).returning({ id: blogCategories.id });
     await tx.insert(blogCategoryTranslations).values([
       {
         categoryId: entity.id,
@@ -237,6 +259,13 @@ export const updateCategory = async (id: string, patch: UpdateCategoryInput, act
     const [entity] = await tx.select({ id: blogCategories.id }).from(blogCategories).where(eq(blogCategories.id, id)).limit(1);
     if (!entity) throw httpError('Category not found.', 404);
 
+    // Pin — не переклад, тому ключ `''` очищає його, а відсутній ключ лишає як було.
+    if (patch.pinnedPostGroupId !== undefined) {
+      const groupId = patch.pinnedPostGroupId === '' ? null : patch.pinnedPostGroupId;
+      if (groupId) await assertPinnedGroup(tx, groupId, id);
+      await tx.update(blogCategories).set({ pinnedPostGroupId: groupId }).where(eq(blogCategories.id, id));
+    }
+
     for (const translation of patch.translations ?? []) {
       const { locale, ...fields } = translation;
       const values = applyCategoryPatch(fields);
@@ -267,6 +296,9 @@ export const updateCategory = async (id: string, patch: UpdateCategoryInput, act
     await audit(tx, actorUserId, 'blog.category.update', null, {
       categoryId: id,
       locales: [...new Set([...(patch.translations ?? []).map((t) => t.locale), ...(patch.removeLocales ?? [])])].sort(),
+      // Pin — єдине, що редактор зміг змінити без жодного рядка перекладу: без цього рядка
+      // аудит показав би «нічого не змінено».
+      ...(patch.pinnedPostGroupId === undefined ? {} : { pinned: patch.pinnedPostGroupId || null }),
     });
   });
   return getCategoryForAdmin(id);

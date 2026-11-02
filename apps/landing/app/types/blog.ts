@@ -10,15 +10,26 @@ export type BlogTag = { id: string; slug: string; name: string; postCount: numbe
 /** One language in which this term has published posts — an hreflang entry point. */
 export type TermAlternate = { locale: BlogLocale; slug: string };
 
+/**
+ * Pillar-стаття категорії: той самий публічний профиль рядка, без таксономії — архів її
+ * уже показує навколо. `null`, коли pin не прикріплений або не має рядка цієї мови.
+ */
+export type BlogPinnedPost = Omit<BlogPostSummary, 'categories' | 'tags'>;
+
 /** `/blog/categories/:slug` — the archive page payload. */
 export type BlogCategoryArchive = BlogCategory & {
   seoTitle: string | null;
   seoDescription: string | null;
+  pinnedPost?: BlogPinnedPost | null;
   alternates: TermAlternate[];
 };
 
 /** `/blog/tags/:slug` — tags carry no SEO extras; the name is the description. */
-export type BlogTagArchive = BlogTag & { alternates: TermAlternate[] };
+export type BlogTagArchive = BlogTag & {
+  /** Тонкий тег (одна стаття) — парний сигнал із sitemap: api каже, сторінка показує. */
+  noindex?: boolean;
+  alternates: TermAlternate[];
+};
 
 /** Mirrors the public columns of `/blog/posts`; the body never reaches this side. */
 export type BlogPostSummary = {

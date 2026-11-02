@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { AdminCategoryRow } from '~/types/admin';
+import type { AdminCategoryRow, AdminList } from '~/types/admin';
 import type { BlogLocale } from '~/types/blog';
-import { emptyTermDraft, halfFilledLocales, patchFromTermDraft, termDraftFromRow } from '~/utils/term-draft';
+import { emptyTermDraft, halfFilledLocales, patchFromTermDraft, pillarOptionsFor, termDraftFromRow } from '~/utils/term-draft';
 
 const api = useAdminApi();
 const route = useRoute();
@@ -12,6 +12,17 @@ const { data: term, status: loading, refresh } = await useAsyncData(
   () => api.get<AdminCategoryRow>(`/api/admin/categories/${id.value}`),
 );
 watch(id, () => refresh());
+
+// Pillar вибирається з власних статей категорії (фільтр по id, не по локалізованому слазі).
+const { data: categoryPosts, refresh: refreshPosts } = await useAsyncData(
+  'admin-category-posts',
+  () => api.get<AdminList>('/api/admin/posts', { category: id.value, limit: 100 }),
+);
+watch(id, () => refreshPosts());
+
+const pillarOptions = computed(() =>
+  pillarOptionsFor((categoryPosts.value?.items ?? []).map((row) => ({ groupId: row.groupId, locale: row.locale, title: row.title, status: row.status }))),
+);
 
 const draft = reactive(emptyTermDraft());
 watch(term, (value) => Object.assign(draft, termDraftFromRow(value ?? null)), { immediate: true });
@@ -97,6 +108,7 @@ const remove = async () => {
       :saving="saving"
       :error="error"
       :saved-at="savedAt"
+      :pillar-options="pillarOptions"
       @save="save"
       @remove="removeLocale"
       @restore="restoreLocale"

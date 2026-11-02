@@ -133,6 +133,32 @@ const attachTaxonomy = async <T extends { groupId: string; locale: BlogLocale }>
   }));
 };
 
+/**
+ * Проєкція публічного списку: тип виводиться з самих колонок, тому нове поле в
+ * `summaryColumns` не може тихо зникнути з pillar-payload.
+ */
+const publicSummary = () => db.select(summaryColumns).from(blogPosts);
+
+/**
+ * Pillar-стаття категорії мовою архіву. Рядок повертається лише якщо прикріплена група
+ * досі належить цій категорії й опублікована саме цією мовою: інакше лендінг не рендерить
+ * блок, замість вести читача на 404 чи на статтю з іншої полиці. Мову рядка перевіряємо
+ * тут, а не в редакторі, бо переклад і пін не живуть у одному рядку.
+ */
+export const pinnedPostFor = async (categoryId: string, groupId: string, locale: BlogLocale) => {
+  const [row] = await publicSummary()
+    .where(
+      and(
+        publishedOnly,
+        eq(blogPosts.locale, locale),
+        eq(blogPosts.groupId, groupId),
+        sql`EXISTS (SELECT 1 FROM blog_post_categories pc WHERE pc.post_group_id = ${blogPosts.groupId} AND pc.category_id = ${categoryId})`,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+};
+
 const resolveCategoryId = async (slug: string, locale: BlogLocale) => {
   const [row] = await db
     .select({ id: blogCategoryTranslations.categoryId })
@@ -181,9 +207,7 @@ export const listPublishedPosts = async (input: PublicListInput) => {
   // Невідомий slug — порожня сторінка, а не 404: сам архів перевіряє термін окремо.
   if ((input.category && !categoryId) || (input.tag && !tagId)) return { items: [], nextCursor: null };
 
-  const rows = await db
-    .select(summaryColumns)
-    .from(blogPosts)
+  const rows = await publicSummary()
     .where(
       and(
         publishedOnly,
@@ -275,8 +299,17 @@ export const listPublicTags = async (locale: BlogLocale) => {
 /** Один термін + hreflang-альтернативи; `null`, коли в цій мові немає чого показувати. */
 export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
   const [term] = await db
-    .select()
+    .select({
+      categoryId: blogCategoryTranslations.categoryId,
+      slug: blogCategoryTranslations.slug,
+      name: blogCategoryTranslations.name,
+      description: blogCategoryTranslations.description,
+      seoTitle: blogCategoryTranslations.seoTitle,
+      seoDescription: blogCategoryTranslations.seoDescription,
+      pinnedPostGroupId: blogCategories.pinnedPostGroupId,
+    })
     .from(blogCategoryTranslations)
+    .innerJoin(blogCategories, eq(blogCategories.id, blogCategoryTranslations.categoryId))
     .where(and(eq(blogCategoryTranslations.slug, slug), eq(blogCategoryTranslations.locale, locale)))
     .limit(1);
   if (!term) return null;
@@ -290,6 +323,8 @@ export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
     .from(blogCategoryTranslations)
     .where(eq(blogCategoryTranslations.categoryId, term.categoryId));
 
+  const pinnedPost = term.pinnedPostGroupId ? await pinnedPostFor(term.categoryId, term.pinnedPostGroupId, locale) : null;
+
   return {
     id: term.categoryId,
     slug: term.slug,
@@ -298,6 +333,8 @@ export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
     seoTitle: term.seoTitle,
     seoDescription: term.seoDescription,
     postCount,
+    // Додатка до `exclude` на списку: архів без цього поля показав би pillar двічі.
+    pinnedPost,
     alternates: translations.filter((row) => (counts.get(row.locale) ?? 0) > 0).map((row) => ({ locale: row.locale, slug: row.slug })),
   };
 };
@@ -324,6 +361,10 @@ export const getPublicTag = async (slug: string, locale: BlogLocale) => {
     slug: term.slug,
     name: term.name,
     postCount,
+    // Тонкий тег (одна стаття) — не індекс, але й не 404: сторінка корисна й тримає
+    // внутрішній граф. Rule парна: `listPublishedTaxonomyForSitemap` той самий архів
+    // із sitemap не викидає — запис без noindex і навпаки був би суперечливим сигналом.
+    noindex: postCount < 2,
     alternates: translations.filter((row) => (counts.get(row.locale) ?? 0) > 0).map((row) => ({ locale: row.locale, slug: row.slug })),
   };
 };
@@ -342,7 +383,10 @@ export const listPublishedTaxonomyForSitemap = async () => {
       .from(blogTagTranslations)
       .innerJoin(blogPostTags, eq(blogPostTags.tagId, blogTagTranslations.tagId))
       .innerJoin(blogPosts, and(eq(blogPosts.groupId, blogPostTags.postGroupId), eq(blogPosts.locale, blogTagTranslations.locale), publishedOnly))
-      .groupBy(blogTagTranslations.tagId, blogTagTranslations.locale, blogTagTranslations.slug),
+      .groupBy(blogTagTranslations.tagId, blogTagTranslations.locale, blogTagTranslations.slug)
+      // Парна до `noindex` у getPublicTag: архів з однією статтею не отримує robots:noindex
+      // і водночас стоїть у sitemap — це один сигнал, а не два суперечливі.
+      .having(sql`count(distinct ${blogPosts.id}) >= 2`),
   ]);
   return { categories, tags };
 };
@@ -359,6 +403,11 @@ export const listPostsForAdmin = async (input: AdminListInput) => {
   const where = and(
     input.locale ? eq(blogPosts.locale, input.locale) : undefined,
     input.status ? eq(blogPosts.status, input.status) : undefined,
+    // Фільтр за id категорії, а не за слагом: редактор вибирає pillar зі списку категорій,
+    // який уже має id, і мова архіву тут ні до чого.
+    input.category
+      ? sql`EXISTS (SELECT 1 FROM blog_post_categories pc WHERE pc.post_group_id = ${blogPosts.groupId} AND pc.category_id = ${input.category})`
+      : undefined,
     input.search
       ? or(
           ilike(blogPosts.title, `%${input.search}%`),

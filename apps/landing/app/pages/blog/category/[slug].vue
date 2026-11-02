@@ -15,8 +15,14 @@ const { data: term } = await useFetch<BlogCategoryArchive>('/api/blog/category',
 });
 if (!term.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
 
-const { items, nextCursor, loading, loadMore } = await usePagedArchivePosts(computed(() => ({ category: slug.value })));
+const { items, nextCursor, loading, loadMore } = await usePagedArchivePosts(
+  computed(() => ({ category: slug.value, exclude: term.value?.pinnedPost?.groupId ?? '' })),
+);
 const { crumbs } = useBlogArchive('category', term.value, items);
+
+// Pillar — та сама стаття, що й у сітці, тому сітка просить API виключити її групу:
+// без `exclude` один заголовок лежав би на сторінці двічі з різними текстами посилання.
+const pinned = computed(() => term.value?.pinnedPost ?? null);
 
 const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
 </script>
@@ -28,6 +34,33 @@ const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
       <h1 class="section-title">{{ term?.name }}</h1>
       <p v-if="term?.description" class="section-sub">{{ term.description }}</p>
     </div>
+
+    <article v-if="pinned" class="pillar">
+      <NuxtLink :to="localePath(`/blog/${pinned.slug}`)" class="post-card__cover pillar__cover">
+        <img
+          v-if="pinned.coverUrl"
+          :src="pinned.coverUrl"
+          :alt="pinned.coverAlt ?? ''"
+          loading="lazy"
+          decoding="async"
+          width="1200"
+          height="630"
+        >
+        <span v-else class="post-card__placeholder" aria-hidden="true"><BrandMark :size="46" /></span>
+      </NuxtLink>
+      <div class="pillar__body">
+        <p class="eyebrow">{{ $t('blog.pillar') }}</p>
+        <h2 class="pillar__title">
+          <NuxtLink :to="localePath(`/blog/${pinned.slug}`)">{{ pinned.title }}</NuxtLink>
+        </h2>
+        <p class="pillar__excerpt">{{ pinned.excerpt }}</p>
+        <p class="pillar__meta">
+          <time v-if="pinned.publishedAt" :datetime="pinned.publishedAt">{{ formatDate(pinned.publishedAt, language) }}</time>
+          <span aria-hidden="true">·</span>
+          <span>{{ pinned.readingMinutes }} {{ $t('blog.minutes') }}</span>
+        </p>
+      </div>
+    </article>
 
     <div v-if="items.length" class="posts">
       <article v-for="post in items" :key="post.id" class="post-card">

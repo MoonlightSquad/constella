@@ -147,6 +147,13 @@ const tagTranslationPatchSchema = z.object({
 const termExtraTranslations = <T extends z.ZodTypeAny>(translation: T) =>
   z.array(translation).max(BLOG_LOCALES.length - 1).optional();
 
+/**
+ * Pillar категорії — id *групи* статті, не слага й не id рядка: група одна для чотирьох мов,
+ * тому переклад архіву не може показати чужу «почати тут». `''` очищає pin (як `''` у полі
+ * статті), відсутній ключ — без змін.
+ */
+const pinnedPostGroupId = z.union([z.literal(''), z.string().uuid()]).optional();
+
 export const createCategorySchema = z
   .object({
     locale: z.enum(BLOG_LOCALES),
@@ -155,6 +162,7 @@ export const createCategorySchema = z
     description: optionalText(MAX_EXCERPT),
     seoTitle: optionalText(MAX_TITLE),
     seoDescription: optionalText(MAX_EXCERPT),
+    pinnedPostGroupId,
     translations: termExtraTranslations(categoryTranslationSchema),
   })
   .superRefine((value, ctx) => {
@@ -167,10 +175,17 @@ export const createCategorySchema = z
 
 export const updateCategorySchema = z
   .object({
+    pinnedPostGroupId,
     translations: z.array(categoryTranslationPatchSchema).max(BLOG_LOCALES.length).optional(),
     removeLocales: z.array(z.enum(BLOG_LOCALES)).max(BLOG_LOCALES.length).optional(),
   })
-  .refine((value) => (value.translations?.length ?? 0) + (value.removeLocales?.length ?? 0) > 0, 'at least one translation must be provided')
+  // Pin — не переклад: редактор має зберегти й лише його, інакше `{ pinnedPostGroupId: '<id>' }`
+  // відбився б бідою «хоча б один переклад».
+  .refine(
+    (value) =>
+      (value.translations?.length ?? 0) + (value.removeLocales?.length ?? 0) > 0 || value.pinnedPostGroupId !== undefined,
+    'at least one translation or the pinned article must be provided',
+  )
   .superRefine((value, ctx) => noDuplicateLocales(value.translations ?? [], ctx, 'translations'));
 
 export const createTagSchema = z
@@ -214,6 +229,9 @@ export const publicPostQuerySchema = z.object({
 export const adminListQuerySchema = z.object({
   locale: z.enum(BLOG_LOCALES).optional(),
   status: z.enum(BLOG_STATUSES).optional(),
+  // Адмінка оперує id, а не локалізованими слагами: редактор обирає статтю для pillar
+  // так само, як категорія тримає свої зв'язки — за id групи.
+  category: z.string().uuid().optional(),
   search: z.string().trim().max(100).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),

@@ -10,6 +10,8 @@ export type BlogArchiveTerm = {
   description?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
+  /** Тонкий термін — лише тегові архіви; категорій це не стосується. */
+  noindex?: boolean;
   alternates: TermAlternate[];
 };
 
@@ -78,6 +80,10 @@ export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, 
     ogImage: `${siteUrl}/api/og?kind=${kind}&slug=${encodeURIComponent(term.slug)}&locale=${locale.value}`,
     ogUrl: canonical,
     twitterCard: 'summary_large_image',
+    // Тонкий архів (одна стаття) не просить Google його індексувати, але й не ховає посилання:
+    // `follow` тримає внутрішній граф. Пару цьому сигналу ставить API — той самий архів
+    // відсутній у sitemap.
+    ...(term.noindex ? { robots: 'noindex, follow' } : {}),
   });
 
   useHead(() => ({

@@ -4,6 +4,7 @@ import {
   MAX_BODY_CHARACTERS,
   MAX_CATEGORIES,
   MAX_TAGS,
+  adminListQuerySchema,
   createCategorySchema,
   createPostSchema,
   createTagSchema,
@@ -136,6 +137,25 @@ test('updateCategorySchema demands at least one locale change and no duplicates'
   assert.equal(updateCategorySchema.safeParse({ translations: [{ locale: 'de' }] }).success, true, 'existing locale may patch a subset');
   assert.equal(updateCategorySchema.safeParse({ removeLocales: ['fr'] }).success, true);
   assert.equal(updateCategorySchema.safeParse({ removeLocales: ['es'] }).success, false);
+});
+
+test('a pinned article is a group id, and a pin-only patch is a change', () => {
+  const id = '2f1f9f2c-6d3f-4d7c-8f5f-1c3b5a9d0e11';
+  assert.equal(createCategorySchema.safeParse({ ...validCategory, pinnedPostGroupId: id }).success, true);
+  assert.equal(createCategorySchema.safeParse({ ...validCategory, pinnedPostGroupId: 'znaiomstva' }).success, false, 'a slug is not an id');
+  assert.equal(createCategorySchema.safeParse({ ...validCategory, pinnedPostGroupId: '../x' }).success, false);
+  assert.equal(updateCategorySchema.safeParse({ pinnedPostGroupId: id }).success, true, 'the editor saves the pin without touching translations');
+  assert.equal(updateCategorySchema.safeParse({ pinnedPostGroupId: '' }).success, true, 'an empty string clears it');
+  assert.equal(updateCategorySchema.safeParse({ pinnedPostGroupId: 'nope' }).success, false);
+});
+
+test('the admin post list filters by category id', () => {
+  const id = '2f1f9f2c-6d3f-4d7c-8f5f-1c3b5a9d0e11';
+  assert.equal(adminListQuerySchema.parse({ category: id }).category, id);
+  assert.equal(adminListQuerySchema.parse({}).category, undefined);
+  for (const value of ['znaiomstva', 'nope', '']) {
+    assert.equal(adminListQuerySchema.safeParse({ category: value }).success, false, `"${value}" was accepted`);
+  }
 });
 
 test('publishing requires an audit reason', () => {

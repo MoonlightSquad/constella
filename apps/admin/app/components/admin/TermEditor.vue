@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BlogLocale } from '~/types/blog';
-import type { TermDraft, TermKind } from '~/utils/term-draft';
+import type { PillarOption, TermDraft, TermKind } from '~/utils/term-draft';
 import { TERM_LOCALES } from '~/utils/term-draft';
 import { isSlugShape, slugifyTitle } from '~/utils/slug.mjs';
 
@@ -10,6 +10,8 @@ const props = defineProps<{
   locale: BlogLocale;
   /** Локалі, що вже є в базі; решта вкладок — «додати переклад». */
   existing: BlogLocale[];
+  /** Статті категорії для pillar-вибору; для тегів не передається. */
+  pillarOptions?: PillarOption[];
   saving?: boolean;
   error?: string;
   savedAt?: string | null;
@@ -52,6 +54,16 @@ const syncSlug = () => {
 };
 
 const archiveUrl = computed(() => publicArchiveUrl(props.kind, props.locale, slot.value.slug));
+
+/**
+ * Pin може посилатися на статтю поза цим списком (категорію щойно переповнили, або ліміт
+ * вибірки), тому select показує окремий варіант замість того, щоб мовчки малювати
+ * «без pillar» і зберегти очищення випадково.
+ */
+const pinnedOutside = computed(() => {
+  const id = props.draft.pinnedPostGroupId;
+  return id && !(props.pillarOptions ?? []).some((option) => option.groupId === id) ? id : '';
+});
 </script>
 
 <template>
@@ -134,6 +146,22 @@ const archiveUrl = computed(() => publicArchiveUrl(props.kind, props.locale, slo
           </div>
           <p v-else class="adm__hint">Новий переклад — додай назву й slug, потім збережи.</p>
         </template>
+      </div>
+
+      <div v-if="kind === 'category' && (pillarOptions?.length || pinnedOutside)" class="adm__panel" style="margin-top: 18px">
+        <h2>Почати тут (pillar)</h2>
+        <p class="adm__hint" style="margin: 8px 0 12px">
+          Одна стаття, з якої радимо почати читати категорію. Архів показує її лише в тих мовах,
+          де стаття опублікована, — решта мов побачять звичайну сітку.
+        </p>
+        <label class="adm__label" for="term-pillar">Стаття категорії</label>
+        <select id="term-pillar" v-model="draft.pinnedPostGroupId" class="adm__input">
+          <option value="">— без pillar —</option>
+          <option v-if="pinnedOutside" :value="pinnedOutside">Поточна pillar — поза цим списком</option>
+          <option v-for="option in pillarOptions" :key="option.groupId" :value="option.groupId">
+            {{ option.label }}{{ option.publishedLocales.length ? ` · ${option.publishedLocales.join(', ')}` : ' · чернетка' }}
+          </option>
+        </select>
       </div>
     </div>
 
