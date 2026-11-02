@@ -6,6 +6,9 @@
 .cache
 dist
 
+# Copied from node_modules by scripts/og-assets.mjs before every build
+server/assets/og/
+
 # Node dependencies
 node_modules
 

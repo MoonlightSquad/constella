@@ -47,7 +47,13 @@ const hreflangOf = (code: BlogLocale) => locales.value.find((item) => item.code 
 const headline = computed(() => post.value?.seoTitle || post.value?.title || '');
 const summary = computed(() => post.value?.seoDescription || post.value?.excerpt || '');
 const canonical = computed(() => post.value?.canonicalUrl || `${siteUrl}${route.path}`);
-const picture = computed(() => post.value?.ogImageUrl || post.value?.coverUrl || `${siteUrl}/og/default.png`);
+// A card per article per language, drawn by nitro from this row's own text. The editor's own
+// upload still wins, and a cover photo still wins over the generated card.
+const picture = computed(() =>
+  post.value?.ogImageUrl ||
+  post.value?.coverUrl ||
+  `${siteUrl}/api/og?kind=post&slug=${encodeURIComponent(slug.value)}&locale=${locale.value}`,
+);
 const primary = computed(() => translations.value.find((item) => item.locale === 'uk') ?? translations.value[0]);
 
 useSeoMeta({

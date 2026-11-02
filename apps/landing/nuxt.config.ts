@@ -118,7 +118,14 @@ export default defineNuxtConfig({
       // Blog URLs come from the database, so the crawler must not stop on them:
       // they are rendered on demand and served through ISR instead. The feed is
       // linked from every blog page, and a build-time snapshot would freeze it.
-      ignore: [...blogPaths, '/feed/**', '/api/newsletter'],
+      // /api/og is the same story in image form — one card per published row, drawn on demand.
+      ignore: [...blogPaths, '/feed/**', '/api/**'],
+    },
+    vercel: {
+      // satori lays out the card and resvg rasterises it on the CPU; the 10-second function
+      // ceiling is for a cold lambda, not for a warm one, and a truncated render would only
+      // ever be served as the fallback card.
+      functions: { 'api/og': { maxDuration: 10 } },
     },
   },
 

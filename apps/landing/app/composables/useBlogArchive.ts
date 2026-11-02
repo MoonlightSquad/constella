@@ -74,7 +74,8 @@ export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, 
     ogTitle: headline,
     ogDescription: summary,
     ogType: 'website',
-    ogImage: `${siteUrl}/og/default.png`,
+    // The term's own name is database content, so the card needs no copy this page has to keep in sync.
+    ogImage: `${siteUrl}/api/og?kind=${kind}&slug=${encodeURIComponent(term.slug)}&locale=${locale.value}`,
     ogUrl: canonical,
     twitterCard: 'summary_large_image',
   });
