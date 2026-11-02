@@ -175,6 +175,14 @@
     "rss": "RSS feed",
     "backToBlog": "Back to the blog",
     "related": "Keep reading",
+    "newsletter": {
+      "title": "Constella newsletter",
+      "label": "Email address",
+      "cta": "Subscribe",
+      "consent": "New articles only. Unsubscribe in one click.",
+      "ok": "Check your inbox — we sent a confirmation link.",
+      "error": "Could not subscribe. Check the address and try again."
+    },
     "toc": "Contents",
     "teaserBadge": "News",
     "teaserTitle": "What’s new at Constella",

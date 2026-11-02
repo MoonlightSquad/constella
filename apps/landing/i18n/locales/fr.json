@@ -175,6 +175,14 @@
     "rss": "Flux RSS",
     "backToBlog": "Retour au blog",
     "related": "À lire aussi",
+    "newsletter": {
+      "title": "Newsletter Constella",
+      "label": "Adresse e-mail",
+      "cta": "S'abonner",
+      "consent": "Uniquement les nouveaux articles. Désabonnement en un clic.",
+      "ok": "Vérifiez votre boîte mail : nous avons envoyé un lien de confirmation.",
+      "error": "Inscription impossible. Vérifiez l'adresse et réessayez."
+    },
     "toc": "Sommaire",
     "teaserBadge": "Nouveautés",
     "teaserTitle": "Les nouveautés de Constella",

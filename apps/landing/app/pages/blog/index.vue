@@ -52,10 +52,6 @@ useSeoMeta({
   twitterCard: 'summary_large_image',
 });
 
-useHead(() => ({
-  link: [{ rel: 'alternate', type: 'application/rss+xml', title: t('blog.rss'), href: `${siteUrl}/feed/${locale.value}.xml` }],
-}));
-
 useJsonLd(() => ({
   '@context': 'https://schema.org',
   '@type': 'CollectionPage',

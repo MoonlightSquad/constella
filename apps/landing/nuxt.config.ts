@@ -38,12 +38,23 @@ export default defineNuxtConfig({
     // Server-side only: the browser never talks to the API directly, so the
     // production CORS allowlist (single origin) never applies to landing data.
     apiInternalBase: process.env.NUXT_API_INTERNAL_BASE || process.env.API_INTERNAL_URL || '',
+    // Server-side only as well: a `public.` prefix here would ship the ESP token to
+    // every visitor. Without token and group the subscribe form stays a polite 503.
+    esp: {
+      apiToken: process.env.NUXT_ESP_API_TOKEN || '',
+      groupId: process.env.NUXT_ESP_GROUP_ID || '',
+      baseUrl: process.env.NUXT_ESP_BASE_URL || 'https://connect.mailerlite.com/api',
+    },
     public: {
       siteUrl,
       // The funnelled-to app host. `app-test` is retired and answers 404, so an unset
       // NUXT_PUBLIC_APP_URL must not fall back to it.
       appUrl: process.env.NUXT_PUBLIC_APP_URL || 'https://app.constella.pp.ua',
       telegramBotUsername: process.env.NUXT_PUBLIC_BOT_USERNAME || process.env.BOT_USERNAME || '',
+      // Empty domain means no script tag at all: analytics has to be switchable per
+      // deployment without a code change, and a stub that throws is worse than none.
+      plausibleDomain: process.env.NUXT_PUBLIC_PLAUSIBLE_DOMAIN || '',
+      plausibleHost: process.env.NUXT_PUBLIC_PLAUSIBLE_HOST || 'https://plausible.io',
     },
   },
 
@@ -107,7 +118,7 @@ export default defineNuxtConfig({
       // Blog URLs come from the database, so the crawler must not stop on them:
       // they are rendered on demand and served through ISR instead. The feed is
       // linked from every blog page, and a build-time snapshot would freeze it.
-      ignore: [...blogPaths, '/feed/**'],
+      ignore: [...blogPaths, '/feed/**', '/api/newsletter'],
     },
   },
 

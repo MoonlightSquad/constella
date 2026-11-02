@@ -193,6 +193,7 @@ useBreadcrumbList(() => crumbs.value);
         </li>
       </ul>
       <NuxtLink class="btn btn-ghost" :to="localePath('/blog')">{{ $t('blog.backToBlog') }}</NuxtLink>
+      <NewsletterForm class="post-foot__news" placement="article" />
     </footer>
   </article>
 </template>

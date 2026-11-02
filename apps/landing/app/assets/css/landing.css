@@ -492,6 +492,31 @@
 .related { max-width: 760px; margin: 44px auto 0; }
 .related__title { font-size: 21px; font-weight: 750; margin-bottom: 14px; }
 .related__posts { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.newsletter { display: flex; flex-direction: column; gap: 8px; }
+.newsletter__title { font-size: 15px; font-weight: 750; }
+.newsletter__label { font-size: 13px; color: var(--fg-muted-2); }
+.newsletter__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.newsletter__input {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-500);
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+}
+.newsletter__input:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
+.newsletter__hint { color: var(--fg-muted-2); font-size: 12.5px; }
+.newsletter__result { font-size: 13px; }
+.newsletter__result--ok { color: var(--success-fg); }
+.newsletter__result--error { color: var(--danger); }
+/* Off-screen but still in the DOM: display:none would tell a bot the field is optional bait. */
+.newsletter__trap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.site-footer__news { max-width: 340px; }
+.post-foot__news { width: 100%; margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--hairline); }
 
 .toc {
   max-width: 760px;

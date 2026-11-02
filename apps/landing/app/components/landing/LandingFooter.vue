@@ -38,6 +38,8 @@ const topCategories = computed(() => (categories.value?.items ?? []).slice(0, 4)
             {{ category.name }}
           </NuxtLink>
         </nav>
+
+        <NewsletterForm class="site-footer__news" placement="footer" />
       </div>
 
       <div class="site-footer__legal">

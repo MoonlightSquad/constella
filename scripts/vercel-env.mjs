@@ -170,6 +170,13 @@ const projects = {
       NUXT_API_INTERNAL_BASE: { value: apiUrl, required: true },
       NUXT_PUBLIC_APP_URL: { value: funnelUrl, required: true },
       NUXT_PUBLIC_BOT_USERNAME: { value: landingBotUsername, required: true },
+      // Optional by design: no Plausible domain means no script tag at all, and without the
+      // ESP pair the subscribe form answers 503 instead of failing the deployment.
+      NUXT_PUBLIC_PLAUSIBLE_DOMAIN: {},
+      NUXT_PUBLIC_PLAUSIBLE_HOST: {},
+      NUXT_ESP_API_TOKEN: {},
+      NUXT_ESP_GROUP_ID: {},
+      NUXT_ESP_BASE_URL: {},
     },
   },
   admin: {
