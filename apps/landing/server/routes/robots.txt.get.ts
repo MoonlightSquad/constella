@@ -5,6 +5,6 @@ export default eventHandler((event) => {
   return `User-agent: *
 Disallow: /api/
 
-Sitemap: ${siteUrl}/sitemap_index.xml
+Sitemap: ${siteUrl}/sitemap.xml
 `;
 });
