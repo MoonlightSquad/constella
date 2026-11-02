@@ -39,6 +39,17 @@ const httpUrl = (label: string) =>
     }
   }, `${label} must be an absolute http(s) URL`);
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * Comma-separated ids in a single query parameter, which is what a URL can carry.
+ */
+const idList = (max: number) =>
+  z
+    .string()
+    .transform((raw) => raw.split(',').map((id) => id.trim()).filter(Boolean))
+    .refine((ids) => ids.length >= 1 && ids.length <= max, `expected 1-${max} comma-separated ids`)
+    .refine((ids) => ids.every((id) => UUID.test(id)), 'every id must be a uuid');
+
 /** `coverAlt` is enforced here rather than in the editor, so no client can skip it. */
 export const requireAltForCover = <T extends { coverUrl?: string | null; coverAlt?: string | null }>(value: T, ctx: z.RefinementCtx) => {
   if (value.coverUrl && !value.coverAlt?.trim()) {
@@ -189,6 +200,9 @@ export const publicListQuerySchema = z.object({
   locale: z.enum(BLOG_LOCALES).default('uk'),
   category: entitySlug.optional(),
   tag: entitySlug.optional(),
+  // Post *group* ids, not slugs: a group is language-independent, so an article already on
+  // the page stays excluded whatever locale the caller asks for.
+  exclude: idList(8).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(10),
   cursor: z.string().trim().max(200).optional(),
 });

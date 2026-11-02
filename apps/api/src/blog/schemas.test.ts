@@ -153,6 +153,15 @@ test('list query defaults and bounds', () => {
   assert.equal(publicListQuerySchema.safeParse({ category: '../x' }).success, false);
 });
 
+test('exclude splits a csv of group ids and nothing else', () => {
+  const id = '2f1f9f2c-6d3f-4d7c-8f5f-1c3b5a9d0e11';
+  assert.deepEqual(publicListQuerySchema.parse({ exclude: ` ${id} ,${id}` }).exclude, [id, id]);
+  assert.equal(publicListQuerySchema.parse({ exclude: id }).exclude?.length, 1);
+  for (const value of ['', ' ', `${id},${id},${id},${id},${id},${id},${id},${id},${id}`, 'not-a-uuid', id.slice(1)]) {
+    assert.equal(publicListQuerySchema.safeParse({ exclude: value }).success, false, `"${value}" was accepted`);
+  }
+});
+
 test('cursor round-trips and refuses garbage', () => {
   const publishedAt = new Date('2026-03-01T10:00:00.000Z');
   const id = '2f1f9f2c-6d3f-4d7c-8f5f-1c3b5a9d0e11';

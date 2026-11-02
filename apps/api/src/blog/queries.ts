@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, notInArray, or, sql } from 'drizzle-orm';
 import {
   adminAuditLogs,
   blogCategories,
@@ -194,6 +194,7 @@ export const listPublishedPosts = async (input: PublicListInput) => {
         tagId
           ? sql`EXISTS (SELECT 1 FROM blog_post_tags pt WHERE pt.post_group_id = ${blogPosts.groupId} AND pt.tag_id = ${tagId})`
           : undefined,
+        input.exclude?.length ? notInArray(blogPosts.groupId, input.exclude) : undefined,
         cursor
           ? sql`(${blogPosts.publishedAt}, ${blogPosts.id}) < (${cursor.publishedAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`
           : undefined,

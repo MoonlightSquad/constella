@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BlogLocale, BlogPost } from '~/types/blog';
+import type { BlogLocale, BlogPost, BlogPostSummary } from '~/types/blog';
 import type { Crumb } from '~/utils/json-ld';
 
 // The cluster of alternate links for a post comes from the database, not from the URL
@@ -18,6 +18,18 @@ const { data: post } = await useFetch<BlogPost>('/api/blog/post', {
 });
 
 if (!post.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
+
+// Three more articles from the same shelf, never this one: `exclude` is the group id, so the
+// filter survives the locale switch. No category means the newest three instead.
+const { data: relatedFeed } = await useFetch<{ items: BlogPostSummary[] }>('/api/blog/posts', {
+  query: computed(() => ({
+    locale: locale.value,
+    limit: 3,
+    category: post.value?.categories[0]?.slug ?? '',
+    exclude: post.value?.groupId ?? '',
+  })),
+});
+const related = computed(() => relatedFeed.value?.items ?? []);
 
 const translations = computed(() => post.value?.alternates ?? []);
 /** `/blog/<slug>` is the default locale; the other three carry their prefix. */
@@ -156,6 +168,23 @@ useBreadcrumbList(() => crumbs.value);
     <!-- Rendered on the server with markdown-it html:false: raw HTML in a post body is
          escaped there, so this is the only place markup is trusted. -->
     <div class="prose" v-html="post?.html" />
+
+    <section v-if="related.length" class="related">
+      <h2 class="related__title">{{ $t('blog.related') }}</h2>
+      <div class="related__posts">
+        <article v-for="item in related" :key="item.id" class="post-card">
+          <h3 class="post-card__title">
+            <NuxtLink :to="localePath(`/blog/${item.slug}`)">{{ item.title }}</NuxtLink>
+          </h3>
+          <p class="post-card__excerpt">{{ item.excerpt }}</p>
+          <p class="post-card__meta">
+            <time v-if="item.publishedAt" :datetime="item.publishedAt">{{ formatDate(item.publishedAt, language) }}</time>
+            <span aria-hidden="true">·</span>
+            <span>{{ item.readingMinutes }} {{ $t('blog.minutes') }}</span>
+          </p>
+        </article>
+      </div>
+    </section>
 
     <footer class="post-foot">
       <ul v-if="post?.tags.length" class="tag-row">

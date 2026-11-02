@@ -94,7 +94,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/posts',
-    { schema: { tags: ['Blog'], summary: 'List published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] }, category: { type: 'string' }, tag: { type: 'string' }, limit: { type: 'integer' }, cursor: { type: 'string' } } } }, config: PUBLIC_READ_LIMIT },
+    { schema: { tags: ['Blog'], summary: 'List published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] }, category: { type: 'string' }, tag: { type: 'string' }, exclude: { type: 'string', description: 'Comma-separated post group ids (1-8) to leave out' }, limit: { type: 'integer' }, cursor: { type: 'string' } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const parsed = publicListQuerySchema.safeParse(request.query);
       if (!parsed.success) return badRequest(reply, parsed.error);
