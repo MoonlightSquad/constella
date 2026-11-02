@@ -1,5 +1,9 @@
 const siteUrl = process.env.NUXT_PUBLIC_SITE_URL || 'https://constella.pp.ua';
 
+// Neither a route rule nor a prerender `ignore` matches a locale-prefixed path, so '/blog/**'
+// alone lets the crawler bake /de/blog at build time and freeze that index until the next deploy.
+const blogPaths = ['', '/en', '/de', '/fr'].flatMap((prefix) => [`${prefix}/blog`, `${prefix}/blog/**`]);
+
 export default defineNuxtConfig({
   ssr: true,
   compatibilityDate: '2025-06-01',
@@ -88,8 +92,7 @@ export default defineNuxtConfig({
     '/fr': { prerender: true },
     '/legal/**': { prerender: true },
     // ISR on Vercel; ignored by the node server preset, where it is plain SSR.
-    '/blog': { isr: 60 },
-    '/blog/**': { isr: 60 },
+    ...Object.fromEntries(blogPaths.map((path) => [path, { isr: 60 }])),
     '/feed/**': { isr: 600 },
     '/_nuxt/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
     '/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
@@ -102,7 +105,7 @@ export default defineNuxtConfig({
       // Blog URLs come from the database, so the crawler must not stop on them:
       // they are rendered on demand and served through ISR instead. The feed is
       // linked from every blog page, and a build-time snapshot would freeze it.
-      ignore: ['/blog', '/blog/**', '/feed/**'],
+      ignore: [...blogPaths, '/feed/**'],
     },
   },
 

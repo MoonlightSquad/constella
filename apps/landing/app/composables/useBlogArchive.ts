@@ -1,3 +1,4 @@
+import type { Crumb } from '~/utils/json-ld';
 import type { BlogLocale, BlogPostSummary, TermAlternate } from '~/types/blog';
 
 /** Те, що повертають `/api/blog/category` і `/api/blog/tag`. */
@@ -86,6 +87,14 @@ export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, 
     ],
   }));
 
+  // Остання крихта — сам архів, тому без шляху: його @id уже несе CollectionPage вище.
+  const crumbs = computed<Crumb[]>(() => [
+    { name: t('blog.crumbs.home'), path: localePath('/') },
+    { name: t('blog.crumbs.blog'), path: localePath('/blog') },
+    { name: term.name },
+  ]);
+  useBreadcrumbList(() => crumbs.value);
+
   useJsonLd(() => ({
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
@@ -105,5 +114,5 @@ export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, 
     },
   }));
 
-  return { pathFor };
+  return { pathFor, crumbs };
 };

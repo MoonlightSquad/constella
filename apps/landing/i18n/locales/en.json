@@ -159,6 +159,11 @@
   "blog":   {
     "title": "Blog",
     "subtitle": "What changes in the product and how to date safely.",
+    "crumbs": {
+      "aria": "Breadcrumb",
+      "home": "Home",
+      "blog": "Blog"
+    },
     "categories": "Categories",
     "inCategory": "Category",
     "archiveBlurb": "the latest articles in this Constella blog archive",

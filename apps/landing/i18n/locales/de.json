@@ -159,6 +159,11 @@
   "blog":   {
     "title": "Blog",
     "subtitle": "Was sich im Produkt ändert und wie du sicher daten kannst.",
+    "crumbs": {
+      "aria": "Brotkrümelnavigation",
+      "home": "Startseite",
+      "blog": "Blog"
+    },
     "categories": "Kategorien",
     "inCategory": "Kategorie",
     "archiveBlurb": "die neuesten Artikel in diesem Constella-Blogarchiv",

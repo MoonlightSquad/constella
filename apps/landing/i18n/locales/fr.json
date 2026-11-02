@@ -159,6 +159,11 @@
   "blog":   {
     "title": "Blog",
     "subtitle": "Les nouveautés du produit et les conseils pour des rencontres sûres.",
+    "crumbs": {
+      "aria": "Fil d’Ariane",
+      "home": "Accueil",
+      "blog": "Blog"
+    },
     "categories": "Catégories",
     "inCategory": "Catégorie",
     "archiveBlurb": "les derniers articles de cette archive du blog Constella",

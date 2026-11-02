@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BlogLocale, BlogPost } from '~/types/blog';
+import type { Crumb } from '~/utils/json-ld';
 
 // The cluster of alternate links for a post comes from the database, not from the URL
 // prefix, so this page claims it (see useSeoAlternates and app.vue).
@@ -98,14 +99,24 @@ useJsonLd(() => {
 
 const contents = computed(() => post.value?.toc ?? []);
 const showContents = computed(() => contents.value.length >= 3);
+
+/** Шляхи вже локалізовані: і для навігації, і для `item` у JSON-LD один і той самий рядок. */
+const crumbs = computed<Crumb[]>(() => {
+  const category = post.value?.categories[0];
+  return [
+    { name: t('blog.crumbs.home'), path: localePath('/') },
+    { name: t('blog.crumbs.blog'), path: localePath('/blog') },
+    ...(category ? [{ name: category.name, path: localePath(`/blog/category/${category.slug}`) }] : []),
+    { name: post.value?.title ?? '' },
+  ];
+});
+useBreadcrumbList(() => crumbs.value);
 </script>
 
 <template>
   <article class="section shell">
     <header class="post-head">
-      <NuxtLink class="post-head__back" :to="localePath('/blog')">
-        ← {{ $t('blog.backToBlog') }}
-      </NuxtLink>
+      <Breadcrumbs :crumbs="crumbs" />
       <h1 class="section-title">{{ post?.title }}</h1>
       <p v-if="post?.categories.length" class="post-head__cats">
         <span class="post-head__cats-label">{{ $t('blog.inCategory') }}:</span>

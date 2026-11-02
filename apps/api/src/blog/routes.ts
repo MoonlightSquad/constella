@@ -57,6 +57,10 @@ const UUID_PARAM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // Public blog reads are served by the landing's server, never by a browser, so a short
 // shared-cache TTL is enough to keep ISR cheap without stale drafts.
 const PUBLIC_CACHE = 'public, s-maxage=60, stale-while-revalidate=300';
+// The landing's serverless reads arrive from a handful of CDN egress IPs, so one visitor is
+// many requests per minute from the same address. Public reads are cheap and cacheable; they
+// must not share the global browser-facing budget.
+const PUBLIC_READ_LIMIT = { rateLimit: { max: Number(process.env.BLOG_RATE_LIMIT_MAX) || 600, timeWindow: '1 minute' } };
 
 const badRequest = (reply: FastifyReply, error: z.ZodError) => {
   const first = error.issues[0];
@@ -90,7 +94,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/posts',
-    { schema: { tags: ['Blog'], summary: 'List published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] }, category: { type: 'string' }, tag: { type: 'string' }, limit: { type: 'integer' }, cursor: { type: 'string' } } } } },
+    { schema: { tags: ['Blog'], summary: 'List published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] }, category: { type: 'string' }, tag: { type: 'string' }, limit: { type: 'integer' }, cursor: { type: 'string' } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const parsed = publicListQuerySchema.safeParse(request.query);
       if (!parsed.success) return badRequest(reply, parsed.error);
@@ -105,7 +109,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/posts/:slug',
-    { schema: { tags: ['Blog'], summary: 'Read one published post with its hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } } },
+    { schema: { tags: ['Blog'], summary: 'Read one published post with its hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const { slug } = parseParams(routeParams, request.params);
       const parsed = publicPostQuerySchema.safeParse(request.query);
@@ -124,7 +128,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/categories',
-    { schema: { tags: ['Blog'], summary: 'Categories with published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } } },
+    { schema: { tags: ['Blog'], summary: 'Categories with published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const parsed = publicPostQuerySchema.safeParse(request.query);
       if (!parsed.success) return badRequest(reply, parsed.error);
@@ -139,7 +143,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/categories/:slug',
-    { schema: { tags: ['Blog'], summary: 'One category with its hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } } },
+    { schema: { tags: ['Blog'], summary: 'One category with its hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const { slug } = parseParams(routeParams, request.params);
       const parsed = publicPostQuerySchema.safeParse(request.query);
@@ -158,7 +162,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/tags',
-    { schema: { tags: ['Blog'], summary: 'Tags with published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } } },
+    { schema: { tags: ['Blog'], summary: 'Tags with published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const parsed = publicPostQuerySchema.safeParse(request.query);
       if (!parsed.success) return badRequest(reply, parsed.error);
@@ -173,7 +177,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/tags/:slug',
-    { schema: { tags: ['Blog'], summary: 'One tag with its hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } } },
+    { schema: { tags: ['Blog'], summary: 'One tag with its hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const { slug } = parseParams(routeParams, request.params);
       const parsed = publicPostQuerySchema.safeParse(request.query);
@@ -193,7 +197,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
   // Consumed by the landing's sitemap and RSS generators, which need every locale at once.
   fastify.get(
     '/blog/sitemap',
-    { schema: { tags: ['Blog'], summary: 'Every published post in every language', querystring: { type: 'object', properties: {} } } },
+    { schema: { tags: ['Blog'], summary: 'Every published post in every language', querystring: { type: 'object', properties: {} } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       try {
         reply.headers({ 'cache-control': PUBLIC_CACHE });
@@ -207,7 +211,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
   // Архівні URL категорій/тегів для sitemap лендінгу: один рядок на (термін, мову).
   fastify.get(
     '/blog/sitemap/taxonomy',
-    { schema: { tags: ['Blog'], summary: 'Every taxonomy term with published posts, all languages', querystring: { type: 'object', properties: {} } } },
+    { schema: { tags: ['Blog'], summary: 'Every taxonomy term with published posts, all languages', querystring: { type: 'object', properties: {} } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       try {
         reply.headers({ 'cache-control': PUBLIC_CACHE });

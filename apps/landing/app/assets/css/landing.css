@@ -400,6 +400,8 @@
 .site-footer__desc { margin-top: 10px; color: var(--fg-muted); font-size: 14px; }
 .site-footer__links { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; color: var(--fg-muted-2); }
 .site-footer__links a:hover { color: var(--fg); text-decoration: underline; }
+.site-footer__cats { display: grid; gap: 8px; font-size: 14px; color: var(--fg-muted-2); }
+.site-footer__cats a:hover { color: var(--fg); text-decoration: underline; }
 .site-footer__legal { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--fg-muted); }
 .site-footer__adult {
   display: inline-flex;
@@ -472,9 +474,13 @@
 .posts__feed { margin-inline-start: auto; color: var(--fg-muted); font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px; }
 .posts__feed:hover { color: var(--mint-2); }
 
+.crumbs { margin-bottom: 16px; color: var(--fg-muted-2); font-size: 13px; }
+.crumbs ol { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.crumbs li:not(:last-child)::after { content: "›"; margin-inline-start: 6px; }
+.crumbs a { color: var(--fg-muted); }
+.crumbs a:hover { color: var(--mint-2); }
+
 .post-head { max-width: 760px; margin-inline: auto; }
-.post-head__back { color: var(--fg-muted); font-size: 14px; }
-.post-head__back:hover { color: var(--mint-2); }
 .post-head__cats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; font-size: 13px; color: var(--fg-muted-2); }
 .post-head__cats-label { margin-inline-end: 2px; }
 .post-head__meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: var(--fg-muted-2); font-size: 13px; }

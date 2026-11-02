@@ -1,6 +1,18 @@
 <script setup lang="ts">
+import type { BlogCategory } from '~/types/blog';
+
 const { bot } = useSiteLinks();
 const localePath = useLocalePath();
+const { locale } = useI18n();
+
+// `/api/blog/categories` swallows an unreachable upstream as an empty list, so a prerendered
+// page bakes a footer without categories instead of failing the build.
+const { data: categories } = await useFetch<{ items: BlogCategory[] }>('/api/blog/categories', {
+  query: computed(() => ({ locale: locale.value })),
+  default: () => ({ items: [] }),
+});
+// Upstream sorts by published-post count, so this is the fattest section of the archive.
+const topCategories = computed(() => (categories.value?.items ?? []).slice(0, 4));
 </script>
 
 <template>
@@ -15,10 +27,16 @@ const localePath = useLocalePath();
           <p class="site-footer__desc">{{ $t('landing.footer.brandDesc') }}</p>
         </div>
 
-        <nav class="site-footer__links" :aria-label="$t('landing.nav.faq')">
+        <nav class="site-footer__links" :aria-label="$t('landing.nav.blog')">
           <a :href="bot" rel="noopener noreferrer">{{ $t('landing.nav.openBot') }}</a>
           <a :href="localePath('/blog')">{{ $t('landing.nav.blog') }}</a>
           <a :href="localePath('/') + '#pricing'">{{ $t('landing.nav.pricing') }}</a>
+        </nav>
+
+        <nav v-if="topCategories.length" class="site-footer__cats" :aria-label="$t('blog.categories')">
+          <NuxtLink v-for="category in topCategories" :key="category.id" :to="localePath(`/blog/category/${category.slug}`)">
+            {{ category.name }}
+          </NuxtLink>
         </nav>
       </div>
 
