@@ -8,6 +8,7 @@ import {
   deletePost,
   getPostForAdmin,
   getPublishedPost,
+  getPublicAuthor,
   getPublicCategory,
   getPublicTag,
   isUniqueViolation,
@@ -21,6 +22,13 @@ import {
   updatePost,
 } from './queries.js';
 import {
+  createAuthor,
+  deleteAuthor,
+  getAuthorForAdmin,
+  listAuthorsForAdmin,
+  updateAuthor,
+} from './authors.js';
+import {
   createCategory,
   createTag,
   deleteCategory,
@@ -32,12 +40,22 @@ import {
   updateCategory,
   updateTag,
 } from './taxonomy.js';
-import { createCoverUpload, isBlogCoverStorageConfigured, processCoverUpload, removeCoverObjects } from './storage.js';
+import {
+  avatarKeyFromUrl,
+  createAvatarUpload,
+  createCoverUpload,
+  isBlogCoverStorageConfigured,
+  processAvatarUpload,
+  processCoverUpload,
+  removeAvatarObjects,
+  removeCoverObjects,
+} from './storage.js';
 import {
   adminListQuerySchema,
   adminTermListQuerySchema,
   coverConfirmSchema,
   coverUploadSchema,
+  createAuthorSchema,
   createCategorySchema,
   createPostSchema,
   createTagSchema,
@@ -45,6 +63,7 @@ import {
   publicListQuerySchema,
   publicPostQuerySchema,
   translationSchema,
+  updateAuthorSchema,
   updateCategorySchema,
   updatePostSchema,
   updateTagSchema,
@@ -67,11 +86,11 @@ const badRequest = (reply: FastifyReply, error: z.ZodError) => {
   return reply.status(400).send({ error: first?.message ?? 'Invalid request.', path: first?.path });
 };
 
-const fail = async (request: FastifyRequest, reply: FastifyReply, error: unknown, noun: 'post' | 'category' | 'tag' = 'post') => {
+const fail = async (request: FastifyRequest, reply: FastifyReply, error: unknown, noun: 'post' | 'category' | 'tag' | 'author' = 'post') => {
   const statusCode = (error as { statusCode?: number })?.statusCode ?? 0;
   if (statusCode >= 400 && statusCode < 500) return reply.status(statusCode).send({ error: (error as Error).message });
   if (isUniqueViolation(error)) {
-    return reply.status(409).send({ error: `A ${noun} with this slug already exists in that language.` });
+    return reply.status(409).send({ error: `${noun === 'author' ? 'An' : 'A'} ${noun} with this slug already exists in that language.` });
   }
   request.log.error({ err: error }, 'Blog request failed.');
   return reply.status(500).send({ error: 'Blog storage is unavailable.' });
@@ -190,6 +209,27 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
         return tag;
       } catch (error) {
         return fail(request, reply, error, 'tag');
+      }
+    },
+  );
+
+  // Профіль автора: `/blog/author/<slug>` лендінгу. Порожній архів — 404, як і терміни,
+  // бо людина без опублікованої статті не має про що розповідати індексу.
+  fastify.get(
+    '/blog/authors/:slug',
+    { schema: { tags: ['Blog'], summary: 'One author with their published posts and hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
+    async (request, reply) => {
+      const { slug } = parseParams(routeParams, request.params);
+      const parsed = publicPostQuerySchema.safeParse(request.query);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      if (!SLUG_PARAM.test(slug)) return reply.status(404).send({ error: 'Author not found.' });
+      try {
+        const author = await getPublicAuthor(slug, parsed.data.locale);
+        if (!author) return reply.status(404).send({ error: 'Author not found.' });
+        reply.headers({ 'cache-control': PUBLIC_CACHE });
+        return author;
+      } catch (error) {
+        return fail(request, reply, error, 'author');
       }
     },
   );
@@ -484,6 +524,149 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   registerTermAdminRoutes('categories');
   registerTermAdminRoutes('tags');
+
+  // Автор — не термін: у нього власні поля сутності (аватар, sameAs), тому CRUD окремо,
+  // а не третя гілка в фабриці категорій/тегів.
+  fastify.get(
+    '/blog/admin/authors',
+    { schema: { tags: ['Blog'], summary: 'List authors with translations and post counts', security: [{ bearerAuth: [] }] } },
+    async (request, reply) => {
+      const claims = await admin(request, reply);
+      if (!claims) return reply;
+      const parsed = adminTermListQuerySchema.safeParse(request.query);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      try {
+        reply.headers({ 'cache-control': 'no-store' });
+        return await listAuthorsForAdmin(parsed.data);
+      } catch (error) {
+        return fail(request, reply, error, 'author');
+      }
+    },
+  );
+
+  fastify.get(
+    '/blog/admin/authors/:id',
+    { schema: { tags: ['Blog'], summary: 'Read one author with all translations', security: [{ bearerAuth: [] }] } },
+    async (request, reply) => {
+      const claims = await admin(request, reply);
+      if (!claims) return reply;
+      const { id } = parseParams(postIdParams, request.params);
+      if (!UUID_PARAM.test(id)) return reply.status(404).send({ error: 'Author not found.' });
+      try {
+        reply.headers({ 'cache-control': 'no-store' });
+        const author = await getAuthorForAdmin(id);
+        if (!author) return reply.status(404).send({ error: 'Author not found.' });
+        return author;
+      } catch (error) {
+        return fail(request, reply, error, 'author');
+      }
+    },
+  );
+
+  fastify.post(
+    '/blog/admin/authors',
+    {
+      schema: { tags: ['Blog'], summary: 'Create an author with its translations', security: [{ bearerAuth: [] }] },
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const claims = await admin(request, reply);
+      if (!claims) return reply;
+      const parsed = createAuthorSchema.safeParse(request.body);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      try {
+        return reply.status(201).send(await createAuthor(parsed.data, claims.id));
+      } catch (error) {
+        return fail(request, reply, error, 'author');
+      }
+    },
+  );
+
+  fastify.patch(
+    '/blog/admin/authors/:id',
+    {
+      schema: { tags: ['Blog'], summary: 'Upsert or remove translations of an author', security: [{ bearerAuth: [] }] },
+      config: { rateLimit: { max: 240, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const claims = await admin(request, reply);
+      if (!claims) return reply;
+      const { id } = parseParams(postIdParams, request.params);
+      if (!UUID_PARAM.test(id)) return reply.status(404).send({ error: 'Author not found.' });
+      const parsed = updateAuthorSchema.safeParse(request.body);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      try {
+        return await updateAuthor(id, parsed.data, claims.id);
+      } catch (error) {
+        return fail(request, reply, error, 'author');
+      }
+    },
+  );
+
+  // Статті лишаються: `blog_posts.author_id` має ON DELETE SET NULL, тому підпис повертається
+  // до `authorName`. З аватаром база не розбирається, тому файл прибираємо тут.
+  fastify.delete(
+    '/blog/admin/authors/:id',
+    { schema: { tags: ['Blog'], summary: 'Delete an author and detach it from every post', security: [{ bearerAuth: [] }] } },
+    async (request, reply) => {
+      const claims = await admin(request, reply);
+      if (!claims) return reply;
+      const { id } = parseParams(postIdParams, request.params);
+      if (!UUID_PARAM.test(id)) return reply.status(404).send({ error: 'Author not found.' });
+      try {
+        const author = await deleteAuthor(id, claims.id);
+        const avatarKey = avatarKeyFromUrl(author.avatarUrl);
+        if (avatarKey && isBlogCoverStorageConfigured()) await removeAvatarObjects([avatarKey]);
+        return { ok: true };
+      } catch (error) {
+        return fail(request, reply, error, 'author');
+      }
+    },
+  );
+
+  // Та сама staging-форма, що в обкладинок: спільний `blog/uploads` префікс, інший фінал (512×512).
+  fastify.post(
+    '/blog/admin/avatars',
+    {
+      schema: { tags: ['Blog'], summary: 'Signed PUT URL for an avatar upload', security: [{ bearerAuth: [] }] },
+      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const claims = await admin(request, reply);
+      if (!claims) return reply;
+      if (!isBlogCoverStorageConfigured()) return reply.status(503).send({ error: 'Avatar storage is not configured. Paste an image URL instead.' });
+      const parsed = coverUploadSchema.safeParse(request.body);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      try {
+        reply.headers({ 'cache-control': 'no-store' });
+        return await createAvatarUpload(claims.id, parsed.data.contentType);
+      } catch (error) {
+        return fail(request, reply, error);
+      }
+    },
+  );
+
+  fastify.post(
+    '/blog/admin/avatars/confirm',
+    {
+      schema: { tags: ['Blog'], summary: 'Normalise an uploaded avatar and return its public URL', security: [{ bearerAuth: [] }] },
+      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const claims = await admin(request, reply);
+      if (!claims) return reply;
+      if (!isBlogCoverStorageConfigured()) return reply.status(503).send({ error: 'Avatar storage is not configured.' });
+      const parsed = coverConfirmSchema.safeParse(request.body);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      try {
+        reply.headers({ 'cache-control': 'no-store' });
+        return await processAvatarUpload(claims.id, parsed.data.objectKey, parsed.data.contentType);
+      } catch (error) {
+        logger.warn('Avatar processing rejected.', { err: error, actorUserId: claims.id });
+        return reply.status(400).send({ error: 'The uploaded file is not a usable image.' });
+      }
+    },
+  );
 
   fastify.post(
     '/blog/admin/covers',

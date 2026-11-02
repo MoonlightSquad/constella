@@ -493,6 +493,24 @@
   .pillar { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
   .pillar__cover { order: 2; }
 }
+/* Профіль автора над власним архівом: фото, роль, біо. Шапка лишається й без аватара —
+   тоді це просто текст у тій самій рамці, а не діра в сітці. */
+.author {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(14px, 2vw, 22px);
+  align-items: center;
+  margin-bottom: 26px;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--surface-600);
+}
+.author__avatar { width: 88px; height: 88px; border-radius: 999px; object-fit: cover; }
+.author__body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.author__role { color: var(--gold-eyebrow); font-size: 13.5px; }
+.author__bio { max-width: 70ch; color: var(--fg-muted); font-size: 15px; }
+.author__links { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
 .posts__feed { margin-inline-start: auto; color: var(--fg-muted); font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px; }
 .posts__feed:hover { color: var(--mint-2); }
 
@@ -506,6 +524,9 @@
 .post-head__cats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; font-size: 13px; color: var(--fg-muted-2); }
 .post-head__cats-label { margin-inline-end: 2px; }
 .post-head__meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: var(--fg-muted-2); font-size: 13px; }
+/* Підпис-автор у мета-рядку є посиланням, але не повинен виглядати як окрема кнопка. */
+.post-head__meta a { color: var(--fg-muted); }
+.post-head__meta a:hover { color: var(--mint-2); }
 .post-head__excerpt { margin-top: 16px; color: var(--fg-muted); font-size: 16.5px; }
 .post-head__cover { width: 100%; height: auto; margin-top: 24px; border: 1px solid var(--hairline); border-radius: var(--r-md); }
 .post-foot { display: flex; flex-direction: column; gap: 18px; align-items: flex-start; max-width: 760px; margin: 36px auto 0; }

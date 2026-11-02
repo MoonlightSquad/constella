@@ -3,8 +3,10 @@ import test from 'node:test';
 import {
   MAX_BODY_CHARACTERS,
   MAX_CATEGORIES,
+  MAX_SAME_AS,
   MAX_TAGS,
   adminListQuerySchema,
+  createAuthorSchema,
   createCategorySchema,
   createPostSchema,
   createTagSchema,
@@ -13,6 +15,7 @@ import {
   estimateReadingMinutes,
   publicListQuerySchema,
   publishStatusSchema,
+  updateAuthorSchema,
   updateCategorySchema,
   updatePostSchema,
 } from './schemas.js';
@@ -35,6 +38,13 @@ const validTag = {
   locale: 'uk' as const,
   slug: 'dating',
   name: 'Знайомства',
+};
+
+// Плейсхолдер, а не вигадана людина: тесту потрібні лише межі полів.
+const validAuthor = {
+  locale: 'uk' as const,
+  slug: 'redaktorka',
+  name: 'Редакторка',
 };
 
 test('createPostSchema accepts a minimal draft and id-based taxonomy', () => {
@@ -67,7 +77,7 @@ test('Cyrillic and path-ish slugs are rejected instead of rewritten', () => {
 });
 
 test('taxonomy archive segments are reserved post slugs', () => {
-  for (const value of ['category', 'tag']) {
+  for (const value of ['category', 'tag', 'author']) {
     assert.equal(createPostSchema.safeParse({ ...validPost, slug: value }).success, false, `${value} must not parse`);
     assert.equal(updatePostSchema.safeParse({ slug: value }).success, false);
   }
@@ -156,6 +166,57 @@ test('the admin post list filters by category id', () => {
   for (const value of ['znaiomstva', 'nope', '']) {
     assert.equal(adminListQuerySchema.safeParse({ category: value }).success, false, `"${value}" was accepted`);
   }
+});
+
+test('createAuthorSchema keeps the category rules and adds the person fields', () => {
+  assert.equal(createAuthorSchema.safeParse(validAuthor).success, true);
+  assert.equal(createAuthorSchema.safeParse({ ...validAuthor, name: '' }).success, false);
+  assert.equal(
+    createAuthorSchema.safeParse({ ...validAuthor, translations: [{ locale: 'en', slug: 'editor', name: 'Editor' }] }).success,
+    true,
+  );
+  assert.equal(
+    createAuthorSchema.safeParse({ ...validAuthor, translations: [{ locale: 'uk', slug: 'editor', name: 'Editor' }] }).success,
+    false,
+    'primary locale must not repeat',
+  );
+  // Портрет без опису — це alt-текст порожній і в Telegram-превʼю, і в скрінрідері.
+  assert.equal(createAuthorSchema.safeParse({ ...validAuthor, avatarUrl: 'https://cdn.test/a.webp' }).success, false);
+  assert.equal(createAuthorSchema.safeParse({ ...validAuthor, avatarUrl: 'https://cdn.test/a.webp', avatarAlt: ' ' }).success, false);
+  assert.equal(createAuthorSchema.safeParse({ ...validAuthor, avatarUrl: 'https://cdn.test/a.webp', avatarAlt: 'Портрет' }).success, true);
+  assert.equal(createAuthorSchema.safeParse({ ...validAuthor, avatarUrl: '' }).success, true);
+});
+
+test('sameAs accepts profile URLs only and is capped', () => {
+  assert.equal(createAuthorSchema.safeParse({ ...validAuthor, sameAs: ['https://t.me/constella'] }).success, true);
+  for (const value of ['t.me/constella', 'javascript:alert(1)']) {
+    assert.equal(createAuthorSchema.safeParse({ ...validAuthor, sameAs: [value] }).success, false, value);
+  }
+  const many = Array.from({ length: MAX_SAME_AS + 1 }, (_, index) => `https://t.me/a${index}`);
+  assert.equal(createAuthorSchema.safeParse({ ...validAuthor, sameAs: many }).success, false);
+});
+
+test('updateAuthorSchema lets an avatar-only patch through', () => {
+  assert.equal(updateAuthorSchema.safeParse({}).success, false);
+  assert.equal(updateAuthorSchema.safeParse({ avatarAlt: 'Портрет' }).success, true, 'the editor saves the photo without touching translations');
+  assert.equal(updateAuthorSchema.safeParse({ avatarUrl: '' }).success, true, 'an empty string clears it');
+  assert.equal(updateAuthorSchema.safeParse({ avatarUrl: 'https://cdn.test/a.webp' }).success, false, 'avatarAlt is still required');
+  assert.equal(
+    updateAuthorSchema.safeParse({ translations: [{ locale: 'de' }, { locale: 'de' }] }).success,
+    false,
+    'duplicate locale must be rejected',
+  );
+});
+
+test('an author is a slug publicly, an id in the admin and both on the post row', () => {
+  const id = '2f1f9f2c-6d3f-4d7c-8f5f-1c3b5a9d0e11';
+  assert.equal(publicListQuerySchema.parse({ author: 'redaktorka' }).author, 'redaktorka');
+  assert.equal(publicListQuerySchema.safeParse({ author: 'has space' }).success, false);
+  assert.equal(adminListQuerySchema.parse({ author: id }).author, id);
+  assert.equal(adminListQuerySchema.safeParse({ author: 'redaktorka' }).success, false);
+  assert.equal(createPostSchema.safeParse({ ...validPost, authorId: id }).success, true);
+  assert.equal(createPostSchema.safeParse({ ...validPost, authorId: '' }).success, true, 'an empty string drops the signature');
+  assert.equal(createPostSchema.safeParse({ ...validPost, authorId: 'redaktorka' }).success, false);
 });
 
 test('publishing requires an audit reason', () => {

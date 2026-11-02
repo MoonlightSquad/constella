@@ -17,11 +17,15 @@ export const MAX_CATEGORIES = 3;
 export const MAX_TAGS = 8;
 export const MAX_CATEGORY_NAME = 120;
 export const MAX_TAG_NAME = 32;
+export const MAX_AUTHOR_NAME = 120;
+export const MAX_AUTHOR_ROLE = 120;
+export const MAX_AUTHOR_BIO = 1000;
+export const MAX_SAME_AS = 8;
 
-// `/blog/<slug>` is one segment, `/blog/category/…` and `/blog/tag/…` are two: a post
-// carrying either of these slugs could never be reached at the bare archive root,
+// `/blog/<slug>` is one segment, `/blog/category/…`, `/blog/tag/…` and `/blog/author/…` are
+// two: a post carrying either of these slugs could never be reached at the bare archive root,
 // so they are refused outright rather than shadowed.
-export const RESERVED_POST_SLUGS = new Set(['category', 'tag']);
+export const RESERVED_POST_SLUGS = new Set(['category', 'tag', 'author']);
 
 const markdown = z.string().min(1).max(MAX_BODY_CHARACTERS);
 const entitySlug = z.string().trim().min(1).max(200).refine((value) => SLUG_RE.test(value), 'slug must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/i');
@@ -29,6 +33,8 @@ const slug = entitySlug.refine((value) => !RESERVED_POST_SLUGS.has(value), 'slug
 const optionalText = (max: number) => z.string().trim().max(max).optional().transform((value) => value || undefined);
 // Patch variant: an empty string must survive the parse so `toNull` can clear the column.
 const optionalPatchText = (max: number) => z.string().trim().max(max).optional();
+/** Посилання на чужий рядок: uuid, або '' — «прибрати» (той самий жест, що й у текстових полях). */
+const optionalId = z.union([z.literal(''), z.string().uuid()]).optional();
 const httpUrl = (label: string) =>
   z.string().trim().max(2048).refine((value) => {
     if (!value) return true;
@@ -75,6 +81,10 @@ const contentFields = {
   seoTitle: optionalText(MAX_TITLE),
   seoDescription: optionalText(MAX_EXCERPT),
   authorName: optionalText(80),
+  // Автор-рядок (0016) і його підпис у тексті — різні речі: `authorId` ставлять людині,
+  // `authorName` лишається вільним рядком для тих, кого не підписали. Немодифіковане
+  // значення — `undefined`, зняття підпису — `''` (перетворюється на NULL у `toNull`).
+  authorId: optionalId,
   ...mediaFields,
 };
 
@@ -152,7 +162,7 @@ const termExtraTranslations = <T extends z.ZodTypeAny>(translation: T) =>
  * тому переклад архіву не може показати чужу «почати тут». `''` очищає pin (як `''` у полі
  * статті), відсутній ключ — без змін.
  */
-const pinnedPostGroupId = z.union([z.literal(''), z.string().uuid()]).optional();
+const pinnedPostGroupId = optionalId;
 
 export const createCategorySchema = z
   .object({
@@ -211,10 +221,90 @@ export const updateTagSchema = z
   .refine((value) => (value.translations?.length ?? 0) + (value.removeLocales?.length ?? 0) > 0, 'at least one translation must be provided')
   .superRefine((value, ctx) => noDuplicateLocales(value.translations ?? [], ctx, 'translations'));
 
+// Автор — ровно та сама форма, що категорія з 0015: одна сутність і переклад на мову.
+// Роль і біо пишуться мовою архіву (людину перекладають, а не транслітерують), тоді як
+// аватар і sameAs живуть на сутності: це одне фото й один набір профілів на всі чотири мови.
+const authorTranslationSchema = z.object({
+  locale: z.enum(BLOG_LOCALES),
+  slug: entitySlug,
+  name: z.string().trim().min(1).max(MAX_AUTHOR_NAME),
+  role: optionalText(MAX_AUTHOR_ROLE),
+  bio: optionalText(MAX_AUTHOR_BIO),
+  seoTitle: optionalText(MAX_TITLE),
+  seoDescription: optionalText(MAX_EXCERPT),
+});
+
+const authorTranslationPatchSchema = z.object({
+  locale: z.enum(BLOG_LOCALES),
+  slug: entitySlug.optional(),
+  name: z.string().trim().min(1).max(MAX_AUTHOR_NAME).optional(),
+  role: optionalPatchText(MAX_AUTHOR_ROLE),
+  bio: optionalPatchText(MAX_AUTHOR_BIO),
+  seoTitle: optionalPatchText(MAX_TITLE),
+  seoDescription: optionalPatchText(MAX_EXCERPT),
+});
+
+/** Портрет автора — та сама вимога, що й обкладинка статті: картинка без опису мовчить. */
+export const requireAltForAvatar = <T extends { avatarUrl?: string | null; avatarAlt?: string | null }>(value: T, ctx: z.RefinementCtx) => {
+  if (value.avatarUrl && !value.avatarAlt?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['avatarAlt'], message: 'avatarAlt is required when avatarUrl is set' });
+  }
+};
+
+const sameAsSchema = z.array(httpUrl('sameAs')).max(MAX_SAME_AS).optional();
+
+export const createAuthorSchema = z
+  .object({
+    locale: z.enum(BLOG_LOCALES),
+    slug: entitySlug,
+    name: z.string().trim().min(1).max(MAX_AUTHOR_NAME),
+    role: optionalText(MAX_AUTHOR_ROLE),
+    bio: optionalText(MAX_AUTHOR_BIO),
+    seoTitle: optionalText(MAX_TITLE),
+    seoDescription: optionalText(MAX_EXCERPT),
+    avatarUrl: httpUrl('avatarUrl').optional().or(z.literal('')),
+    avatarAlt: optionalText(200),
+    sameAs: sameAsSchema,
+    translations: termExtraTranslations(authorTranslationSchema),
+  })
+  .superRefine((value, ctx) => {
+    const extras = (value.translations ?? []).filter((t) => t.locale === value.locale);
+    if (extras.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['translations'], message: `primary locale '${value.locale}' must not repeat in translations` });
+    }
+    noDuplicateLocales(value.translations ?? [], ctx, 'translations');
+    requireAltForAvatar(value, ctx);
+  });
+
+export const updateAuthorSchema = z
+  .object({
+    avatarUrl: httpUrl('avatarUrl').optional().or(z.literal('')),
+    avatarAlt: optionalPatchText(200),
+    sameAs: sameAsSchema,
+    translations: z.array(authorTranslationPatchSchema).max(BLOG_LOCALES.length).optional(),
+    removeLocales: z.array(z.enum(BLOG_LOCALES)).max(BLOG_LOCALES.length).optional(),
+  })
+  // Аватар і профілі — не переклади: редактор має зберегти лише їх, інакше єдиний
+  // завантажений файл відбився б бідою «хоча б один переклад».
+  .refine(
+    (value) =>
+      (value.translations?.length ?? 0) + (value.removeLocales?.length ?? 0) > 0 ||
+      value.avatarUrl !== undefined ||
+      value.avatarAlt !== undefined ||
+      value.sameAs !== undefined,
+    'at least one translation or an author field must be provided',
+  )
+  .superRefine((value, ctx) => {
+    noDuplicateLocales(value.translations ?? [], ctx, 'translations');
+    requireAltForAvatar(value, ctx);
+  });
+
 export const publicListQuerySchema = z.object({
   locale: z.enum(BLOG_LOCALES).default('uk'),
   category: entitySlug.optional(),
   tag: entitySlug.optional(),
+  // Слаг автора з `blog_author_translations`, тобто локалізований — як у категорій і тегів.
+  author: entitySlug.optional(),
   // Post *group* ids, not slugs: a group is language-independent, so an article already on
   // the page stays excluded whatever locale the caller asks for.
   exclude: idList(8).optional(),
@@ -232,6 +322,7 @@ export const adminListQuerySchema = z.object({
   // Адмінка оперує id, а не локалізованими слагами: редактор обирає статтю для pillar
   // так само, як категорія тримає свої зв'язки — за id групи.
   category: z.string().uuid().optional(),
+  author: z.string().uuid().optional(),
   search: z.string().trim().max(100).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
@@ -291,3 +382,5 @@ export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 export type CreateTagInput = z.infer<typeof createTagSchema>;
 export type UpdateTagInput = z.infer<typeof updateTagSchema>;
+export type CreateAuthorInput = z.infer<typeof createAuthorSchema>;
+export type UpdateAuthorInput = z.infer<typeof updateAuthorSchema>;

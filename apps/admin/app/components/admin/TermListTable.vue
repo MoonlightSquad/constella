@@ -1,19 +1,34 @@
 <script setup lang="ts">
-import type { TermKind, TermRowWire } from '~/utils/term-draft';
+import type { BlogLocale } from '~/types/blog';
 
-defineProps<{ kind: TermKind; rows: TermRowWire[] }>();
+type ListKind = 'category' | 'tag' | 'author';
+
+/**
+ * Мінімальна форма рядка: в автора переклад несе роль і біо, яких у термінів немає, тому
+ * таблиця читає лише спільні поля й не розрізняє три сутності типами.
+ */
+type ListRow = {
+  id: string;
+  createdAt?: string;
+  postCount: number;
+  translations: { locale: BlogLocale; slug: string; name: string }[];
+};
+
+defineProps<{ kind: ListKind; rows: ListRow[] }>();
+
+const LABEL: Record<ListKind, string> = { category: 'Категорія', tag: 'Теґ', author: 'Автор' };
 
 // Адмінка одномовна: показуємо uk-переклад, а за нього — будь-який наявний.
-const nameOf = (row: TermRowWire) => row.translations.find((t) => t.locale === 'uk')?.name ?? row.translations[0]?.name ?? '—';
-const ukSlugOf = (row: TermRowWire) => row.translations.find((t) => t.locale === 'uk')?.slug ?? '';
-const path = (kind: TermKind) => `/blog/${kind}s`;
+const nameOf = (row: ListRow) => row.translations.find((t) => t.locale === 'uk')?.name ?? row.translations[0]?.name ?? '—';
+const ukSlugOf = (row: ListRow) => row.translations.find((t) => t.locale === 'uk')?.slug ?? '';
+const path = (kind: ListKind) => `/blog/${kind}s`;
 </script>
 
 <template>
   <table class="adm__table">
     <thead>
       <tr>
-        <th>{{ kind === 'category' ? 'Категорія' : 'Теґ' }}</th>
+        <th>{{ LABEL[kind] }}</th>
         <th class="adm__nowrap">Мови</th>
         <th class="adm__nowrap">Статей</th>
         <th class="adm__nowrap">Створено</th>

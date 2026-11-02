@@ -49,10 +49,10 @@ export const usePagedArchivePosts = async (filter: ComputedRef<Record<string, st
 };
 
 /**
- * Сторінки-архіви категорій і тегів. Кластер hreflang і перемикач мов беруться з
+ * Сторінки-архіви категорій, тегів і авторів. Кластер hreflang і перемикач мов беруться з
  * терміна, а не з URL: slug у кожній мові локалізований, як і в перекладених статей.
  */
-export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, items: Ref<BlogPostSummary[]>) => {
+export const useBlogArchive = (kind: 'category' | 'tag' | 'author', term: BlogArchiveTerm, items: Ref<BlogPostSummary[]>) => {
   const { t, locale, localeProperties, locales } = useI18n();
   const route = useRoute();
   const localePath = useLocalePath();

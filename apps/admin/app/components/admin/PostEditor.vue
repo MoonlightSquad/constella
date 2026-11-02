@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import type { AdminAuthorRow, PostDraft } from '~/types/admin';
 import type { BlogLocale, TermRef } from '~/types/blog';
-import type { PostDraft } from '~/types/admin';
 import { isSlugShape, slugifyTitle } from '~/utils/slug.mjs';
 
 const props = defineProps<{
@@ -16,6 +16,34 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ save: []; 'update:locale': [BlogLocale] }>();
+
+const api = useAdminApi();
+
+type AuthorOption = { id: string; name: string; locales: BlogLocale[] };
+
+// Список тягне сам, як TaxonomyPicker: обидві сторінки редагування тоді не потрібно
+// обвішувати однойменним запитом.
+const authors = ref<AuthorOption[]>([]);
+onMounted(async () => {
+  try {
+    const list = await api.get<{ items: AdminAuthorRow[] }>('/api/admin/authors', { limit: 100 });
+    // Адмінка одномовна — чіп показує uk-імʼя, за ним перше наявне.
+    authors.value = (list?.items ?? []).map((row) => ({
+      id: row.id,
+      name: row.translations.find((item) => item.locale === 'uk')?.name ?? row.translations[0]?.name ?? row.id,
+      locales: row.translations.map((item) => item.locale),
+    }));
+  } catch {
+    authors.value = [];
+  }
+});
+
+const selectedAuthor = computed(() => authors.value.find((author) => author.id === props.draft.authorId));
+/** Вибраний id поза завантаженим списком: select інакше показав би порожньо і зняв автора при першій зміні. */
+const selectedOutside = computed(() => Boolean(props.draft.authorId) && !selectedAuthor.value);
+/** Публічна проєкція віддає автора лише з перекладом мови рядка, тому без нього — знову вільний текст. */
+const missingLocale = computed(() =>
+  selectedAuthor.value && !selectedAuthor.value.locales.includes(props.locale) ? selectedAuthor.value.name : '');
 
 const slugTouched = ref(Boolean(props.draft.slug));
 const slugWarning = computed(() => {
@@ -88,7 +116,26 @@ const { siteUrl } = useRuntimeConfig().public;
 
         <div class="adm__field">
           <label class="adm__label" for="post-author">Автор</label>
-          <input id="post-author" v-model="draft.authorName" class="adm__input" type="text" maxlength="80" placeholder="Як підписати в статті й у JSON-LD">
+          <select id="post-author" v-model="draft.authorId" class="adm__input">
+            <option value="">— підпис текстом —</option>
+            <option v-if="selectedOutside" :value="draft.authorId">Профіль не завантажився — лишити як є</option>
+            <option v-for="author in authors" :key="author.id" :value="author.id">{{ author.name }}</option>
+          </select>
+          <p v-if="missingLocale" class="adm__error">
+            У профілю «{{ missingLocale }}» немає перекладу {{ locale.toUpperCase() }}: ця стаття лишилася б на
+            вільному підписі без посилання на профіль. Додай переклад у розділі «Автори».
+          </p>
+          <label class="adm__label" for="post-author-name" style="margin-top: 8px">
+            {{ draft.authorId ? 'Запасний підпис' : 'Підпис текстом' }}
+          </label>
+          <input
+            id="post-author-name"
+            v-model="draft.authorName"
+            class="adm__input"
+            type="text"
+            maxlength="80"
+            :placeholder="draft.authorId ? 'Показується, коли в профілю немає цього перекладу' : 'Як підписати в статті й у JSON-LD'"
+          >
         </div>
 
         <div class="adm__field">
@@ -110,7 +157,7 @@ const { siteUrl } = useRuntimeConfig().public;
       <div class="adm__panel">
         <h2>Публікація</h2>
         <div style="margin-top: 12px">
-          <AdminCoverUploadField :draft="draft" />
+          <AdminCoverUploadField v-model:url="draft.coverUrl" v-model:alt="draft.coverAlt" />
         </div>
       </div>
 

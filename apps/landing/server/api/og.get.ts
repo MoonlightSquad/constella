@@ -1,7 +1,7 @@
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import satori from 'satori';
 import type { H3Event } from 'h3';
-import type { BlogCategoryArchive, BlogPost, BlogTagArchive } from '../../app/types/blog';
+import type { BlogAuthorArchive, BlogCategoryArchive, BlogPost, BlogTagArchive } from '../../app/types/blog';
 import { OG_HEIGHT, OG_WIDTH, ogCard, parseOgQuery } from '../utils/og-image.mjs';
 
 const FALLBACK_IMAGE = '/og/default.png';
@@ -87,6 +87,12 @@ const cardCopy = async (event: H3Event, kind: string, slug: string, locale: stri
     const { status, data } = await fetchBlog<BlogCategoryArchive>(event, 'category', { slug, locale });
     if (!data) return { ok: false, status };
     return { ok: true, copy: { title: data.name, footer: data.description ?? '' } };
+  }
+
+  if (kind === 'author') {
+    const { status, data } = await fetchBlog<BlogAuthorArchive>(event, 'author', { slug, locale });
+    if (!data) return { ok: false, status };
+    return { ok: true, copy: { eyebrow: data.role ?? undefined, title: data.name, footer: data.bio ?? undefined } };
   }
 
   const { status, data } = await fetchBlog<BlogTagArchive>(event, 'tag', { slug, locale });

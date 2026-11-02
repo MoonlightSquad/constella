@@ -9,8 +9,8 @@ export const publicPostUrl = (locale: string, slug: string) => {
   return `${base}${locale === 'uk' ? '' : `/${locale}`}/blog/${slug}`;
 };
 
-/** Архіви категорій/теґів мають фіксовані латинкові сегменти; локалізований лише slug. */
-export const publicArchiveUrl = (kind: 'category' | 'tag', locale: string, slug: string) => {
+/** Архіви категорій/тегів/авторів мають фіксовані латинкові сегменти; локалізований лише slug. */
+export const publicArchiveUrl = (kind: 'category' | 'tag' | 'author', locale: string, slug: string) => {
   const base = useRuntimeConfig().public.siteUrl.replace(/\/+$/, '');
   if (!base || !slug) return '';
   return `${base}${locale === 'uk' ? '' : `/${locale}`}/blog/${kind}/${slug}`;

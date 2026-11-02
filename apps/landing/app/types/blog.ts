@@ -7,6 +7,25 @@ export type BlogCategory = { id: string; slug: string; name: string; description
 
 export type BlogTag = { id: string; slug: string; name: string; postCount: number };
 
+/** Підпис-row: `{id, slug, name}` — профіль повністю тягне окрему URL-сторінку. */
+export type AuthorRef = { id: string; slug: string; name: string };
+
+/** `/blog/authors/:slug` — payload сторінки профілю. */
+export type BlogAuthorArchive = {
+  id: string;
+  slug: string;
+  name: string;
+  role: string | null;
+  bio: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  avatarUrl: string | null;
+  avatarAlt: string | null;
+  sameAs: string[] | null;
+  postCount: number;
+  alternates: TermAlternate[];
+};
+
 /** One language in which this term has published posts — an hreflang entry point. */
 export type TermAlternate = { locale: BlogLocale; slug: string };
 
@@ -46,6 +65,8 @@ export type BlogPostSummary = {
   publishedAt: string | null;
   readingMinutes: number;
   authorName: string;
+  /** Рядок-автор, коли статтю підписано людиною; `authorName` лишається fallback'ом. */
+  author?: AuthorRef | null;
 };
 
 export type BlogPost = BlogPostSummary & {

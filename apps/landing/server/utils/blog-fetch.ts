@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3';
 import { blogUpstreamUrl, resolveApiInternalSource } from './api-base.mjs';
 
-export type BlogRoute = 'posts' | 'post' | 'categories' | 'category' | 'tags' | 'tag' | 'sitemap' | 'sitemapTaxonomy';
+export type BlogRoute = 'posts' | 'post' | 'categories' | 'category' | 'tags' | 'tag' | 'author' | 'sitemap' | 'sitemapTaxonomy';
 
 export const upstreamBase = (event: H3Event) =>
   resolveApiInternalSource(process.env, useRuntimeConfig(event).apiInternalBase).base;

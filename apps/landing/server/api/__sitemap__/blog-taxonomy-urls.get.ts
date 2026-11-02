@@ -3,10 +3,10 @@ import { fetchBlogOr } from '../../utils/blog-fetch';
 import { LOCALE_LANGUAGE } from '../../utils/blog-locales';
 
 type TaxonomyRow = { id: string; locale: 'uk' | 'en' | 'de' | 'fr'; slug: string };
-type TaxonomyPayload = { categories: TaxonomyRow[]; tags: TaxonomyRow[] };
+type TaxonomyPayload = { categories: TaxonomyRow[]; tags: TaxonomyRow[]; authors: TaxonomyRow[] };
 
 /** Як і з постами: шляхи відносно хоста, альтернативи — прописані по мовах і slug-ах. */
-const rowsFor = (rows: TaxonomyRow[], kind: 'category' | 'tag') => {
+const rowsFor = (rows: TaxonomyRow[], kind: 'category' | 'tag' | 'author') => {
   const byId = new Map<string, TaxonomyRow[]>();
   for (const row of rows) {
     const group = byId.get(row.id) ?? [];
@@ -24,6 +24,6 @@ const rowsFor = (rows: TaxonomyRow[], kind: 'category' | 'tag') => {
 };
 
 export default eventHandler(async (event) => {
-  const { data } = await fetchBlogOr(event, 'sitemapTaxonomy', {}, { categories: [], tags: [] });
-  return [...rowsFor(data.categories, 'category'), ...rowsFor(data.tags, 'tag')];
+  const { data } = await fetchBlogOr(event, 'sitemapTaxonomy', {}, { categories: [], tags: [], authors: [] });
+  return [...rowsFor(data.categories, 'category'), ...rowsFor(data.tags, 'tag'), ...rowsFor(data.authors, 'author')];
 });

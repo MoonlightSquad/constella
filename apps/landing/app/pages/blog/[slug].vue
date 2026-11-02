@@ -95,7 +95,16 @@ useJsonLd(() => {
     // Категорії — секції сайту, теґи — ключові слова: так це бачить Google для блогів.
     articleSection: post.value.categories.map((item) => item.name),
     keywords: post.value.tags.map((item) => item.name),
-    author: { '@type': 'Person', name: post.value.authorName },
+    author: post.value.author
+      ? {
+          // Підписаний рядок-автор: той самий `@id`, який стоїть на його профільній сторінці,
+          // тому Google бачить одну Person у двох документах, а не двох різних людей.
+          '@type': 'Person',
+          '@id': `${siteUrl}${localePath(`/blog/author/${post.value.author.slug}`)}#person`,
+          url: `${siteUrl}${localePath(`/blog/author/${post.value.author.slug}`)}`,
+          name: post.value.author.name,
+        }
+      : { '@type': 'Person', name: post.value.authorName },
     publisher: {
       '@type': 'Organization',
       name: 'Constella',
@@ -147,7 +156,10 @@ useBreadcrumbList(() => crumbs.value);
         <span aria-hidden="true">·</span>
         <span>{{ post?.readingMinutes }} {{ $t('blog.minutes') }}</span>
         <span aria-hidden="true">·</span>
-        <span>{{ post?.authorName }}</span>
+        <!-- Посилання на профіль — та взаємна ланка графа, якої хоче E-E-A-T: стаття веде на
+             автора, автор веде назад на свої статті. Без рядка-автора лишається текстовий підпис. -->
+        <NuxtLink v-if="post?.author" :to="localePath(`/blog/author/${post.author.slug}`)">{{ post.author.name }}</NuxtLink>
+        <span v-else>{{ post?.authorName }}</span>
       </p>
       <p v-if="post?.excerpt" class="post-head__excerpt">{{ post.excerpt }}</p>
       <img
