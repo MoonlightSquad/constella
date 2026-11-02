@@ -40,7 +40,9 @@ export default defineNuxtConfig({
     apiInternalBase: process.env.NUXT_API_INTERNAL_BASE || process.env.API_INTERNAL_URL || '',
     public: {
       siteUrl,
-      appUrl: process.env.NUXT_PUBLIC_APP_URL || 'https://app-test.constella.pp.ua',
+      // The funnelled-to app host. `app-test` is retired and answers 404, so an unset
+      // NUXT_PUBLIC_APP_URL must not fall back to it.
+      appUrl: process.env.NUXT_PUBLIC_APP_URL || 'https://app.constella.pp.ua',
       telegramBotUsername: process.env.NUXT_PUBLIC_BOT_USERNAME || process.env.BOT_USERNAME || '',
     },
   },

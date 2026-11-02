@@ -28,6 +28,33 @@ const setAttr = (tokens, index, name, value) => {
   token.attrSet(name, existing ? `${existing} ${value}` : value);
 };
 
+// Matched as a literal, never from NUXT_PUBLIC_APP_URL: that variable is unset on the
+// landing project today, so keying off it would silently skip every body link.
+const FUNNEL_HOST = 'app.constella.pp.ua';
+
+const safeHostname = (href) => {
+  try {
+    return new URL(href).hostname;
+  } catch {
+    return '';
+  }
+};
+
+const withFunnelUtm = (href, hostname, utm) => {
+  if (hostname !== FUNNEL_HOST) return href;
+  try {
+    const url = new URL(href);
+    // An author who wrote their own utm_source keeps it; params land before any #hash.
+    if (url.searchParams.has('utm_source')) return href;
+    url.searchParams.set('utm_source', 'blog');
+    url.searchParams.set('utm_medium', utm.medium);
+    url.searchParams.set('utm_campaign', utm.campaign);
+    return url.toString();
+  } catch {
+    return href;
+  }
+};
+
 // `heading_open` and `link_open` have no own rule: markdown-it falls back to
 // `renderToken` inside `render()`, so the override has to call it explicitly.
 const headingOpen = markdown.renderer.rules.heading_open;
@@ -45,7 +72,15 @@ markdown.renderer.rules.heading_open = (tokens, index, options, env, renderer) =
 const linkOpen = markdown.renderer.rules.link_open;
 markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
   const href = tokens[index].attrGet('href') ?? '';
-  if (/^https?:\/\//i.test(href)) setAttr(tokens, index, 'rel', 'nofollow noopener noreferrer');
+  if (/^https?:\/\//i.test(href)) {
+    const hostname = safeHostname(href);
+    // Our own funnel link is the conversion path: nofollowing it would ask Google not to
+    // vouch for the very destination the article recommends.
+    if (hostname === FUNNEL_HOST) setAttr(tokens, index, 'rel', 'noopener noreferrer');
+    else setAttr(tokens, index, 'rel', 'nofollow noopener noreferrer');
+    const tagged = env?.utm ? withFunnelUtm(href, hostname, env.utm) : href;
+    if (tagged !== href) tokens[index].attrSet('href', tagged);
+  }
   return (linkOpen ?? ((...args) => renderer.renderToken(...args)))(tokens, index, options, env);
 };
 
@@ -60,8 +95,8 @@ markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
 export const renderMarkdown = (source) => markdown.render(String(source ?? ''));
 
 /** Same render, plus the heading outline the article page turns into a table of contents. */
-export const renderMarkdownWithToc = (source) => {
-  const env = { toc: [] };
+export const renderMarkdownWithToc = (source, utm) => {
+  const env = { toc: [], utm };
   const html = markdown.render(String(source ?? ''), env);
   return { html, toc: env.toc.filter((entry) => entry.level >= 2 && entry.level <= 3) };
 };
