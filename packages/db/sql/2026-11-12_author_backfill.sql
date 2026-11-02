@@ -5,9 +5,13 @@
 -- «relation blog_authors does not exist» — і це правильна поведінка, а не помилка скрипту.
 --
 -- НАВІЩО ЙОГО ЗАПОВНЮЮТЬ РУКОЮ. Усі 72 опубліковані рядки (18 груп × 4 мови) підписані
--- вільним текстом «Constella». E-E-A-T читає людину, а не бренд, тому ім'я, роль, біо й
--- профілі вписує редактор: вони мають бути правдою. Вигадані регалії не вписуємо ніколи —
--- саме за них знімають індексацію весь домен, а не одну сторінку.
+-- вільним текстом «Constella». E-E-A-T читає людину, а не бренд. Ім'я й посаду дав редактор,
+-- текст ролей і біо в блоці нижче написані за цими даними й за тим, що продукт реально робить
+-- (черга модерації фото, скарги, документи «Спільнота») — тому перед запуском їх читають і
+-- правлять. Вигадані регалії не вписуємо ніколи: саме за них знімають індексацію весь домен.
+-- Доки `SAME_AS_…` порожні, профіль не має зовнішнього підтвердження; запуск тоді технічно
+-- валідний, але слабий. Придумувати ці адреси не можна — неіснуючий або чужий URL гірший за
+-- порожнечу.
 --
 -- ЩО ЛИШЕТЬСЯ НА БРЕНДІ. Скрипт підписує людину лише статті вибраних категорій (блок
 -- SCOPE нижче), решта рядків лишаються на author_name = 'Constella' без профілю — і так
@@ -36,22 +40,25 @@
 --   стан «не заповнено»: перший же DO-блок на них зупиняє запуск.
 
 -- ===================== ЗАПОВНИ ЦЕЙ БЛОК =====================
-\set NAME_UK ''
-\set NAME_EN ''
-\set NAME_DE ''
-\set NAME_FR ''
-\set SLUG_UK ''
-\set SLUG_EN ''
-\set SLUG_DE ''
-\set SLUG_FR ''
-\set ROLE_UK ''
-\set ROLE_EN ''
-\set ROLE_DE ''
-\set ROLE_FR ''
-\set BIO_UK ''
-\set BIO_EN ''
-\set BIO_DE ''
-\set BIO_FR ''
+-- Роль і біо нижче написані за іменем, посадою й тим, що продукт реально робить: перед
+-- запуском їх читають і правлять, якщо якесь речення не є правдою.
+\set NAME_UK 'Володимир Семенко'
+\set NAME_EN 'Volodymyr Semenko'
+\set NAME_DE 'Volodymyr Semenko'
+\set NAME_FR 'Volodymyr Semenko'
+-- Той самий slug у всіх чотирьох мовах: так його зробив би транслітер із CMS.
+\set SLUG_UK 'volodymyr-semenko'
+\set SLUG_EN 'volodymyr-semenko'
+\set SLUG_DE 'volodymyr-semenko'
+\set SLUG_FR 'volodymyr-semenko'
+\set ROLE_UK 'генеральний директор Constella'
+\set ROLE_EN 'CEO of Constella'
+\set ROLE_DE 'CEO von Constella'
+\set ROLE_FR 'directeur général de Constella'
+\set BIO_UK 'Володимир Семенко — генеральний директор Constella. Відповідає за продукт і за правила спільноти: чергу модерації фото, скарги на профілі та відкриті документи про безпеку. У блогу пояснює, як онлайн-знайомства влаштовані зсередини і що в них ламається на практиці.'
+\set BIO_EN 'Volodymyr Semenko is the CEO of Constella. He owns the product and the community rules: the photo moderation queue, profile reports and the public safety documentation. On the blog he explains how online dating is built from the inside, and what breaks in practice.'
+\set BIO_DE 'Volodymyr Semenko ist CEO von Constella. Er verantwortet das Produkt und die Community-Regeln: die Moderations-Warteschlange für Fotos, die Meldungen von Profilen und die öffentlichen Sicherheitsdokumente. Im Blog erklärt er, wie Online-Dating von innen aufgebaut ist und was in der Praxis nicht funktioniert.'
+\set BIO_FR 'Volodymyr Semenko est le directeur général de Constella. Il répond du produit et des règles de la communauté : la file de modération des photos, les signalements de profils et les documents publics sur la sécurité. Sur le blog, il explique comment les rencontres en ligne sont construites et ce qui dysfonctionne en pratique.'
 -- Необов'язкове: без цих рядків SEO-поля візьмуться з імені й біо.
 \set SEO_TITLE_UK ''
 \set SEO_TITLE_EN ''
@@ -61,13 +68,19 @@
 \set SEO_DESC_EN ''
 \set SEO_DESC_DE ''
 \set SEO_DESC_FR ''
--- Профілі, що підтверджують існування людини: повні URL; порожні лапки пропускаються.
+-- ДОПОВНИТИ ВРУЧНУ. Тут лишилось порожньо принципово: посилання на профіль — це твердження,
+-- що конкретна сторінка в інтернеті належить цій людині. Придумати їх не можна, а
+-- неіснуюча або чужа адреса робить профіль гіршим, ніж без профілю.
 \set SAME_AS_1 ''
 \set SAME_AS_2 ''
 \set SAME_AS_3 ''
 \set SAME_AS_4 ''
 -- Категорії, чий вміст підписуємо: uuid з першого префлайт-звіту нижче.
-\set CATEGORY_1 ''
+-- «Безпека» — бо за неї відповідальність у людини справді є (черга модерації, скарги,
+-- /legal/community). «Знайомства» (637e8286-48af-4b6e-af87-370a080e7b6e) і «Стосунки»
+-- (26c5ee12-cac4-4610-9df7-0bb925ae9d26) лишаються на бренд-підписі, доки хтось реальний
+-- не візьме їх на себе.
+\set CATEGORY_1 'd131a73f-0b7f-4b55-a633-5c4c339217a1'
 \set CATEGORY_2 ''
 \set CATEGORY_3 ''
 \set CATEGORY_4 ''
