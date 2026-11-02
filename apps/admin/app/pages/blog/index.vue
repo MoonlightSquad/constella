@@ -65,7 +65,7 @@ const go = (next: number) => {
 
     <AdminPostListTable v-if="rows.length" :rows="rows" />
     <p v-else-if="status === 'success' && !error" class="adm__note">
-      Нічого не знайдено. Якщо міграцію <code>0010_blog_engine</code> ще не застосовано, таблиць blog_* просто немає.
+      Нічого не знайдено. Якщо міграції <code>0010_blog_engine</code> або <code>0015_blog_taxonomy</code> ще не застосовано, таблиць blog_* просто немає.
     </p>
 
     <div v-if="total > limit" class="adm__row" style="margin-top: 16px">

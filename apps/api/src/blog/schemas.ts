@@ -13,12 +13,22 @@ export const MAX_EXCERPT = 500;
 // The Fastify body limit is 1 MiB; Cyrillic prose costs 2 bytes per character, so the
 // cap keeps a maximal body comfortably below the transport limit.
 export const MAX_BODY_CHARACTERS = 120_000;
+export const MAX_CATEGORIES = 3;
 export const MAX_TAGS = 8;
-export const MAX_TAG_LENGTH = 32;
+export const MAX_CATEGORY_NAME = 120;
+export const MAX_TAG_NAME = 32;
+
+// `/blog/<slug>` is one segment, `/blog/category/…` and `/blog/tag/…` are two: a post
+// carrying either of these slugs could never be reached at the bare archive root,
+// so they are refused outright rather than shadowed.
+export const RESERVED_POST_SLUGS = new Set(['category', 'tag']);
 
 const markdown = z.string().min(1).max(MAX_BODY_CHARACTERS);
-const slug = z.string().trim().min(1).max(200).refine((value) => SLUG_RE.test(value), 'slug must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/i');
+const entitySlug = z.string().trim().min(1).max(200).refine((value) => SLUG_RE.test(value), 'slug must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/i');
+const slug = entitySlug.refine((value) => !RESERVED_POST_SLUGS.has(value), 'slug is reserved for taxonomy archives');
 const optionalText = (max: number) => z.string().trim().max(max).optional().transform((value) => value || undefined);
+// Patch variant: an empty string must survive the parse so `toNull` can clear the column.
+const optionalPatchText = (max: number) => z.string().trim().max(max).optional();
 const httpUrl = (label: string) =>
   z.string().trim().max(2048).refine((value) => {
     if (!value) return true;
@@ -28,18 +38,6 @@ const httpUrl = (label: string) =>
       return false;
     }
   }, `${label} must be an absolute http(s) URL`);
-
-/** Lowercases, deduplicates and caps tags; leading `#` and padding are dropped. */
-export const normalizeTags = (input: readonly unknown[]): string[] => {
-  const seen = new Set<string>();
-  for (const raw of input) {
-    if (typeof raw !== 'string') continue;
-    const tag = raw.replace(/^#+/, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (tag && tag.length <= MAX_TAG_LENGTH) seen.add(tag);
-    if (seen.size === MAX_TAGS) break;
-  }
-  return [...seen];
-};
 
 /** `coverAlt` is enforced here rather than in the editor, so no client can skip it. */
 export const requireAltForCover = <T extends { coverUrl?: string | null; coverAlt?: string | null }>(value: T, ctx: z.RefinementCtx) => {
@@ -61,7 +59,8 @@ const contentFields = {
   title: z.string().trim().min(1).max(MAX_TITLE),
   excerpt: z.string().trim().min(1).max(MAX_EXCERPT),
   bodyMarkdown: markdown,
-  tags: z.array(z.unknown()).max(40).optional().transform((value) => normalizeTags(value ?? [])),
+  categoryIds: z.array(z.string().uuid()).max(MAX_CATEGORIES).optional(),
+  tagIds: z.array(z.string().uuid()).max(MAX_TAGS).optional(),
   seoTitle: optionalText(MAX_TITLE),
   seoDescription: optionalText(MAX_EXCERPT),
   authorName: optionalText(80),
@@ -92,9 +91,104 @@ export const translationSchema = z.object({
   locale: z.enum(BLOG_LOCALES),
 });
 
+const noDuplicateLocales = <T extends { locale: string }>(items: readonly T[], ctx: z.RefinementCtx, path: string) => {
+  const seen = new Set<string>();
+  for (const [index, item] of items.entries()) {
+    if (seen.has(item.locale)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path, index, 'locale'], message: `duplicate locale '${item.locale}'` });
+    }
+    seen.add(item.locale);
+  }
+};
+
+// Категорія: одна сутність + переклад на мову. `translations` при створенні — додаткові
+// мови окрім primary `locale`; при оновленні — upsert (вставиться, якщо мови ще немає).
+const categoryTranslationSchema = z.object({
+  locale: z.enum(BLOG_LOCALES),
+  slug: entitySlug,
+  name: z.string().trim().min(1).max(MAX_CATEGORY_NAME),
+  description: optionalText(MAX_EXCERPT),
+  seoTitle: optionalText(MAX_TITLE),
+  seoDescription: optionalText(MAX_EXCERPT),
+});
+
+const categoryTranslationPatchSchema = z.object({
+  locale: z.enum(BLOG_LOCALES),
+  slug: entitySlug.optional(),
+  name: z.string().trim().min(1).max(MAX_CATEGORY_NAME).optional(),
+  description: optionalPatchText(MAX_EXCERPT),
+  seoTitle: optionalPatchText(MAX_TITLE),
+  seoDescription: optionalPatchText(MAX_EXCERPT),
+});
+
+const tagTranslationSchema = z.object({
+  locale: z.enum(BLOG_LOCALES),
+  slug: entitySlug,
+  name: z.string().trim().min(1).max(MAX_TAG_NAME),
+});
+
+const tagTranslationPatchSchema = z.object({
+  locale: z.enum(BLOG_LOCALES),
+  slug: entitySlug.optional(),
+  name: z.string().trim().min(1).max(MAX_TAG_NAME).optional(),
+});
+
+const termExtraTranslations = <T extends z.ZodTypeAny>(translation: T) =>
+  z.array(translation).max(BLOG_LOCALES.length - 1).optional();
+
+export const createCategorySchema = z
+  .object({
+    locale: z.enum(BLOG_LOCALES),
+    slug: entitySlug,
+    name: z.string().trim().min(1).max(MAX_CATEGORY_NAME),
+    description: optionalText(MAX_EXCERPT),
+    seoTitle: optionalText(MAX_TITLE),
+    seoDescription: optionalText(MAX_EXCERPT),
+    translations: termExtraTranslations(categoryTranslationSchema),
+  })
+  .superRefine((value, ctx) => {
+    const extras = (value.translations ?? []).filter((t) => t.locale === value.locale);
+    if (extras.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['translations'], message: `primary locale '${value.locale}' must not repeat in translations` });
+    }
+    noDuplicateLocales(value.translations ?? [], ctx, 'translations');
+  });
+
+export const updateCategorySchema = z
+  .object({
+    translations: z.array(categoryTranslationPatchSchema).max(BLOG_LOCALES.length).optional(),
+    removeLocales: z.array(z.enum(BLOG_LOCALES)).max(BLOG_LOCALES.length).optional(),
+  })
+  .refine((value) => (value.translations?.length ?? 0) + (value.removeLocales?.length ?? 0) > 0, 'at least one translation must be provided')
+  .superRefine((value, ctx) => noDuplicateLocales(value.translations ?? [], ctx, 'translations'));
+
+export const createTagSchema = z
+  .object({
+    locale: z.enum(BLOG_LOCALES),
+    slug: entitySlug,
+    name: z.string().trim().min(1).max(MAX_TAG_NAME),
+    translations: termExtraTranslations(tagTranslationSchema),
+  })
+  .superRefine((value, ctx) => {
+    const extras = (value.translations ?? []).filter((t) => t.locale === value.locale);
+    if (extras.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['translations'], message: `primary locale '${value.locale}' must not repeat in translations` });
+    }
+    noDuplicateLocales(value.translations ?? [], ctx, 'translations');
+  });
+
+export const updateTagSchema = z
+  .object({
+    translations: z.array(tagTranslationPatchSchema).max(BLOG_LOCALES.length).optional(),
+    removeLocales: z.array(z.enum(BLOG_LOCALES)).max(BLOG_LOCALES.length).optional(),
+  })
+  .refine((value) => (value.translations?.length ?? 0) + (value.removeLocales?.length ?? 0) > 0, 'at least one translation must be provided')
+  .superRefine((value, ctx) => noDuplicateLocales(value.translations ?? [], ctx, 'translations'));
+
 export const publicListQuerySchema = z.object({
   locale: z.enum(BLOG_LOCALES).default('uk'),
-  tag: z.string().trim().max(MAX_TAG_LENGTH).optional(),
+  category: entitySlug.optional(),
+  tag: entitySlug.optional(),
   limit: z.coerce.number().int().min(1).max(50).default(10),
   cursor: z.string().trim().max(200).optional(),
 });
@@ -106,6 +200,13 @@ export const publicPostQuerySchema = z.object({
 export const adminListQuerySchema = z.object({
   locale: z.enum(BLOG_LOCALES).optional(),
   status: z.enum(BLOG_STATUSES).optional(),
+  search: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+});
+
+export const adminTermListQuerySchema = z.object({
+  locale: z.enum(BLOG_LOCALES).optional(),
   search: z.string().trim().max(100).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
@@ -153,3 +254,8 @@ export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type UpdatePostInput = z.infer<typeof updatePostSchema>;
 export type PublicListInput = z.infer<typeof publicListQuerySchema>;
 export type AdminListInput = z.infer<typeof adminListQuerySchema>;
+export type AdminTermListInput = z.infer<typeof adminTermListQuerySchema>;
+export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
+export type CreateTagInput = z.infer<typeof createTagSchema>;
+export type UpdateTagInput = z.infer<typeof updateTagSchema>;

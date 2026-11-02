@@ -1,12 +1,12 @@
 const LOCALES = new Set(['uk', 'en', 'de', 'fr']);
-
-/** Tags are free text in any script ("орбіта", "product"), so only the shape is checked. */
-const TAG = /^[\p{L}\p{N}][\p{L}\p{N} -]{0,31}$/u;
+// Категорії й теґи тепер ідентифікуються локалізованим slug — той самий формат, що й у постів.
+const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,198}[a-z0-9])?$/;
 
 /** Only known parameters are forwarded: junk upstream would come back as an empty list. */
 const pickListParams = (query: Record<string, unknown>) => ({
   locale: LOCALES.has(String(query.locale)) ? String(query.locale) : 'uk',
-  tag: typeof query.tag === 'string' && TAG.test(query.tag.trim()) ? query.tag.trim() : undefined,
+  category: typeof query.category === 'string' && SLUG.test(query.category) ? query.category : undefined,
+  tag: typeof query.tag === 'string' && SLUG.test(query.tag) ? query.tag : undefined,
   limit: Number.isInteger(Number(query.limit)) ? Math.min(50, Math.max(1, Number(query.limit))) : undefined,
   cursor: typeof query.cursor === 'string' && query.cursor.length <= 200 ? query.cursor : undefined,
 });

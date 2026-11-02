@@ -24,7 +24,15 @@ const groups: Group[] = [
       { to: '/growth', label: 'Ріст', hint: 'Метрики й динаміка' },
     ],
   },
-  { title: 'Контент', items: [{ to: '/blog', label: 'Блог', hint: 'Статті та переклади' }] },
+  {
+    title: 'Контент',
+    // Порядок важливий: `isOn` — prefix-match, тож категорії й теґи мають випереджати «Блог».
+    items: [
+      { to: '/blog/categories', label: 'Категорії', hint: 'Архіви категорій та їх переклади' },
+      { to: '/blog/tags', label: 'Теґи', hint: 'Архівні теґи та їх переклади' },
+      { to: '/blog', label: 'Блог', hint: 'Статті та переклади' },
+    ],
+  },
   {
     title: 'Система',
     items: [

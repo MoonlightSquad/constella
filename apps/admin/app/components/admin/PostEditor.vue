@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import type { BlogLocale } from '~/types/blog';
+import type { BlogLocale, TermRef } from '~/types/blog';
 import type { PostDraft } from '~/types/admin';
 import { isSlugShape, slugifyTitle } from '~/utils/slug.mjs';
 
 const props = defineProps<{
   draft: PostDraft;
   locale: BlogLocale;
+  /** Term names for the ids the draft holds — loaded with the post, empty for a new one. */
+  terms?: { categories: TermRef[]; tags: TermRef[] };
   /** Changing the language of an existing row would break its hreflang cluster. */
   lockedLocale?: boolean;
   saving?: boolean;
@@ -75,8 +77,13 @@ const { siteUrl } = useRuntimeConfig().public;
         </div>
 
         <div class="adm__field">
+          <span class="adm__label">Категорії</span>
+          <AdminTaxonomyPicker kind="category" v-model="draft.categoryIds" :terms="terms?.categories ?? []" :locale="locale" />
+        </div>
+
+        <div class="adm__field">
           <span class="adm__label">Теґи</span>
-          <AdminTagInput v-model="draft.tags" />
+          <AdminTaxonomyPicker kind="tag" v-model="draft.tagIds" :terms="terms?.tags ?? []" :locale="locale" />
         </div>
 
         <div class="adm__field">

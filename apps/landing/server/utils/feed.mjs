@@ -8,6 +8,9 @@ export const blogIndexPath = (locale) => (locale === 'uk' ? '/blog' : `/${locale
 
 export const blogPath = (locale, slug) => `${blogIndexPath(locale)}/${slug}`;
 
+/** Архівні URL мають фіксований латинковий сегмент; slug терміна теж завжди ASCII. */
+export const blogArchivePath = (kind, locale, slug) => `${blogIndexPath(locale)}/${kind}/${slug}`;
+
 /**
  * RSS 2.0, deliberately short: the channel carries what the reader shows before the
  * first item, everything else (author, date, link) belongs to the item.

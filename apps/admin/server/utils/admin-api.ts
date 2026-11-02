@@ -106,10 +106,13 @@ export const readAdminBody = async (event: H3Event) => {
  * Post ids are forwarded into a URL path upstream, so the shape is checked here first:
  * a stray `../` or a non-hex id must not leave this process.
  */
-export const adminPostId = (event: H3Event) => {
+export const adminPostId = (event: H3Event) => adminEntityId(event, 'пост');
+
+/** Categories and tags share the posts route shape, so they share the id guard too. */
+export const adminEntityId = (event: H3Event, noun = 'запис') => {
   const id = getRouterParam(event, 'id') ?? '';
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    throw createError({ statusCode: 404, statusMessage: 'Пост не знайдено.' });
+    throw createError({ statusCode: 404, statusMessage: `Не знайдено ${noun}.` });
   }
   return id;
 };

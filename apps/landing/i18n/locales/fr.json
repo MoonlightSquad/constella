@@ -159,6 +159,9 @@
   "blog":   {
     "title": "Blog",
     "subtitle": "Les nouveautés du produit et les conseils pour des rencontres sûres.",
+    "categories": "Catégories",
+    "inCategory": "Catégorie",
+    "archiveBlurb": "les derniers articles de cette archive du blog Constella",
     "topics": "Thèmes",
     "allTopics": "Tous",
     "empty": "Les premiers articles apparaîtront ici bientôt.",

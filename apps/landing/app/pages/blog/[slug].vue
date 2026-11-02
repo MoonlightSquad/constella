@@ -73,7 +73,9 @@ useJsonLd(() => {
     inLanguage: language.value,
     datePublished: post.value.publishedAt ?? undefined,
     dateModified: post.value.updatedAt,
-    articleSection: post.value.tags,
+    // Категорії — секції сайту, теґи — ключові слова: так це бачить Google для блогів.
+    articleSection: post.value.categories.map((item) => item.name),
+    keywords: post.value.tags.map((item) => item.name),
     author: { '@type': 'Person', name: post.value.authorName },
     publisher: {
       '@type': 'Organization',
@@ -105,6 +107,12 @@ const showContents = computed(() => contents.value.length >= 3);
         ← {{ $t('blog.backToBlog') }}
       </NuxtLink>
       <h1 class="section-title">{{ post?.title }}</h1>
+      <p v-if="post?.categories.length" class="post-head__cats">
+        <span class="post-head__cats-label">{{ $t('blog.inCategory') }}:</span>
+        <NuxtLink v-for="category in post.categories" :key="category.id" class="tag" :to="localePath(`/blog/category/${category.slug}`)">
+          {{ category.name }}
+        </NuxtLink>
+      </p>
       <p class="post-head__meta">
         <time v-if="post?.publishedAt" :datetime="post.publishedAt">{{ formatDate(post.publishedAt, language) }}</time>
         <span aria-hidden="true">·</span>
@@ -140,8 +148,8 @@ const showContents = computed(() => contents.value.length >= 3);
 
     <footer class="post-foot">
       <ul v-if="post?.tags.length" class="tag-row">
-        <li v-for="tag in post.tags" :key="tag">
-          <NuxtLink class="tag" :to="{ path: localePath('/blog'), query: { tag } }">{{ tag }}</NuxtLink>
+        <li v-for="tag in post.tags" :key="tag.id">
+          <NuxtLink class="tag" :to="localePath(`/blog/tag/${tag.slug}`)">#{{ tag.name }}</NuxtLink>
         </li>
       </ul>
       <NuxtLink class="btn btn-ghost" :to="localePath('/blog')">{{ $t('blog.backToBlog') }}</NuxtLink>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BlogPostSummary } from '~/types/blog';
+import type { BlogCategory, BlogPostSummary, BlogTag } from '~/types/blog';
 
 type BlogList = { items: BlogPostSummary[]; nextCursor: string | null };
 
@@ -9,11 +9,9 @@ const route = useRoute();
 const localePath = useLocalePath();
 const { siteUrl } = useRuntimeConfig().public;
 
-const tag = computed(() => (typeof route.query.tag === 'string' ? route.query.tag : ''));
-
 // Server-to-server read through nitro, so the browser never needs API access.
 const first = await useFetch<BlogList>('/api/blog/posts', {
-  query: computed(() => ({ locale: locale.value, tag: tag.value, limit: PAGE_SIZE })),
+  query: computed(() => ({ locale: locale.value, limit: PAGE_SIZE })),
 });
 const older = ref<BlogList[]>([]);
 watch(first.data, () => { older.value = []; });
@@ -23,7 +21,10 @@ const nextCursor = computed(() =>
   older.value.length ? older.value.at(-1)?.nextCursor ?? null : first.data.value?.nextCursor ?? null,
 );
 
-const { data: tagRows } = await useFetch<{ items: { tag: string; count: number }[] }>('/api/blog/tags', {
+const { data: categoryRows } = await useFetch<{ items: BlogCategory[] }>('/api/blog/categories', {
+  query: computed(() => ({ locale: locale.value })),
+});
+const { data: tagRows } = await useFetch<{ items: BlogTag[] }>('/api/blog/tags', {
   query: computed(() => ({ locale: locale.value })),
 });
 
@@ -33,14 +34,14 @@ const loadMore = async () => {
   loading.value = true;
   try {
     older.value.push(await $fetch<BlogList>('/api/blog/posts', {
-      query: { locale: locale.value, tag: tag.value, limit: PAGE_SIZE, cursor: nextCursor.value },
+      query: { locale: locale.value, limit: PAGE_SIZE, cursor: nextCursor.value },
     }));
   } finally {
     loading.value = false;
   }
 };
 
-const headline = computed(() => (tag.value ? `${t('meta.blog.title')} · ${tag.value}` : t('meta.blog.title')));
+const headline = computed(() => t('meta.blog.title'));
 useSeoMeta({
   title: () => headline.value,
   description: () => t('meta.blog.desc'),
@@ -84,19 +85,25 @@ const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
       <p class="section-sub">{{ $t('blog.subtitle') }}</p>
     </div>
 
-    <div v-if="tagRows?.items.length" class="tag-row" role="navigation" :aria-label="$t('blog.topics')">
-      <NuxtLink class="tag" :class="{ 'tag--active': !tag }" :to="localePath('/blog')">
-        {{ $t('blog.allTopics') }}
+    <div v-if="categoryRows?.items.length" class="tag-row" role="navigation" :aria-label="$t('blog.categories')">
+      <NuxtLink
+        v-for="row in categoryRows.items"
+        :key="row.id"
+        class="tag"
+        :to="localePath(`/blog/category/${row.slug}`)"
+      >
+        {{ row.name }}
       </NuxtLink>
+    </div>
+
+    <div v-if="tagRows?.items.length" class="tag-row" role="navigation" :aria-label="$t('blog.topics')">
       <NuxtLink
         v-for="row in tagRows.items"
-        :key="row.tag"
+        :key="row.id"
         class="tag"
-        :class="{ 'tag--active': tag === row.tag }"
-        :to="{ path: localePath('/blog'), query: { tag: row.tag } }"
-        rel="nofollow"
+        :to="localePath(`/blog/tag/${row.slug}`)"
       >
-        {{ row.tag }}
+        #{{ row.name }}
       </NuxtLink>
     </div>
 

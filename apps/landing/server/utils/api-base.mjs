@@ -20,12 +20,25 @@ export function resolveApiInternalSource(env, fallback) {
 
 /**
  * Upstream URL for a blog endpoint. The path is fixed by the caller, never by the client.
- * `slug` is a path parameter upstream (`/blog/posts/:slug`), everything else is a query string.
+ * `slug` is a path parameter for the single-term routes (`/blog/posts/:slug`,
+ * `/blog/categories/:slug`, `/blog/tags/:slug`), everything else is a query string.
  */
+const BLOG_ROUTES = {
+  posts: () => '/blog/posts',
+  post: (slug) => `/blog/posts/${encodeURIComponent(String(slug ?? ''))}`,
+  categories: () => '/blog/categories',
+  category: (slug) => `/blog/categories/${encodeURIComponent(String(slug ?? ''))}`,
+  tags: () => '/blog/tags',
+  tag: (slug) => `/blog/tags/${encodeURIComponent(String(slug ?? ''))}`,
+  sitemap: () => '/blog/sitemap',
+  sitemapTaxonomy: () => '/blog/sitemap/taxonomy',
+};
+
 export function blogUpstreamUrl(base, route, params = {}) {
   const { slug, ...query } = params;
-  const path = route === 'post' ? `/blog/posts/${encodeURIComponent(String(slug ?? ''))}` : `/blog/${route}`;
-  const url = new URL(path, `${base.replace(/\/+$/, '')}/`);
+  const build = BLOG_ROUTES[route];
+  if (!build) throw new Error(`Unknown blog route: ${route}`);
+  const url = new URL(build(slug), `${base.replace(/\/+$/, '')}/`);
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }

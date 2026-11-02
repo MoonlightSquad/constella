@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { blogUpstreamUrl, resolveApiInternalSource } from '../server/utils/api-base.mjs';
-import { blogIndexPath, blogPath, buildRss, escapeXml } from '../server/utils/feed.mjs';
+import { blogArchivePath, blogIndexPath, blogPath, buildRss, escapeXml } from '../server/utils/feed.mjs';
 
 test('upstream base prefers request-time env over the build-time config', () => {
   assert.deepEqual(
@@ -26,15 +26,26 @@ test('the slug is a path segment, not a query parameter', () => {
   assert.equal(blogUpstreamUrl('http://api:4000/', 'tags', { locale: 'uk' }), 'http://api:4000/blog/tags?locale=uk');
 });
 
-test('empty and missing params are not forwarded as junk', () => {
-  const url = blogUpstreamUrl('http://api:4000', 'posts', { locale: 'uk', tag: undefined, cursor: '', limit: null });
-  assert.equal(url, 'http://api:4000/blog/posts?locale=uk');
+test('taxonomy routes keep their fixed Latin segments', () => {
+  // `/blog/category/<slug>` і `/blog/tag/<slug>` — терміновий slug локалізований, сегмент — ні.
+  assert.equal(blogUpstreamUrl('http://api:4000', 'category', { slug: 'product-news', locale: 'de' }), 'http://api:4000/blog/categories/product-news?locale=de');
+  assert.equal(blogUpstreamUrl('http://api:4000', 'tag', { slug: 'nebo', locale: 'uk' }), 'http://api:4000/blog/tags/nebo?locale=uk');
+  assert.equal(blogUpstreamUrl('http://api:4000', 'categories', { locale: 'fr' }), 'http://api:4000/blog/categories?locale=fr');
+  assert.equal(blogUpstreamUrl('http://api:4000', 'sitemapTaxonomy', {}), 'http://api:4000/blog/sitemap/taxonomy');
+  assert.throws(() => blogUpstreamUrl('http://api:4000', 'unknown-route', {}), /Unknown blog route/);
 });
 
 test('uk is unprefixed, the rest of the locales are', () => {
   assert.equal(blogIndexPath('uk'), '/blog');
   assert.equal(blogPath('uk', 'х'), '/blog/х');
   assert.equal(blogPath('fr', 'x'), '/fr/blog/x');
+  assert.equal(blogArchivePath('category', 'uk', 'news'), '/blog/category/news');
+  assert.equal(blogArchivePath('tag', 'fr', 'x'), '/fr/blog/tag/x');
+});
+
+test('empty and missing params are not forwarded as junk', () => {
+  const url = blogUpstreamUrl('http://api:4000', 'posts', { locale: 'uk', tag: undefined, cursor: '', limit: null });
+  assert.equal(url, 'http://api:4000/blog/posts?locale=uk');
 });
 
 test('xml metacharacters in post titles cannot break out of the element', () => {

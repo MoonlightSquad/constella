@@ -16,6 +16,9 @@ watch(id, () => refresh());
 const draft = reactive(emptyDraft());
 watch(post, (value) => Object.assign(draft, draftFromPost(value ?? null)), { immediate: true });
 
+/** Names for the picker chips come from the row itself — the draft stores ids only. */
+const terms = computed(() => (post.value ? { categories: post.value.categories, tags: post.value.tags } : undefined));
+
 const saving = ref(false);
 const error = ref('');
 const savedAt = ref<string | null>(null);
@@ -115,7 +118,7 @@ const publicPath = computed(() => (post.value ? publicPostUrl(post.value.locale,
       </div>
     </div>
 
-    <AdminPostEditor :draft="draft" :locale="post.locale" locked-locale :saving="saving" :error="error" :saved-at="savedAt" @save="save" />
+    <AdminPostEditor :draft="draft" :terms="terms" :locale="post.locale" locked-locale :saving="saving" :error="error" :saved-at="savedAt" @save="save" />
 
     <div class="adm__panel" style="margin-top: 22px">
       <h2>Переклади цієї ж статті</h2>
