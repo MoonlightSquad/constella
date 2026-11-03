@@ -104,6 +104,12 @@ const projects = {
     env: apiEnv,
     variables: {
       DATABASE_URL: { required: true },
+      // Спільна Aiven-база тримає 20 з'єднань, 3 з них зарезервовані для superuser, тобто
+      // 17 на всіх. Пул у @constella/db — 10 на процес, а на Vercel процесів багато: кожна
+      // тепла лямбда тримає свій пул і доходить до `remaining connection slots are
+      // reserved`, тому сторінка блогу отримувала 500. Два з'єднання на лямбду вистачає:
+      // один запит за раз, решта черою в межах одного виклику.
+      DB_POOL_SIZE: { value: apiEnv.DB_POOL_SIZE || '2' },
       BOT_TOKEN: { value: apiEnv.BOT_TOKEN || botFileEnv.BOT_TOKEN, required: true },
       TELEGRAM_WEBHOOK_SECRET: { required: true },
       JWT_SECRET: { required: true },
