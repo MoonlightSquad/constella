@@ -7,17 +7,21 @@ const OTHER = '7a2c1d94-8b6e-4f03-9c5d-2e1a6b7f8d90';
 
 test('the list proxy forwards only known, well-formed parameters', () => {
   assert.deepEqual(
-    pickListParams({ locale: 'de', category: 'daten', tag: 'tips', limit: 3, cursor: 'abc', exclude: ID, evil: '<script>' }),
-    { locale: 'de', category: 'daten', tag: 'tips', exclude: ID, limit: 3, cursor: 'abc' },
+    pickListParams({ locale: 'de', category: 'daten', tag: 'tips', author: 'volodymyr-semenko', limit: 3, cursor: 'abc', exclude: ID, evil: '<script>' }),
+    { locale: 'de', category: 'daten', tag: 'tips', author: 'volodymyr-semenko', exclude: ID, limit: 3, cursor: 'abc' },
   );
-  assert.deepEqual(pickListParams({ locale: 'es', category: 'Привіт', tag: '../x', limit: 'x', cursor: 'a'.repeat(300), exclude: 'nope' }), {
-    locale: 'uk',
-    category: undefined,
-    tag: undefined,
-    exclude: undefined,
-    limit: undefined,
-    cursor: undefined,
-  });
+  assert.deepEqual(
+    pickListParams({ locale: 'es', category: 'Привіт', tag: '../x', author: 'Володимир', limit: 'x', cursor: 'a'.repeat(300), exclude: 'nope' }),
+    {
+      locale: 'uk',
+      category: undefined,
+      tag: undefined,
+      author: undefined,
+      exclude: undefined,
+      limit: undefined,
+      cursor: undefined,
+    },
+  );
 });
 
 test('limit stays inside the upstream window', () => {

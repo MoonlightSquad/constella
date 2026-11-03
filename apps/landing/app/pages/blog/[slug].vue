@@ -13,11 +13,13 @@ const { declare: declareAlternates } = useSeoAlternates();
 const { siteUrl } = useRuntimeConfig().public;
 
 const slug = computed(() => String(route.params.slug ?? ''));
-const { data: post } = await useFetch<BlogPost>('/api/blog/post', {
+const { data: post, error: postError } = await useFetch<BlogPost>('/api/blog/post', {
   query: computed(() => ({ slug: slug.value, locale: locale.value })),
 });
 
-if (!post.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
+// Чернетка й справжня відмова бази виглядають для сторінки однаково «даних немає», але
+// для індексу вони різні: 404 знімає URL, 502 повертає краулера пізніше.
+if (!post.value) throwBlogUnavailable(postError.value, { notFound: t('common.notFound'), unavailable: t('common.errorTitle') });
 
 // Three more articles from the same shelf, never this one: `exclude` is the group id, so the
 // filter survives the locale switch. No category means the newest three instead.

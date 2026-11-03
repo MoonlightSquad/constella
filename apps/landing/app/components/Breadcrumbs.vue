@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { Crumb } from '~/utils/json-ld';
 
-/** Шлях уже локалізований (localePath), тож остання крихта лишається без нього. */
-defineProps<{ crumbs: Crumb[] }>();
+// Архів кидає 404 до того, як встигає існувати `crumbs`, а сторінку помилки Vue все одно
+// рендерує через цей шаблон. Порожній список — просто відсутня навігація; обов'язковий —
+// попередження в консолі браузера й у логах SSR на кожному 404.
+withDefaults(defineProps<{ crumbs?: Crumb[] }>(), { crumbs: () => [] });
 </script>
 
 <template>

@@ -9,16 +9,20 @@ const route = useRoute();
 const localePath = useLocalePath();
 const { siteUrl } = useRuntimeConfig().public;
 
-// Server-to-server read through nitro, so the browser never needs API access.
-const first = await useFetch<BlogList>('/api/blog/posts', {
+// Server-to-server read through nitro: the browser never talks to the API, so the
+// production CORS allowlist (single origin) never applies to it.
+const { data: firstPage, error: listError } = await useFetch<BlogList>('/api/blog/posts', {
   query: computed(() => ({ locale: locale.value, limit: PAGE_SIZE })),
 });
+// Порожня головна блогу, згенерована під час відмови, — це сторінка, яку пошук запам'ятає
+// як «блог порожній». Список ніколи не відповідає 404, тому тут лише 502 і ретрай.
+if (listError.value) throwBlogUnavailable(listError.value, { notFound: t('common.notFound'), unavailable: t('common.errorTitle') });
 const older = ref<BlogList[]>([]);
-watch(first.data, () => { older.value = []; });
+watch(firstPage, () => { older.value = []; });
 
-const items = computed(() => [...(first.data.value?.items ?? []), ...older.value.flatMap((page) => page.items)]);
+const items = computed(() => [...(firstPage.value?.items ?? []), ...older.value.flatMap((page) => page.items)]);
 const nextCursor = computed(() =>
-  older.value.length ? older.value.at(-1)?.nextCursor ?? null : first.data.value?.nextCursor ?? null,
+  older.value.length ? older.value.at(-1)?.nextCursor ?? null : firstPage.value?.nextCursor ?? null,
 );
 
 const { data: categoryRows } = await useFetch<{ items: BlogCategory[] }>('/api/blog/categories', {

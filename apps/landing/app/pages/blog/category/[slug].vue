@@ -10,10 +10,12 @@ const localePath = useLocalePath();
 const route = useRoute();
 const slug = computed(() => String(route.params.slug ?? ''));
 
-const { data: term } = await useFetch<BlogCategoryArchive>('/api/blog/category', {
+const { data: term, error: termError } = await useFetch<BlogCategoryArchive>('/api/blog/category', {
   query: computed(() => ({ slug: slug.value, locale: locale.value })),
 });
-if (!term.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
+// Порожні дані ще не означають «сторінки немає»: 404 з індексу прибирає URL назавжди,
+// тому статус береться з відповіді апстриму, а не з факту відсутності рядка.
+if (!term.value) throwBlogUnavailable(termError.value, { notFound: t('common.notFound'), unavailable: t('common.errorTitle') });
 
 const { items, nextCursor, loading, loadMore } = await usePagedArchivePosts(
   computed(() => ({ category: slug.value, exclude: term.value?.pinnedPost?.groupId ?? '' })),
