@@ -445,7 +445,6 @@
 .prose h2:first-of-type { margin-top: 0; }
 .prose p, .prose li { color: var(--fg-muted-2); font-size: 15.5px; }
 .prose ul { margin: 12px 0 0; padding-inline-start: 20px; display: grid; gap: 8px; }
-.prose .updated { color: var(--fg-muted); font-size: 13px; }
 
 /* ---------- blog ---------- */
 .section__cta { margin-top: 28px; }
@@ -527,6 +526,7 @@
 /* Підпис-автор у мета-рядку є посиланням, але не повинен виглядати як окрема кнопка. */
 .post-head__meta a { color: var(--fg-muted); }
 .post-head__meta a:hover { color: var(--mint-2); }
+.post-head .updated { margin-top: 6px; color: var(--fg-muted); font-size: 13px; }
 .post-head__excerpt { margin-top: 16px; color: var(--fg-muted); font-size: 16.5px; }
 .post-head__cover { width: 100%; height: auto; margin-top: 24px; border: 1px solid var(--hairline); border-radius: var(--r-md); }
 .post-foot { display: flex; flex-direction: column; gap: 18px; align-items: flex-start; max-width: 760px; margin: 36px auto 0; }
