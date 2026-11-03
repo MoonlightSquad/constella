@@ -48,7 +48,12 @@
         "NUXT_PUBLIC_SITE_URL",
         "NUXT_PUBLIC_BOT_USERNAME",
         "BOT_USERNAME",
-        "NUXT_PUBLIC_SENTRY_DSN"
+        "NUXT_PUBLIC_SENTRY_DSN",
+        "NUXT_PUBLIC_PLAUSIBLE_DOMAIN",
+        "NUXT_PUBLIC_PLAUSIBLE_HOST",
+        "NUXT_ESP_API_TOKEN",
+        "NUXT_ESP_GROUP_ID",
+        "NUXT_ESP_BASE_URL"
       ]
     },
     "dev": {

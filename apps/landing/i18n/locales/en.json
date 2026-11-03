@@ -159,6 +159,11 @@
   "blog":   {
     "title": "Blog",
     "subtitle": "What changes in the product and how to date safely.",
+    "crumbs": {
+      "aria": "Breadcrumb",
+      "home": "Home",
+      "blog": "Blog"
+    },
     "categories": "Categories",
     "inCategory": "Category",
     "archiveBlurb": "the latest articles in this Constella blog archive",
@@ -169,6 +174,16 @@
     "minutes": "min read",
     "rss": "RSS feed",
     "backToBlog": "Back to the blog",
+    "related": "Keep reading",
+    "pillar": "Start here",
+    "newsletter": {
+      "title": "Constella newsletter",
+      "label": "Email address",
+      "cta": "Subscribe",
+      "consent": "New articles only. Unsubscribe in one click.",
+      "ok": "Check your inbox — we sent a confirmation link.",
+      "error": "Could not subscribe. Check the address and try again."
+    },
     "toc": "Contents",
     "teaserBadge": "News",
     "teaserTitle": "What’s new at Constella",

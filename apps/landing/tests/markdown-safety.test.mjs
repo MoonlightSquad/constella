@@ -34,6 +34,12 @@ test('external links are nofollowed and images are lazy', () => {
   assert.match(html, /alt="сузір’я"/, 'alt text is preserved');
 });
 
+test('our own funnel host is never nofollowed', () => {
+  const html = renderMarkdown('[app](https://app.constella.pp.ua)');
+  assert.match(html, /rel="noopener noreferrer"/);
+  assert.ok(!html.includes('nofollow'), html);
+});
+
 test('in-page anchors are left alone', () => {
   const html = renderMarkdown('[розділ](#pricing)');
   assert.ok(!html.includes('nofollow'), html);

@@ -159,6 +159,11 @@
   "blog":   {
     "title": "Blog",
     "subtitle": "Was sich im Produkt ändert und wie du sicher daten kannst.",
+    "crumbs": {
+      "aria": "Brotkrümelnavigation",
+      "home": "Startseite",
+      "blog": "Blog"
+    },
     "categories": "Kategorien",
     "inCategory": "Kategorie",
     "archiveBlurb": "die neuesten Artikel in diesem Constella-Blogarchiv",
@@ -169,6 +174,16 @@
     "minutes": "Min. Lesezeit",
     "rss": "RSS-Feed",
     "backToBlog": "Zurück zum Blog",
+    "related": "Weiterlesen",
+    "pillar": "Hier beginnen",
+    "newsletter": {
+      "title": "Constella-Newsletter",
+      "label": "E-Mail-Adresse",
+      "cta": "Abonnieren",
+      "consent": "Nur neue Artikel. Abmeldung mit einem Klick.",
+      "ok": "Bitte Postfach prüfen — wir haben einen Bestätigungslink geschickt.",
+      "error": "Anmeldung fehlgeschlagen. Adresse prüfen und erneut versuchen."
+    },
     "toc": "Inhalt",
     "teaserBadge": "Neuigkeiten",
     "teaserTitle": "Was ist neu bei Constella",

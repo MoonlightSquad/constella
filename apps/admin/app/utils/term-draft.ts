@@ -18,6 +18,8 @@ export type TermDraft = {
   /** Завжди чотири слоти: наявні переклади та порожні вкладки для нових. */
   translations: TermTranslationDraft[];
   removedLocales: BlogLocale[];
+  /** Pillar «почати тут» — id *групи* статті; '' — не прикріплено. Теґи цього поля не мають. */
+  pinnedPostGroupId: string;
 };
 
 /** Wire-форма обох видів: tag-рядки просто не мають додаткових полів. */
@@ -27,16 +29,24 @@ export type TermTranslationWire = TermTranslationDraft & {
   seoDescription?: string | null;
 };
 
-export type TermRowWire = { id: string; createdAt?: string; postCount: number; translations: TermTranslationWire[] };
+export type TermRowWire = {
+  id: string;
+  createdAt?: string;
+  postCount: number;
+  translations: TermTranslationWire[];
+  pinnedPostGroupId?: string | null;
+};
 
 export const emptyTermDraft = (): TermDraft => ({
   translations: TERM_LOCALES.map((locale) => ({ locale, slug: '', name: '', description: '', seoTitle: '', seoDescription: '' })),
   removedLocales: [],
+  pinnedPostGroupId: '',
 });
 
 export const termDraftFromRow = (term: TermRowWire | null): TermDraft => {
   const draft = emptyTermDraft();
   if (!term) return draft;
+  draft.pinnedPostGroupId = term.pinnedPostGroupId ?? '';
   for (const row of term.translations) {
     const slot = draft.translations.find((item) => item.locale === row.locale);
     if (!slot) continue;
@@ -97,6 +107,11 @@ export const patchFromTermDraft = (term: TermRowWire, draft: TermDraft, kind: Te
   const patch: Record<string, unknown> = {};
   if (translations.length) patch.translations = translations;
   if (draft.removedLocales.length) patch.removeLocales = [...draft.removedLocales];
+  // Pin — не переклад: '' у patch очищає його (валідує схема), тому зміну видно навіть
+  // коли жодна вкладка не рушалась — інакше «прибрати pillar» не збереглося б.
+  if (kind === 'category' && draft.pinnedPostGroupId !== (term.pinnedPostGroupId ?? '')) {
+    patch.pinnedPostGroupId = draft.pinnedPostGroupId;
+  }
   return patch;
 };
 
@@ -118,3 +133,29 @@ export const halfFilledLocales = (draft: TermDraft): BlogLocale[] =>
   draft.translations
     .filter((slot) => (slot.name.trim() || slot.slug.trim()) && !filled(slot) && !draft.removedLocales.includes(slot.locale))
     .map((slot) => slot.locale);
+
+export type PillarOption = { groupId: string; label: string; publishedLocales: BlogLocale[] };
+
+/**
+ * Рядки категорії (усі локалі, чернетки теж) → унікальні за групою варіанти для
+ * select. Підпис беремо з uk-рядка (канонічний рядок категорії з 0015), а мови, де
+ * стаття опублікована, показуємо окремо: архів іншої мови цей блок не рендерить, і редактор
+ * має бачити це до збереження, а не після.
+ */
+export const pillarOptionsFor = (
+  rows: { groupId: string; locale: BlogLocale; title: string; status: string }[],
+): PillarOption[] => {
+  const groups = new Map<string, { label: string; publishedLocales: BlogLocale[] }>();
+  for (const row of rows) {
+    const group = groups.get(row.groupId);
+    if (!group) {
+      groups.set(row.groupId, { label: row.title, publishedLocales: row.status === 'published' ? [row.locale] : [] });
+      continue;
+    }
+    if (row.locale === 'uk') group.label = row.title;
+    if (row.status === 'published' && !group.publishedLocales.includes(row.locale)) group.publishedLocales.push(row.locale);
+  }
+  return [...groups.entries()]
+    .map(([groupId, group]) => ({ groupId, ...group }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'uk'));
+};

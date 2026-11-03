@@ -106,6 +106,13 @@
       "when": 1793370000000,
       "tag": "0015_blog_taxonomy",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793639219815,
+      "tag": "0016_blog_authors_pillars",
+      "breakpoints": true
     }
   ]
 }

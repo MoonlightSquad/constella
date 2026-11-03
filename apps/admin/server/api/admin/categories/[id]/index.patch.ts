@@ -1,8 +1,8 @@
 import { adminEntityId, adminProxy, readAdminBody } from '../../../../utils/admin-api';
 
 /**
- * The patch carries `translations[]` (only changed locales) and `removeLocales[]`;
- * omitted keys stay untouched upstream.
+ * The patch carries `translations[]` (only changed locales), `removeLocales[]` and the
+ * `pinnedPostGroupId` pin ('' clears it); omitted keys stay untouched upstream.
  */
 export default eventHandler(async (event) => {
   const body = await readAdminBody(event);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { bot, appUrl } = useSiteLinks();
+const { bot, ctaUrl } = useSiteLinks({ campaign: 'platforms' });
 const { show } = useInstallModal();
 </script>
 
@@ -44,7 +44,7 @@ const { show } = useInstallModal();
         <h3 class="card__title">{{ $t('landing.platforms.webTitle') }}</h3>
         <p class="card__desc">{{ $t('landing.platforms.webDesc') }}</p>
         <div class="platform__actions">
-          <a class="link-btn" :href="appUrl" rel="noopener noreferrer">{{ $t('landing.platforms.webCta') }}</a>
+          <a class="link-btn" :href="ctaUrl" rel="noopener noreferrer">{{ $t('landing.platforms.webCta') }}</a>
         </div>
       </article>
     </div>

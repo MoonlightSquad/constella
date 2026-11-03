@@ -7,18 +7,48 @@ export type BlogCategory = { id: string; slug: string; name: string; description
 
 export type BlogTag = { id: string; slug: string; name: string; postCount: number };
 
+/** Підпис-row: `{id, slug, name}` — профіль повністю тягне окрему URL-сторінку. */
+export type AuthorRef = { id: string; slug: string; name: string };
+
+/** `/blog/authors/:slug` — payload сторінки профілю. */
+export type BlogAuthorArchive = {
+  id: string;
+  slug: string;
+  name: string;
+  role: string | null;
+  bio: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  avatarUrl: string | null;
+  avatarAlt: string | null;
+  sameAs: string[] | null;
+  postCount: number;
+  alternates: TermAlternate[];
+};
+
 /** One language in which this term has published posts — an hreflang entry point. */
 export type TermAlternate = { locale: BlogLocale; slug: string };
+
+/**
+ * Pillar-стаття категорії: той самий публічний профиль рядка, без таксономії — архів її
+ * уже показує навколо. `null`, коли pin не прикріплений або не має рядка цієї мови.
+ */
+export type BlogPinnedPost = Omit<BlogPostSummary, 'categories' | 'tags'>;
 
 /** `/blog/categories/:slug` — the archive page payload. */
 export type BlogCategoryArchive = BlogCategory & {
   seoTitle: string | null;
   seoDescription: string | null;
+  pinnedPost?: BlogPinnedPost | null;
   alternates: TermAlternate[];
 };
 
 /** `/blog/tags/:slug` — tags carry no SEO extras; the name is the description. */
-export type BlogTagArchive = BlogTag & { alternates: TermAlternate[] };
+export type BlogTagArchive = BlogTag & {
+  /** Тонкий тег (одна стаття) — парний сигнал із sitemap: api каже, сторінка показує. */
+  noindex?: boolean;
+  alternates: TermAlternate[];
+};
 
 /** Mirrors the public columns of `/blog/posts`; the body never reaches this side. */
 export type BlogPostSummary = {
@@ -35,6 +65,8 @@ export type BlogPostSummary = {
   publishedAt: string | null;
   readingMinutes: number;
   authorName: string;
+  /** Рядок-автор, коли статтю підписано людиною; `authorName` лишається fallback'ом. */
+  author?: AuthorRef | null;
 };
 
 export type BlogPost = BlogPostSummary & {

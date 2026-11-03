@@ -11,6 +11,7 @@ export const emptyDraft = (): PostDraft => ({
   coverUrl: '',
   coverAlt: '',
   authorName: '',
+  authorId: '',
   seoTitle: '',
   seoDescription: '',
   ogImageUrl: '',
@@ -30,6 +31,7 @@ export const draftFromPost = (post: AdminPostDetail | null): PostDraft => {
     coverUrl: post.coverUrl ?? '',
     coverAlt: post.coverAlt ?? '',
     authorName: post.authorName ?? '',
+    authorId: post.authorId ?? '',
     seoTitle: post.seoTitle ?? '',
     seoDescription: post.seoDescription ?? '',
     ogImageUrl: post.ogImageUrl ?? '',
@@ -39,7 +41,7 @@ export const draftFromPost = (post: AdminPostDetail | null): PostDraft => {
 };
 
 const TEXT_FIELDS = [
-  'slug', 'title', 'excerpt', 'bodyMarkdown', 'authorName', 'seoTitle', 'seoDescription',
+  'slug', 'title', 'excerpt', 'bodyMarkdown', 'authorName', 'authorId', 'seoTitle', 'seoDescription',
   'coverUrl', 'coverAlt', 'ogImageUrl', 'canonicalUrl',
 ] as const;
 
@@ -74,6 +76,7 @@ export const createFromDraft = (locale: string, draft: PostDraft, groupId?: stri
   categoryIds: draft.categoryIds,
   tagIds: draft.tagIds,
   authorName: draft.authorName || undefined,
+  authorId: draft.authorId || undefined,
   coverUrl: draft.coverUrl || undefined,
   coverAlt: draft.coverAlt || undefined,
   seoTitle: draft.seoTitle || undefined,

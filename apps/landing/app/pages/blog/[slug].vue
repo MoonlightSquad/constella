@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { BlogLocale, BlogPost } from '~/types/blog';
+import type { BlogLocale, BlogPost, BlogPostSummary } from '~/types/blog';
+import type { Crumb } from '~/utils/json-ld';
 
 // The cluster of alternate links for a post comes from the database, not from the URL
 // prefix, so this page claims it (see useSeoAlternates and app.vue).
@@ -18,6 +19,18 @@ const { data: post } = await useFetch<BlogPost>('/api/blog/post', {
 
 if (!post.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
 
+// Three more articles from the same shelf, never this one: `exclude` is the group id, so the
+// filter survives the locale switch. No category means the newest three instead.
+const { data: relatedFeed } = await useFetch<{ items: BlogPostSummary[] }>('/api/blog/posts', {
+  query: computed(() => ({
+    locale: locale.value,
+    limit: 3,
+    category: post.value?.categories[0]?.slug ?? '',
+    exclude: post.value?.groupId ?? '',
+  })),
+});
+const related = computed(() => relatedFeed.value?.items ?? []);
+
 const translations = computed(() => post.value?.alternates ?? []);
 /** `/blog/<slug>` is the default locale; the other three carry their prefix. */
 const localePathFor = (target: BlogLocale, value: string) =>
@@ -34,7 +47,13 @@ const hreflangOf = (code: BlogLocale) => locales.value.find((item) => item.code 
 const headline = computed(() => post.value?.seoTitle || post.value?.title || '');
 const summary = computed(() => post.value?.seoDescription || post.value?.excerpt || '');
 const canonical = computed(() => post.value?.canonicalUrl || `${siteUrl}${route.path}`);
-const picture = computed(() => post.value?.ogImageUrl || post.value?.coverUrl || `${siteUrl}/og/default.png`);
+// A card per article per language, drawn by nitro from this row's own text. The editor's own
+// upload still wins, and a cover photo still wins over the generated card.
+const picture = computed(() =>
+  post.value?.ogImageUrl ||
+  post.value?.coverUrl ||
+  `${siteUrl}/api/og?kind=post&slug=${encodeURIComponent(slug.value)}&locale=${locale.value}`,
+);
 const primary = computed(() => translations.value.find((item) => item.locale === 'uk') ?? translations.value[0]);
 
 useSeoMeta({
@@ -76,7 +95,16 @@ useJsonLd(() => {
     // Категорії — секції сайту, теґи — ключові слова: так це бачить Google для блогів.
     articleSection: post.value.categories.map((item) => item.name),
     keywords: post.value.tags.map((item) => item.name),
-    author: { '@type': 'Person', name: post.value.authorName },
+    author: post.value.author
+      ? {
+          // Підписаний рядок-автор: той самий `@id`, який стоїть на його профільній сторінці,
+          // тому Google бачить одну Person у двох документах, а не двох різних людей.
+          '@type': 'Person',
+          '@id': `${siteUrl}${localePath(`/blog/author/${post.value.author.slug}`)}#person`,
+          url: `${siteUrl}${localePath(`/blog/author/${post.value.author.slug}`)}`,
+          name: post.value.author.name,
+        }
+      : { '@type': 'Person', name: post.value.authorName },
     publisher: {
       '@type': 'Organization',
       name: 'Constella',
@@ -98,14 +126,24 @@ useJsonLd(() => {
 
 const contents = computed(() => post.value?.toc ?? []);
 const showContents = computed(() => contents.value.length >= 3);
+
+/** Шляхи вже локалізовані: і для навігації, і для `item` у JSON-LD один і той самий рядок. */
+const crumbs = computed<Crumb[]>(() => {
+  const category = post.value?.categories[0];
+  return [
+    { name: t('blog.crumbs.home'), path: localePath('/') },
+    { name: t('blog.crumbs.blog'), path: localePath('/blog') },
+    ...(category ? [{ name: category.name, path: localePath(`/blog/category/${category.slug}`) }] : []),
+    { name: post.value?.title ?? '' },
+  ];
+});
+useBreadcrumbList(() => crumbs.value);
 </script>
 
 <template>
   <article class="section shell">
     <header class="post-head">
-      <NuxtLink class="post-head__back" :to="localePath('/blog')">
-        ← {{ $t('blog.backToBlog') }}
-      </NuxtLink>
+      <Breadcrumbs :crumbs="crumbs" />
       <h1 class="section-title">{{ post?.title }}</h1>
       <p v-if="post?.categories.length" class="post-head__cats">
         <span class="post-head__cats-label">{{ $t('blog.inCategory') }}:</span>
@@ -118,7 +156,10 @@ const showContents = computed(() => contents.value.length >= 3);
         <span aria-hidden="true">·</span>
         <span>{{ post?.readingMinutes }} {{ $t('blog.minutes') }}</span>
         <span aria-hidden="true">·</span>
-        <span>{{ post?.authorName }}</span>
+        <!-- Посилання на профіль — та взаємна ланка графа, якої хоче E-E-A-T: стаття веде на
+             автора, автор веде назад на свої статті. Без рядка-автора лишається текстовий підпис. -->
+        <NuxtLink v-if="post?.author" :to="localePath(`/blog/author/${post.author.slug}`)">{{ post.author.name }}</NuxtLink>
+        <span v-else>{{ post?.authorName }}</span>
       </p>
       <p v-if="post?.excerpt" class="post-head__excerpt">{{ post.excerpt }}</p>
       <img
@@ -146,6 +187,23 @@ const showContents = computed(() => contents.value.length >= 3);
          escaped there, so this is the only place markup is trusted. -->
     <div class="prose" v-html="post?.html" />
 
+    <section v-if="related.length" class="related">
+      <h2 class="related__title">{{ $t('blog.related') }}</h2>
+      <div class="related__posts">
+        <article v-for="item in related" :key="item.id" class="post-card">
+          <h3 class="post-card__title">
+            <NuxtLink :to="localePath(`/blog/${item.slug}`)">{{ item.title }}</NuxtLink>
+          </h3>
+          <p class="post-card__excerpt">{{ item.excerpt }}</p>
+          <p class="post-card__meta">
+            <time v-if="item.publishedAt" :datetime="item.publishedAt">{{ formatDate(item.publishedAt, language) }}</time>
+            <span aria-hidden="true">·</span>
+            <span>{{ item.readingMinutes }} {{ $t('blog.minutes') }}</span>
+          </p>
+        </article>
+      </div>
+    </section>
+
     <footer class="post-foot">
       <ul v-if="post?.tags.length" class="tag-row">
         <li v-for="tag in post.tags" :key="tag.id">
@@ -153,6 +211,7 @@ const showContents = computed(() => contents.value.length >= 3);
         </li>
       </ul>
       <NuxtLink class="btn btn-ghost" :to="localePath('/blog')">{{ $t('blog.backToBlog') }}</NuxtLink>
+      <NewsletterForm class="post-foot__news" placement="article" />
     </footer>
   </article>
 </template>

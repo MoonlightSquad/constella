@@ -428,6 +428,31 @@ export const blogPostGroups = pgTable('blog_post_groups', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Автор — людина, тому його не перекладають: ім'я, роль і біо пишуться своєю мовою,
+// як у категорій із 0015. same_as — профілі соцмереж, вони спільні для всіх локалей.
+export const blogAuthors = pgTable('blog_authors', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  avatarUrl: text('avatar_url'),
+  avatarAlt: text('avatar_alt'),
+  sameAs: text('same_as').array().notNull().default(sql`'{}'::text[]`),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const blogAuthorTranslations = pgTable('blog_author_translations', {
+  authorId: uuid('author_id').references(() => blogAuthors.id, { onDelete: 'cascade' }).notNull(),
+  locale: text('locale').$type<BlogLocale>().notNull(),
+  slug: text('slug').notNull(),
+  name: text('name').notNull(),
+  role: text('role'),
+  bio: text('bio'),
+  seoTitle: text('seo_title'),
+  seoDescription: text('seo_description'),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.authorId, table.locale] }),
+  slugLocaleIdx: uniqueIndex('blog_author_translations_slug_locale_unique').on(table.slug, table.locale),
+  localeIdx: index('blog_author_translations_locale_idx').on(table.locale),
+}));
+
 // One row per language: each locale needs its own slug, its own SEO strings and its
 // own publish lifecycle, which is what makes hreflang exact instead of approximate.
 export const blogPosts = pgTable('blog_posts', {
@@ -450,6 +475,9 @@ export const blogPosts = pgTable('blog_posts', {
   noindex: boolean('noindex').default(false).notNull(),
   authorUserId: uuid('author_user_id').references(() => users.id, { onDelete: 'set null' }),
   authorName: text('author_name').default('Constella').notNull(),
+  // nullable без cascade: прибрати автора в CMS не може означати прибрати його статті.
+  // author_name лишається fallback'ом для рядків, яких ніхто не підписав.
+  authorId: uuid('author_id').references(() => blogAuthors.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
@@ -457,6 +485,7 @@ export const blogPosts = pgTable('blog_posts', {
   // Two English rows of the same article would produce a self-conflicting hreflang set.
   groupLocaleIdx: uniqueIndex('blog_posts_group_locale_unique').on(table.groupId, table.locale),
   listIdx: index('blog_posts_locale_status_published_idx').on(table.locale, table.status, table.publishedAt),
+  authorIdx: index('blog_posts_author_published_idx').on(table.authorId, table.locale, table.status, table.publishedAt),
   groupIdx: index('blog_posts_group_idx').on(table.groupId),
 }));
 
@@ -466,6 +495,9 @@ export const blogPosts = pgTable('blog_posts', {
 // namespace (/blog/category/…, /blog/tag/…), тому з слагами статей не конфліктує.
 export const blogCategories = pgTable('blog_categories', {
   id: uuid('id').defaultRandom().primaryKey(),
+  // Pillar-стаття категорії: id ГРУПИ, а не рядка — одна сутність на всю категорію,
+  // переклади не можуть мати чотири різні «почати тут».
+  pinnedPostGroupId: uuid('pinned_post_group_id').references(() => blogPostGroups.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

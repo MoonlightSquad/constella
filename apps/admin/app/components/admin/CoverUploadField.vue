@@ -1,7 +1,19 @@
 <script setup lang="ts">
-import type { CoverConfirmation, CoverTicket, PostDraft } from '~/types/admin';
+import type { CoverTicket, ImageConfirmation } from '~/types/admin';
 
-const props = defineProps<{ draft: PostDraft }>();
+const props = withDefaults(defineProps<{
+  /** Сховище підписує той самий квиток для обкладинки й для аватара — різниться лише ендпоінт. */
+  endpoint?: string;
+  title?: string;
+  note?: string;
+}>(), {
+  endpoint: '/api/admin/covers',
+  title: 'Обкладинка',
+  note: 'перетягни файл сюди або клікни · JPEG/PNG/WebP · 1200×630 після нормалізації',
+});
+
+const url = defineModel<string>('url', { required: true });
+const alt = defineModel<string>('alt', { required: true });
 
 const api = useAdminApi();
 const over = ref(false);
@@ -25,13 +37,13 @@ const upload = async (file: File | undefined) => {
 
   busy.value = true;
   try {
-    const ticket = await api.post<CoverTicket>('/api/admin/covers', { contentType: file.type });
+    const ticket = await api.post<CoverTicket>(props.endpoint, { contentType: file.type });
     // The PUT goes straight to object storage: the signed URL never passes through nitro
     // state, and the presign itself was produced server-side from the session cookie.
     const pushed = await fetch(ticket.uploadUrl, { method: 'PUT', headers: { 'content-type': ticket.contentType }, body: file });
     if (!pushed.ok) throw new Error(`Сховище відповіло ${pushed.status}. Перевір CORS для цього origin.`);
-    const confirmed = await api.post<CoverConfirmation>('/api/admin/covers/confirm', { objectKey: ticket.objectKey, contentType: ticket.contentType });
-    props.draft.coverUrl = confirmed.publicUrl;
+    const confirmed = await api.post<ImageConfirmation>(`${props.endpoint}/confirm`, { objectKey: ticket.objectKey, contentType: ticket.contentType });
+    url.value = confirmed.publicUrl;
   } catch (cause) {
     error.value = (cause as Error).message || 'Завантаження не вдалося.';
   } finally {
@@ -40,15 +52,15 @@ const upload = async (file: File | undefined) => {
 };
 
 const clear = () => {
-  props.draft.coverUrl = '';
-  props.draft.coverAlt = '';
+  url.value = '';
+  alt.value = '';
 };
 </script>
 
 <template>
   <div>
     <div
-      v-if="!draft.coverUrl"
+      v-if="!url"
       class="adm__drop"
       :class="{ 'adm__drop--over': over }"
       role="button"
@@ -59,34 +71,34 @@ const clear = () => {
       @dragleave.prevent="over = false"
       @drop.prevent="over = false; upload($event.dataTransfer?.files[0])"
     >
-      <strong>{{ busy ? 'Завантажую…' : 'Обкладинка' }}</strong>
-      <span>перетягни файл сюди або клікни · JPEG/PNG/WebP · 1200×630 після нормалізації</span>
+      <strong>{{ busy ? 'Завантажую…' : title }}</strong>
+      <span>{{ note }}</span>
       <input ref="input" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="upload(($event.target as HTMLInputElement).files?.[0])">
     </div>
 
     <div v-else class="adm__cover">
-      <img :src="draft.coverUrl" :alt="draft.coverAlt || 'Обкладинка'" loading="lazy">
+      <img :src="url" :alt="alt || title" loading="lazy">
       <button class="adm__cover__x" type="button" @click="clear">× Прибрати</button>
     </div>
 
     <div class="adm__field" style="margin-top: 12px">
-      <label class="adm__label" for="cover-alt">
+      <label class="adm__label" for="image-alt">
         Alt-текст
-        <span class="adm__count" :class="{ 'adm__count--over': draft.coverUrl && !draft.coverAlt.trim() }">
-          {{ draft.coverUrl ? (draft.coverAlt.length ? 'ок' : 'обовʼязковий') : 'не потрібен' }}
+        <span class="adm__count" :class="{ 'adm__count--over': url && !alt.trim() }">
+          {{ url ? (alt.length ? 'ок' : 'обовʼязковий') : 'не потрібен' }}
         </span>
       </label>
-      <input id="cover-alt" v-model="draft.coverAlt" class="adm__input" type="text" maxlength="200" placeholder="Що на зображенні — це читають скрінридери й Google">
+      <input id="image-alt" v-model="alt" class="adm__input" type="text" maxlength="200" placeholder="Що на зображенні — це читають скрінридери й Google">
     </div>
 
     <div class="adm__field">
-      <label class="adm__label" for="cover-url">…або вставити URL</label>
-      <input id="cover-url" v-model="draft.coverUrl" class="adm__input" type="url" placeholder="https://…">
+      <label class="adm__label" for="image-url">…або вставити URL</label>
+      <input id="image-url" v-model="url" class="adm__input" type="url" placeholder="https://…">
     </div>
 
     <p v-if="error" class="adm__error">{{ error }}</p>
     <p v-else class="adm__hint">
-      Сховище не налаштоване? Тоді просто встав готовий URL — пост це не блокує.
+      Сховище не налаштоване? Тоді просто встав готовий URL — зображення це не блокує.
     </p>
   </div>
 </template>

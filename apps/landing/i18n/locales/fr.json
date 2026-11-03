@@ -159,6 +159,11 @@
   "blog":   {
     "title": "Blog",
     "subtitle": "Les nouveautés du produit et les conseils pour des rencontres sûres.",
+    "crumbs": {
+      "aria": "Fil d’Ariane",
+      "home": "Accueil",
+      "blog": "Blog"
+    },
     "categories": "Catégories",
     "inCategory": "Catégorie",
     "archiveBlurb": "les derniers articles de cette archive du blog Constella",
@@ -169,6 +174,16 @@
     "minutes": "min de lecture",
     "rss": "Flux RSS",
     "backToBlog": "Retour au blog",
+    "related": "À lire aussi",
+    "pillar": "Commencer ici",
+    "newsletter": {
+      "title": "Newsletter Constella",
+      "label": "Adresse e-mail",
+      "cta": "S'abonner",
+      "consent": "Uniquement les nouveaux articles. Désabonnement en un clic.",
+      "ok": "Vérifiez votre boîte mail : nous avons envoyé un lien de confirmation.",
+      "error": "Inscription impossible. Vérifiez l'adresse et réessayez."
+    },
     "toc": "Sommaire",
     "teaserBadge": "Nouveautés",
     "teaserTitle": "Les nouveautés de Constella",

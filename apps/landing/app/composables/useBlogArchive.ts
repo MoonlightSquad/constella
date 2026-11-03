@@ -1,3 +1,4 @@
+import type { Crumb } from '~/utils/json-ld';
 import type { BlogLocale, BlogPostSummary, TermAlternate } from '~/types/blog';
 
 /** Те, що повертають `/api/blog/category` і `/api/blog/tag`. */
@@ -9,6 +10,8 @@ export type BlogArchiveTerm = {
   description?: string | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
+  /** Тонкий термін — лише тегові архіви; категорій це не стосується. */
+  noindex?: boolean;
   alternates: TermAlternate[];
 };
 
@@ -46,10 +49,10 @@ export const usePagedArchivePosts = async (filter: ComputedRef<Record<string, st
 };
 
 /**
- * Сторінки-архіви категорій і тегів. Кластер hreflang і перемикач мов беруться з
+ * Сторінки-архіви категорій, тегів і авторів. Кластер hreflang і перемикач мов беруться з
  * терміна, а не з URL: slug у кожній мові локалізований, як і в перекладених статей.
  */
-export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, items: Ref<BlogPostSummary[]>) => {
+export const useBlogArchive = (kind: 'category' | 'tag' | 'author', term: BlogArchiveTerm, items: Ref<BlogPostSummary[]>) => {
   const { t, locale, localeProperties, locales } = useI18n();
   const route = useRoute();
   const localePath = useLocalePath();
@@ -73,9 +76,14 @@ export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, 
     ogTitle: headline,
     ogDescription: summary,
     ogType: 'website',
-    ogImage: `${siteUrl}/og/default.png`,
+    // The term's own name is database content, so the card needs no copy this page has to keep in sync.
+    ogImage: `${siteUrl}/api/og?kind=${kind}&slug=${encodeURIComponent(term.slug)}&locale=${locale.value}`,
     ogUrl: canonical,
     twitterCard: 'summary_large_image',
+    // Тонкий архів (одна стаття) не просить Google його індексувати, але й не ховає посилання:
+    // `follow` тримає внутрішній граф. Пару цьому сигналу ставить API — той самий архів
+    // відсутній у sitemap.
+    ...(term.noindex ? { robots: 'noindex, follow' } : {}),
   });
 
   useHead(() => ({
@@ -85,6 +93,14 @@ export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, 
       { rel: 'canonical', href: canonical },
     ],
   }));
+
+  // Остання крихта — сам архів, тому без шляху: його @id уже несе CollectionPage вище.
+  const crumbs = computed<Crumb[]>(() => [
+    { name: t('blog.crumbs.home'), path: localePath('/') },
+    { name: t('blog.crumbs.blog'), path: localePath('/blog') },
+    { name: term.name },
+  ]);
+  useBreadcrumbList(() => crumbs.value);
 
   useJsonLd(() => ({
     '@context': 'https://schema.org',
@@ -105,5 +121,5 @@ export const useBlogArchive = (kind: 'category' | 'tag', term: BlogArchiveTerm, 
     },
   }));
 
-  return { pathFor };
+  return { pathFor, crumbs };
 };

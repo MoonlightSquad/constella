@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { bot, appUrl } = useSiteLinks();
+const { bot, ctaUrl } = useSiteLinks({ campaign: 'hero' });
 </script>
 
 <template>
@@ -17,7 +17,7 @@ const { bot, appUrl } = useSiteLinks();
 
       <div class="hero__cta">
         <a class="btn btn-gold" :href="bot" rel="noopener noreferrer">{{ $t('landing.hero.ctaTg') }}</a>
-        <a class="btn btn-ghost" :href="appUrl" rel="noopener noreferrer">{{ $t('landing.hero.ctaWeb') }}</a>
+        <a class="btn btn-ghost" :href="ctaUrl" rel="noopener noreferrer">{{ $t('landing.hero.ctaWeb') }}</a>
       </div>
 
       <p class="hero__trust">{{ $t('landing.hero.trustBadge') }}</p>

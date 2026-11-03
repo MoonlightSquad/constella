@@ -20,8 +20,10 @@ export default eventHandler(async (event) => {
   if (status === 404) throw createError({ statusCode: 404, statusMessage: 'Post not found' });
   if (!data) throw createError({ statusCode: 502, statusMessage: 'Blog upstream error' });
 
-  const { bodyMarkdown, ...post } = data as Record<string, unknown> & { bodyMarkdown?: string };
+  const { bodyMarkdown, ...post } = data as Record<string, unknown> & { bodyMarkdown?: string; categories?: { slug: string }[] };
   setHeader(event, 'cache-control', 'public, max-age=0, s-maxage=60, stale-while-revalidate=300');
-  // The body is rendered here so markdown-it never enters the client bundle.
-  return { ...post, ...renderMarkdownWithToc(bodyMarkdown) };
+  // The body is rendered here so markdown-it never enters the client bundle. Funnel links
+  // are tagged on the way out, so the database keeps plain markdown and one edit is enough.
+  const campaign = post.categories?.[0]?.slug || slug;
+  return { ...post, ...renderMarkdownWithToc(bodyMarkdown, { medium: 'article', campaign }) };
 });

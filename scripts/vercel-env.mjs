@@ -89,6 +89,11 @@ const landingUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configur
   : configuredLandingUrl;
 const landingBotUsername = [landingEnv.NUXT_PUBLIC_BOT_USERNAME, landingEnv.BOT_USERNAME, botFileEnv.BOT_USERNAME]
   .find((value) => value && !isPlaceholder(value));
+// The landing's CTA target is the public app host: a local web tunnel or the retired
+// app-test origin must never be pushed into it, because both are unreachable for a visitor.
+const funnelUrl = /^https?:\/\/(localhost|127\.0\.0\.1|app-test)([.:]|$)/i.test(webUrl)
+  ? 'https://app.constella.pp.ua'
+  : webUrl;
 // The console's own origin: only used to name the Vercel project's domain, never sent to the API.
 const adminUrl = adminEnv.ADMIN_APP_URL || 'https://admin.constella.pp.ua';
 
@@ -163,8 +168,15 @@ const projects = {
       // Server-to-server only: the landing bundle never calls the API, so no
       // NUXT_PUBLIC_API_URL is needed and the API CORS allowlist stays untouched.
       NUXT_API_INTERNAL_BASE: { value: apiUrl, required: true },
-      NUXT_PUBLIC_APP_URL: { value: webUrl, required: true },
+      NUXT_PUBLIC_APP_URL: { value: funnelUrl, required: true },
       NUXT_PUBLIC_BOT_USERNAME: { value: landingBotUsername, required: true },
+      // Optional by design: no Plausible domain means no script tag at all, and without the
+      // ESP pair the subscribe form answers 503 instead of failing the deployment.
+      NUXT_PUBLIC_PLAUSIBLE_DOMAIN: {},
+      NUXT_PUBLIC_PLAUSIBLE_HOST: {},
+      NUXT_ESP_API_TOKEN: {},
+      NUXT_ESP_GROUP_ID: {},
+      NUXT_ESP_BASE_URL: {},
     },
   },
   admin: {

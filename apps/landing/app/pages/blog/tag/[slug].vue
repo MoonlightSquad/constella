@@ -15,7 +15,7 @@ const { data: term } = await useFetch<BlogTagArchive>('/api/blog/tag', {
 if (!term.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
 
 const { items, nextCursor, loading, loadMore } = await usePagedArchivePosts(computed(() => ({ tag: slug.value })));
-useBlogArchive('tag', term.value, items);
+const { crumbs } = useBlogArchive('tag', term.value, items);
 
 const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
 </script>
@@ -23,7 +23,7 @@ const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
 <template>
   <div class="section shell">
     <div class="section-head">
-      <p class="eyebrow"><NuxtLink :to="localePath('/blog')">{{ $t('blog.topics') }}</NuxtLink></p>
+      <Breadcrumbs :crumbs="crumbs" />
       <h1 class="section-title">{{ term?.name }}</h1>
     </div>
 

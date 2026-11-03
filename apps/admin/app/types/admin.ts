@@ -16,6 +16,8 @@ export type AdminPostRow = {
   publishedAt: string | null;
   readingMinutes: number;
   authorName: string;
+  /** Рядок `blog_authors`; окремо від `authorName`, який лишається вільним підписом. */
+  authorId: string | null;
   status: BlogStatus;
   noindex: boolean;
   seoTitle: string | null;
@@ -55,13 +57,50 @@ export type AdminCategoryTranslation = {
 
 export type AdminTagTranslation = { tagId: string; locale: BlogLocale; slug: string; name: string };
 
-export type AdminCategoryRow = { id: string; createdAt: string; postCount: number; translations: AdminCategoryTranslation[] };
+/**
+ * `pinnedPostGroupId` — pillar «почати тут»; id *групи* статті, не рядка й не слага.
+ * Список його не віддає, тому поле необовʼязкове: редактор читає його лише з деталі.
+ */
+export type AdminCategoryRow = {
+  id: string;
+  createdAt: string;
+  pinnedPostGroupId?: string | null;
+  postCount: number;
+  translations: AdminCategoryTranslation[];
+};
 
 export type AdminTagRow = { id: string; createdAt: string; postCount: number; translations: AdminTagTranslation[] };
 
 export type AdminCategoryList = { total: number; items: AdminCategoryRow[] };
 
 export type AdminTagList = { total: number; items: AdminTagRow[] };
+
+/**
+ * Одна мова автора: роль і біо перекладаються (людину перекладають, а не транслітерують),
+ * аватар і `sameAs` — на всього автора одна пара, тому вони в `AdminAuthorRow`.
+ */
+export type AdminAuthorTranslation = {
+  authorId: string;
+  locale: BlogLocale;
+  slug: string;
+  name: string;
+  role: string | null;
+  bio: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+};
+
+export type AdminAuthorRow = {
+  id: string;
+  createdAt: string;
+  avatarUrl: string | null;
+  avatarAlt: string | null;
+  sameAs: string[] | null;
+  postCount: number;
+  translations: AdminAuthorTranslation[];
+};
+
+export type AdminAuthorList = { total: number; items: AdminAuthorRow[] };
 
 /** The editable projection: what the form holds and what a PATCH sends. */
 export type PostDraft = {
@@ -74,6 +113,8 @@ export type PostDraft = {
   coverUrl: string;
   coverAlt: string;
   authorName: string;
+  /** id автора з select; '' — «не підписано рядком», тоді працює `authorName`. */
+  authorId: string;
   seoTitle: string;
   seoDescription: string;
   ogImageUrl: string;
@@ -89,4 +130,8 @@ export type CoverTicket = {
   contentType: string;
 };
 
-export type CoverConfirmation = { coverKey: string; publicUrl: string; width: number; height: number; sizeBytes: number };
+/**
+ * Confirm-відповідь сховища: ключ (`coverKey`/`avatarKey`) формі не потрібен, вона бере
+ * лише `publicUrl`, тому один тип на обкладинку й на аватар.
+ */
+export type ImageConfirmation = { publicUrl: string; width: number; height: number; sizeBytes: number };

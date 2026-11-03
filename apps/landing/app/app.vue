@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { locale, localeProperties } = useI18n();
+const { t, locale, localeProperties } = useI18n();
 const { siteUrl } = useRuntimeConfig().public;
 const requestUrl = useRequestURL();
 
@@ -17,12 +17,17 @@ useHead(() =>
 );
 
 useHead(() => ({
-  link:
-    locale.value === 'uk'
+  link: [
+    // Announcing the feed everywhere is what lets a reader — or a feed aggregator that
+    // landed on any other page — find it; one alternate per page would also collide with
+    // this one on /blog.
+    { rel: 'alternate', type: 'application/rss+xml', title: t('blog.rss'), href: `${siteUrl}/feed/${locale.value}.xml` },
+    ...(locale.value === 'uk'
       ? // The Cyrillic subset is only preloaded where it is actually rendered: on the
         // other locales it would cost 14 KB of first-paint bytes for unused glyphs.
         [{ rel: 'preload', href: '/fonts/manrope-cyrillic.woff2', as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }]
-      : [],
+      : []),
+  ],
 }));
 
 useSeoMeta({

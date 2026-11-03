@@ -1,6 +1,8 @@
-import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, notInArray, or, sql } from 'drizzle-orm';
 import {
   adminAuditLogs,
+  blogAuthorTranslations,
+  blogAuthors,
   blogCategories,
   blogCategoryTranslations,
   blogPostCategories,
@@ -50,6 +52,7 @@ const summaryColumns = {
   publishedAt: blogPosts.publishedAt,
   readingMinutes: blogPosts.readingMinutes,
   authorName: blogPosts.authorName,
+  authorId: blogPosts.authorId,
 };
 
 const adminColumns = {
@@ -65,6 +68,8 @@ const adminColumns = {
 };
 
 export type TermRef = { id: string; slug: string; name: string };
+/** Той самий посилальний формат, що й у термінів: профіль автора — це теж архів. */
+export type AuthorRef = { id: string; slug: string; name: string };
 
 type TermRow = { groupId: string; termId: string; locale: BlogLocale; slug: string; name: string };
 
@@ -133,6 +138,67 @@ const attachTaxonomy = async <T extends { groupId: string; locale: BlogLocale }>
   }));
 };
 
+/**
+ * Проєкція публічного списку: тип виводиться з самих колонок, тому нове поле в
+ * `summaryColumns` не може тихо зникнути з pillar-payload.
+ */
+const publicSummary = () => db.select(summaryColumns).from(blogPosts);
+
+/**
+ * Додає `author` — підпис рядка, а не групи: автор стоїть на кожному мовному рядку окремо,
+ * тому ключем є `authorId` рядка, а не groupId. Публічна проєкція віддає лише автора з
+ * перекладом мови рядка (інакше посилання на профіль вело б на 404), адмінська — з
+ * fallback, щоб редактор бачив прогалину.
+ */
+const attachAuthor = async <T extends { authorId: string | null; locale: BlogLocale }>(rows: T[], fallback: boolean) => {
+  const ids = [...new Set(rows.map((row) => row.authorId).filter((id): id is string => Boolean(id)))];
+  if (!ids.length) return rows.map((row) => ({ ...row, author: null as AuthorRef | null }));
+
+  const translations = await db
+    .select({
+      authorId: blogAuthorTranslations.authorId,
+      locale: blogAuthorTranslations.locale,
+      slug: blogAuthorTranslations.slug,
+      name: blogAuthorTranslations.name,
+    })
+    .from(blogAuthorTranslations)
+    .where(inArray(blogAuthorTranslations.authorId, ids));
+
+  const byAuthor = new Map<string, Map<string, AuthorRef>>();
+  for (const entry of translations) {
+    const locales = byAuthor.get(entry.authorId) ?? new Map<string, AuthorRef>();
+    locales.set(entry.locale, { id: entry.authorId, slug: entry.slug, name: entry.name });
+    byAuthor.set(entry.authorId, locales);
+  }
+
+  return rows.map((row) => {
+    const locales = row.authorId ? byAuthor.get(row.authorId) : undefined;
+    if (!locales) return { ...row, author: null as AuthorRef | null };
+    const ref = locales.get(row.locale) ?? (fallback ? locales.get('uk') ?? locales.values().next().value : undefined);
+    return { ...row, author: (ref ?? null) as AuthorRef | null };
+  });
+};
+
+/**
+ * Pillar-стаття категорії мовою архіву. Рядок повертається лише якщо прикріплена група
+ * досі належить цій категорії й опублікована саме цією мовою: інакше лендінг не рендерить
+ * блок, замість вести читача на 404 чи на статтю з іншої полиці. Мову рядка перевіряємо
+ * тут, а не в редакторі, бо переклад і пін не живуть у одному рядку.
+ */
+export const pinnedPostFor = async (categoryId: string, groupId: string, locale: BlogLocale) => {
+  const [row] = await publicSummary()
+    .where(
+      and(
+        publishedOnly,
+        eq(blogPosts.locale, locale),
+        eq(blogPosts.groupId, groupId),
+        sql`EXISTS (SELECT 1 FROM blog_post_categories pc WHERE pc.post_group_id = ${blogPosts.groupId} AND pc.category_id = ${categoryId})`,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+};
+
 const resolveCategoryId = async (slug: string, locale: BlogLocale) => {
   const [row] = await db
     .select({ id: blogCategoryTranslations.categoryId })
@@ -147,6 +213,15 @@ const resolveTagId = async (slug: string, locale: BlogLocale) => {
     .select({ id: blogTagTranslations.tagId })
     .from(blogTagTranslations)
     .where(and(eq(blogTagTranslations.slug, slug), eq(blogTagTranslations.locale, locale)))
+    .limit(1);
+  return row?.id ?? null;
+};
+
+const resolveAuthorId = async (slug: string, locale: BlogLocale) => {
+  const [row] = await db
+    .select({ id: blogAuthorTranslations.authorId })
+    .from(blogAuthorTranslations)
+    .where(and(eq(blogAuthorTranslations.slug, slug), eq(blogAuthorTranslations.locale, locale)))
     .limit(1);
   return row?.id ?? null;
 };
@@ -172,18 +247,30 @@ const tagCountsByLocale = async (tagId: string) => {
   return new Map(rows.map((row) => [row.locale, row.postCount]));
 };
 
+/**
+ * Авторські статті по мовах: `author_id` стоїть на рядку, тому тут немає join на
+ * проміжну таблицю — і немає групи рядків на мову, кожна мова рахується сама за собою.
+ */
+const authorCountsByLocale = async (authorId: string) => {
+  const rows = await db
+    .select({ locale: blogPosts.locale, postCount: sql<number>`count(*)::int` })
+    .from(blogPosts)
+    .where(and(publishedOnly, eq(blogPosts.authorId, authorId)))
+    .groupBy(blogPosts.locale);
+  return new Map(rows.map((row) => [row.locale, row.postCount]));
+};
+
 export const listPublishedPosts = async (input: PublicListInput) => {
   const cursor = decodeCursor(input.cursor);
   if (input.cursor && !cursor) throw httpError('Invalid cursor.', 400);
 
   const categoryId = input.category ? await resolveCategoryId(input.category, input.locale) : null;
   const tagId = input.tag ? await resolveTagId(input.tag, input.locale) : null;
+  const authorId = input.author ? await resolveAuthorId(input.author, input.locale) : null;
   // Невідомий slug — порожня сторінка, а не 404: сам архів перевіряє термін окремо.
-  if ((input.category && !categoryId) || (input.tag && !tagId)) return { items: [], nextCursor: null };
+  if ((input.category && !categoryId) || (input.tag && !tagId) || (input.author && !authorId)) return { items: [], nextCursor: null };
 
-  const rows = await db
-    .select(summaryColumns)
-    .from(blogPosts)
+  const rows = await publicSummary()
     .where(
       and(
         publishedOnly,
@@ -194,6 +281,8 @@ export const listPublishedPosts = async (input: PublicListInput) => {
         tagId
           ? sql`EXISTS (SELECT 1 FROM blog_post_tags pt WHERE pt.post_group_id = ${blogPosts.groupId} AND pt.tag_id = ${tagId})`
           : undefined,
+        authorId ? eq(blogPosts.authorId, authorId) : undefined,
+        input.exclude?.length ? notInArray(blogPosts.groupId, input.exclude) : undefined,
         cursor
           ? sql`(${blogPosts.publishedAt}, ${blogPosts.id}) < (${cursor.publishedAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`
           : undefined,
@@ -202,7 +291,7 @@ export const listPublishedPosts = async (input: PublicListInput) => {
     .orderBy(desc(blogPosts.publishedAt), desc(blogPosts.id))
     .limit(input.limit + 1);
 
-  const items = await attachTaxonomy(rows.slice(0, input.limit), false);
+  const items = await attachAuthor(await attachTaxonomy(rows.slice(0, input.limit), false), false);
   const last = items.at(-1);
   return {
     items,
@@ -224,7 +313,7 @@ export const getPublishedPost = async (slug: string, locale: BlogLocale) => {
     .from(blogPosts)
     .where(and(eq(blogPosts.groupId, post.groupId), publishedOnly));
 
-  const [withTerms] = await attachTaxonomy([post], false);
+  const [withTerms] = await attachAuthor(await attachTaxonomy([post], false), false);
   return { ...withTerms, alternates: siblings };
 };
 
@@ -274,8 +363,17 @@ export const listPublicTags = async (locale: BlogLocale) => {
 /** Один термін + hreflang-альтернативи; `null`, коли в цій мові немає чого показувати. */
 export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
   const [term] = await db
-    .select()
+    .select({
+      categoryId: blogCategoryTranslations.categoryId,
+      slug: blogCategoryTranslations.slug,
+      name: blogCategoryTranslations.name,
+      description: blogCategoryTranslations.description,
+      seoTitle: blogCategoryTranslations.seoTitle,
+      seoDescription: blogCategoryTranslations.seoDescription,
+      pinnedPostGroupId: blogCategories.pinnedPostGroupId,
+    })
     .from(blogCategoryTranslations)
+    .innerJoin(blogCategories, eq(blogCategories.id, blogCategoryTranslations.categoryId))
     .where(and(eq(blogCategoryTranslations.slug, slug), eq(blogCategoryTranslations.locale, locale)))
     .limit(1);
   if (!term) return null;
@@ -289,6 +387,8 @@ export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
     .from(blogCategoryTranslations)
     .where(eq(blogCategoryTranslations.categoryId, term.categoryId));
 
+  const pinnedPost = term.pinnedPostGroupId ? await pinnedPostFor(term.categoryId, term.pinnedPostGroupId, locale) : null;
+
   return {
     id: term.categoryId,
     slug: term.slug,
@@ -297,6 +397,8 @@ export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
     seoTitle: term.seoTitle,
     seoDescription: term.seoDescription,
     postCount,
+    // Додатка до `exclude` на списку: архів без цього поля показав би pillar двічі.
+    pinnedPost,
     alternates: translations.filter((row) => (counts.get(row.locale) ?? 0) > 0).map((row) => ({ locale: row.locale, slug: row.slug })),
   };
 };
@@ -323,13 +425,67 @@ export const getPublicTag = async (slug: string, locale: BlogLocale) => {
     slug: term.slug,
     name: term.name,
     postCount,
+    // Тонкий тег (одна стаття) — не індекс, але й не 404: сторінка корисна й тримає
+    // внутрішній граф. Rule парна: `listPublishedTaxonomyForSitemap` той самий архів
+    // із sitemap не викидає — запис без noindex і навпаки був би суперечливим сигналом.
+    noindex: postCount < 2,
+    alternates: translations.filter((row) => (counts.get(row.locale) ?? 0) > 0).map((row) => ({ locale: row.locale, slug: row.slug })),
+  };
+};
+
+/**
+ * Профіль автора мовою архіву. Аватар і sameAs беруться з сутності (одна пара на всі
+ * чотири мови), решта — з рядка перекладу. `null`, коли в цій мові немає жодної
+ * опублікованої статті: порожній профіль не існує, так само як порожній архів.
+ */
+export const getPublicAuthor = async (slug: string, locale: BlogLocale) => {
+  const [term] = await db
+    .select({
+      authorId: blogAuthorTranslations.authorId,
+      slug: blogAuthorTranslations.slug,
+      name: blogAuthorTranslations.name,
+      role: blogAuthorTranslations.role,
+      bio: blogAuthorTranslations.bio,
+      seoTitle: blogAuthorTranslations.seoTitle,
+      seoDescription: blogAuthorTranslations.seoDescription,
+      avatarUrl: blogAuthors.avatarUrl,
+      avatarAlt: blogAuthors.avatarAlt,
+      sameAs: blogAuthors.sameAs,
+    })
+    .from(blogAuthorTranslations)
+    .innerJoin(blogAuthors, eq(blogAuthors.id, blogAuthorTranslations.authorId))
+    .where(and(eq(blogAuthorTranslations.slug, slug), eq(blogAuthorTranslations.locale, locale)))
+    .limit(1);
+  if (!term) return null;
+
+  const counts = await authorCountsByLocale(term.authorId);
+  const postCount = counts.get(locale) ?? 0;
+  if (!postCount) return null;
+
+  const translations = await db
+    .select({ locale: blogAuthorTranslations.locale, slug: blogAuthorTranslations.slug })
+    .from(blogAuthorTranslations)
+    .where(eq(blogAuthorTranslations.authorId, term.authorId));
+
+  return {
+    id: term.authorId,
+    slug: term.slug,
+    name: term.name,
+    role: term.role,
+    bio: term.bio,
+    seoTitle: term.seoTitle,
+    seoDescription: term.seoDescription,
+    avatarUrl: term.avatarUrl,
+    avatarAlt: term.avatarAlt,
+    sameAs: term.sameAs,
+    postCount,
     alternates: translations.filter((row) => (counts.get(row.locale) ?? 0) > 0).map((row) => ({ locale: row.locale, slug: row.slug })),
   };
 };
 
 /** Sitemap-рядки таксономії: одна на (термін, мову) з опублікованими статтями. */
 export const listPublishedTaxonomyForSitemap = async () => {
-  const [categories, tags] = await Promise.all([
+  const [categories, tags, authors] = await Promise.all([
     db
       .select({ id: blogCategoryTranslations.categoryId, locale: blogCategoryTranslations.locale, slug: blogCategoryTranslations.slug })
       .from(blogCategoryTranslations)
@@ -341,9 +497,20 @@ export const listPublishedTaxonomyForSitemap = async () => {
       .from(blogTagTranslations)
       .innerJoin(blogPostTags, eq(blogPostTags.tagId, blogTagTranslations.tagId))
       .innerJoin(blogPosts, and(eq(blogPosts.groupId, blogPostTags.postGroupId), eq(blogPosts.locale, blogTagTranslations.locale), publishedOnly))
-      .groupBy(blogTagTranslations.tagId, blogTagTranslations.locale, blogTagTranslations.slug),
+      .groupBy(blogTagTranslations.tagId, blogTagTranslations.locale, blogTagTranslations.slug)
+      // Парна до `noindex` у getPublicTag: архів з однією статтею не отримує robots:noindex
+      // і водночас стоїть у sitemap — це один сигнал, а не два суперечливі.
+      .having(sql`count(distinct ${blogPosts.id}) >= 2`),
+    // Профіль автора не має порогу «дві статті»: це не кластер посилань, а людина з біо,
+    // роллю й фото. Архів автора з однією статтею — усе одно сторінка зі змістом, тож він
+    // і в sitemap, і індексується.
+    db
+      .select({ id: blogAuthorTranslations.authorId, locale: blogAuthorTranslations.locale, slug: blogAuthorTranslations.slug })
+      .from(blogAuthorTranslations)
+      .innerJoin(blogPosts, and(eq(blogPosts.authorId, blogAuthorTranslations.authorId), eq(blogPosts.locale, blogAuthorTranslations.locale), publishedOnly))
+      .groupBy(blogAuthorTranslations.authorId, blogAuthorTranslations.locale, blogAuthorTranslations.slug),
   ]);
-  return { categories, tags };
+  return { categories, tags, authors };
 };
 
 /** One row per published locale variant; the landing groups them by `groupId`. */
@@ -358,6 +525,14 @@ export const listPostsForAdmin = async (input: AdminListInput) => {
   const where = and(
     input.locale ? eq(blogPosts.locale, input.locale) : undefined,
     input.status ? eq(blogPosts.status, input.status) : undefined,
+    // Фільтр за id категорії, а не за слагом: редактор вибирає pillar зі списку категорій,
+    // який уже має id, і мова архіву тут ні до чого.
+    input.category
+      ? sql`EXISTS (SELECT 1 FROM blog_post_categories pc WHERE pc.post_group_id = ${blogPosts.groupId} AND pc.category_id = ${input.category})`
+      : undefined,
+    // Автор — колонка рядка, тож тут немає ні EXISTS, ні join: фільтр списку збігається
+    // з фільтром архіву, лише замість локалізованого слага=id.
+    input.author ? eq(blogPosts.authorId, input.author) : undefined,
     input.search
       ? or(
           ilike(blogPosts.title, `%${input.search}%`),
@@ -377,7 +552,7 @@ export const listPostsForAdmin = async (input: AdminListInput) => {
     .orderBy(desc(blogPosts.updatedAt))
     .limit(input.limit)
     .offset(input.offset);
-  return { total, items: await attachTaxonomy(rows, true) };
+  return { total, items: await attachAuthor(await attachTaxonomy(rows, true), true) };
 };
 
 export const getPostForAdmin = async (id: string) => {
@@ -387,7 +562,7 @@ export const getPostForAdmin = async (id: string) => {
     .select({ id: blogPosts.id, locale: blogPosts.locale, slug: blogPosts.slug, status: blogPosts.status, updatedAt: blogPosts.updatedAt })
     .from(blogPosts)
     .where(eq(blogPosts.groupId, post.groupId));
-  const [withTerms] = await attachTaxonomy([post], true);
+  const [withTerms] = await attachAuthor(await attachTaxonomy([post], true), true);
   return { ...withTerms, siblings };
 };
 
@@ -411,9 +586,19 @@ const replaceGroupTerms = async (tx: any, groupId: string, kind: 'category' | 't
   if (unique.length) await tx.insert(blogPostTags).values(unique.map((tagId) => ({ postGroupId: groupId, tagId })));
 };
 
+/**
+ * `authorId` — чужий id у тілі запиту, тому перевіряється до запису: інакше SQLite-подібний
+ * FK-код (23503) прилетів би з бази як 500 замість 400 у вікні редактора.
+ */
+const assertAuthorExists = async (tx: any, authorId: string) => {
+  const [author] = await tx.select({ id: blogAuthors.id }).from(blogAuthors).where(eq(blogAuthors.id, authorId)).limit(1);
+  if (!author) throw httpError('Unknown authorId.', 400);
+  return author.id;
+};
+
 export const createPost = async (input: CreatePostInput, actorUserId: string) =>
   db.transaction(async (tx) => {
-    const { categoryIds, tagIds, ...fields } = input;
+    const { categoryIds, tagIds, authorId, ...fields } = input;
     let groupId = input.groupId ?? null;
     if (groupId) {
       const [existing] = await tx.select({ id: blogPostGroups.id }).from(blogPostGroups).where(eq(blogPostGroups.id, groupId)).limit(1);
@@ -430,6 +615,7 @@ export const createPost = async (input: CreatePostInput, actorUserId: string) =>
         groupId,
         status: 'draft',
         authorUserId: actorUserId,
+        authorId: authorId ? await assertAuthorExists(tx, authorId) : null,
         readingMinutes: estimateReadingMinutes(input.bodyMarkdown),
       })
       .returning();
@@ -441,11 +627,13 @@ export const createPost = async (input: CreatePostInput, actorUserId: string) =>
 
 export const updatePost = async (id: string, patch: UpdatePostInput, actorUserId: string) =>
   db.transaction(async (tx) => {
-    const { categoryIds, tagIds, ...fields } = patch;
+    const { categoryIds, tagIds, authorId, ...fields } = patch;
     const [post] = await tx
       .update(blogPosts)
       .set({
         ...toNull(fields),
+        // Ключ відсутній — не чіпаємо; `''` — зняти підпис (NULL, і стаття знову на authorName).
+        ...(authorId === undefined ? {} : { authorId: authorId ? await assertAuthorExists(tx, authorId) : null }),
         ...(patch.bodyMarkdown === undefined ? {} : { readingMinutes: estimateReadingMinutes(patch.bodyMarkdown) }),
         // drizzle does not emit `ON UPDATE CURRENT_TIMESTAMP`, so touch it explicitly.
         updatedAt: new Date(),
@@ -513,6 +701,9 @@ export const createTranslation = async (sourceId: string, locale: BlogLocale, ac
         coverAlt: source.coverAlt,
         authorUserId: actorUserId,
         authorName: source.authorName,
+        // Профіль не прив'язаний до групи, тому переклад не успадковує його сам собою:
+        // без цього рядка новомовна версія залишалась би без автора й без посилання на профіль.
+        authorId: source.authorId,
         publishedAt: source.publishedAt,
         readingMinutes: 1,
       })
