@@ -3,7 +3,7 @@ import deCopy from '../../../i18n/locales/de.json';
 import enCopy from '../../../i18n/locales/en.json';
 import frCopy from '../../../i18n/locales/fr.json';
 import { buildRss } from '../../utils/feed.mjs';
-import { fetchBlogOr } from '../../utils/blog-fetch';
+import { fetchBlog } from '../../utils/blog-fetch';
 import { LOCALE_LANGUAGE } from '../../utils/blog-locales';
 
 // The feed channel reuses the blog page's own title and description, so there is
@@ -31,7 +31,21 @@ export default eventHandler(async (event) => {
   const locale = match[1] as keyof typeof LOCALE_LANGUAGE;
 
   // The public list already caps to published posts, newest first.
-  const { data } = await fetchBlogOr<{ items: FeedItem[] }>(event, 'posts', { locale, limit: 20 }, { items: [] });
+  //
+  // `fetchBlog`, а не `fetchBlogOr`: фолбек із `{ items: [] }` перетворив би відмову бази
+  // на «у блогу жодної статті» — чинний RSS-канал, який край тримає десять хвилин і який
+  // кожна читалка запам'ятає як порожній. 502 з retry-after означає «спробуй пізніше».
+  let feed: { items: FeedItem[] } | null = null;
+  try {
+    ({ data: feed } = await fetchBlog<{ items: FeedItem[] }>(event, 'posts', { locale, limit: 20 }));
+  } catch (cause) {
+    console.warn(`[feed] upstream unreachable for ${locale}:`, cause);
+  }
+  if (!feed) {
+    setHeader(event, 'cache-control', 'no-store');
+    setHeader(event, 'retry-after', '60');
+    throw createError({ statusCode: 502, message: 'Feed unavailable' });
+  }
 
   setHeader(event, 'content-type', 'application/rss+xml; charset=utf-8');
   setHeader(event, 'cache-control', 'public, max-age=0, s-maxage=600, stale-while-revalidate=3600');
@@ -41,6 +55,6 @@ export default eventHandler(async (event) => {
     siteUrl: useRuntimeConfig(event).public.siteUrl,
     title: COPY[locale].title,
     description: COPY[locale].desc,
-    items: data.items,
+    items: feed.items,
   });
 });
