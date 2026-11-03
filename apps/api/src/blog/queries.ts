@@ -18,6 +18,7 @@ import {
   decodeCursor,
   encodeCursor,
   estimateReadingMinutes,
+  likePattern,
   type AdminListInput,
   type CreatePostInput,
   type PublicListInput,
@@ -282,6 +283,12 @@ export const listPublishedPosts = async (input: PublicListInput) => {
           ? sql`EXISTS (SELECT 1 FROM blog_post_tags pt WHERE pt.post_group_id = ${blogPosts.groupId} AND pt.tag_id = ${tagId})`
           : undefined,
         authorId ? eq(blogPosts.authorId, authorId) : undefined,
+        // Заголовок і анотація цієї мови: рядків у архіві стільки, що послідовний скан дешевший
+        // за будь-яку індексовану спробу, тому `pg_trgm` і повнотекстовий пошук сюди не входять.
+        // Тіло не шукається свідомо — пошук у ньому дав би 100% видачу на будь-яке слово.
+        input.search
+          ? or(ilike(blogPosts.title, likePattern(input.search)), ilike(blogPosts.excerpt, likePattern(input.search)))
+          : undefined,
         input.exclude?.length ? notInArray(blogPosts.groupId, input.exclude) : undefined,
         cursor
           ? sql`(${blogPosts.publishedAt}, ${blogPosts.id}) < (${cursor.publishedAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`
@@ -533,11 +540,13 @@ export const listPostsForAdmin = async (input: AdminListInput) => {
     // Автор — колонка рядка, тож тут немає ні EXISTS, ні join: фільтр списку збігається
     // з фільтром архіву, лише замість локалізованого слага=id.
     input.author ? eq(blogPosts.authorId, input.author) : undefined,
+    // Те саме екранування, що й у публічного пошуку: рядок у полі — це текст, а не взірець,
+    // і в адмінці `%` не повинен означати «покажи все».
     input.search
       ? or(
-          ilike(blogPosts.title, `%${input.search}%`),
-          ilike(blogPosts.slug, `%${input.search}%`),
-          ilike(blogPosts.excerpt, `%${input.search}%`),
+          ilike(blogPosts.title, likePattern(input.search)),
+          ilike(blogPosts.slug, likePattern(input.search)),
+          ilike(blogPosts.excerpt, likePattern(input.search)),
         )
       : undefined,
   );

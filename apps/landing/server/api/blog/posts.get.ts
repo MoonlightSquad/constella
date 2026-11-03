@@ -8,10 +8,11 @@ import { pickListParams } from '../../utils/blog-params.mjs';
  * без кешу: нею ми кажемо краулеру повернутися, а не переписати зміст.
  */
 export default eventHandler(async (event) => {
+  const params = pickListParams(getQuery(event));
   let status = 0;
   let data: unknown = null;
   try {
-    ({ status, data } = await fetchBlog(event, 'posts', pickListParams(getQuery(event))));
+    ({ status, data } = await fetchBlog(event, 'posts', params));
   } catch (cause) {
     console.warn('[blog] list upstream unreachable:', cause);
   }
@@ -24,6 +25,8 @@ export default eventHandler(async (event) => {
     });
   }
 
-  setHeader(event, 'cache-control', 'public, max-age=0, s-maxage=60, stale-while-revalidate=300');
+  // Список найновішого кешується, видача пошуку — ні: це не той самий вміст, і тримати
+  // чужий рядок в Edge хвилину ніхто не просив.
+  setHeader(event, 'cache-control', params.search ? 'no-store' : 'public, max-age=0, s-maxage=60, stale-while-revalidate=300');
   return data;
 });

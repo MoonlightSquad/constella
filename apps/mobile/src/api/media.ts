@@ -126,20 +126,22 @@ export async function uploadPhoto(image: PickedImage): Promise<void> {
 /**
  * Фото в чат. Тіло повідомлення — той самий JSON, що й у вебі
  * (`ConstellaDashboard.vue:778`), щоб бульбашки читались з обох боків.
- * Обережно: `photos.confirmUpload` одночасно додає URL до `users.photos` і в
- * ліміт 6 активних фото — точно як на вебі, серверного «chat-only» шляху немає.
+ * `purpose: 'chat'` тримає ассет осторонь профілю: ні `users.photos`, ні ліміту 6 фото.
  */
 export async function uploadChatImage(
   image: PickedImage,
   fileName: string,
 ): Promise<{ url: string; fileName: string; size: number }> {
   if (!isPhotoType(image.mimeType)) throw new MediaError('photos.badType');
-  const target = await trpc.photos.createUpload.mutate({ contentType: image.mimeType });
+  const target = await trpc.photos.createUpload.mutate({ contentType: image.mimeType, purpose: 'chat' });
   await putToStorage(image.uri, target.uploadUrl, image.mimeType);
-  const asset = await trpc.photos.confirmUpload.mutate({ objectKey: target.objectKey, contentType: image.mimeType });
+  const asset = await trpc.photos.confirmUpload.mutate({ objectKey: target.objectKey, contentType: image.mimeType, purpose: 'chat' });
   // Відхилене модерацією фото вже видалене зі сховища: кидаємо до `sendMessage`,
   // щоб екран не показав бульбашку на битий URL.
   if (asset.status === 'rejected') throw new MediaError('photos.rejectedContent');
+  // Pending чекає на людину в адмінці; у чат таке фото не потрапляє (сервер теж
+  // відхилить `sendMessage`), тож не показуємо бульбашку, якої не буде в історії.
+  if (asset.status === 'pending') throw new MediaError('photos.pendingReview');
   return { url: asset.publicUrl, fileName, size: image.size };
 }
 

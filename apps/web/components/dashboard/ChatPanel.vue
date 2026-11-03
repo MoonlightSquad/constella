@@ -7,6 +7,7 @@ import { useChat } from '~/composables/useChat'
 import { useCallRoom } from '~/composables/useCallRoom'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 import ChatRoomHeader from './ChatRoomHeader.vue'
+import ProfileSheet from './ProfileSheet.vue'
 import ChatMessageList from './ChatMessageList.vue'
 import ChatComposer from './ChatComposer.vue'
 import CameraSheet from './CameraSheet.vue'
@@ -86,6 +87,14 @@ const chat = useChat({
 })
 
 const closeRoom = () => chat.closeChat()
+
+// Профіль піра з шапки: дані вже в `match.profile` (`toPublicProfile`), тож окремий
+// запит не потрібен. Лист закривається разом із кімнатою.
+const profileOpen = ref(false)
+watch(() => chat.selectedMatch.value?.id, () => { profileOpen.value = false })
+const openPeerProfile = () => {
+  if (chat.selectedMatch.value?.profile) profileOpen.value = true
+}
 
 // Layout ховає рамку застосунку, коли відкрита кімната: стан живе в `useState`,
 // бо сторів у вебі немає, а frame і сторінка мають читати одні й ті самі рефи.
@@ -322,6 +331,7 @@ onUnmounted(() => {
         :notifications-enabled="chat.notificationsEnabled.value"
         :calls-available="callsAvailable"
         @back="closeRoom"
+        @open-profile="openPeerProfile"
         @start-call="startCallUI"
         @share-contact="chat.shareContact()"
         @block="(pid: string, mid: string) => blockProfile(pid, mid)"
@@ -346,6 +356,11 @@ onUnmounted(() => {
         @pause-voice="(id) => chat.pauseVoice(id)"
         @toggle-speed="(id) => chat.togglePlaybackSpeed(id)"
         @toggle-pin="(m) => chat.togglePinMedia(m)"
+      />
+      <ProfileSheet
+        v-if="profileOpen && chat.selectedMatch.value.profile"
+        :profile="chat.selectedMatch.value.profile"
+        @close="profileOpen = false"
       />
       <CameraSheet
         v-if="cameraOpen"

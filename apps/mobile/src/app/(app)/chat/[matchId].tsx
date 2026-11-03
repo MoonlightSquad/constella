@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -48,6 +49,21 @@ const RATES = [0.5, 1, 1.5, 2];
 const hit = { top: 6, bottom: 6, left: 6, right: 6 };
 
 type ContactInfo = { offeredByMe: boolean; mutual: boolean; usernames: string[] };
+
+/** Поля `toPublicProfile` у `social.matches`; сервер віддає їх `any`, тож звужуємо тут. */
+type PeerProfile = {
+  id: string;
+  displayName: string;
+  age: number;
+  city: string | null;
+  bio: string | null;
+  quote: string | null;
+  photos: string[];
+  prompts: string[];
+  interests: string[];
+  verified: boolean;
+  level?: number | null;
+};
 
 const errorText = (error: unknown, fallback: string) =>
   error instanceof TRPCClientError && error.message ? error.message : fallback;
@@ -269,6 +285,8 @@ export default function ChatScreen() {
   const [mode, setMode] = useState<'text' | 'voice'>('text');
   const [cancelling, setCancelling] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
+  /** Профіль піра з шапки: дані вже в `social.matches`, окремий запит не потрібен. */
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const list = useRef<ScrollViewInstance | null>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -653,7 +671,7 @@ export default function ChatScreen() {
 
   if (!matchId) return null;
 
-  const peer = match?.profile ?? null;
+  const peer = (match?.profile ?? null) as PeerProfile | null;
   if (!match && !thread.length) {
     // Холодний вхід через deep link: список ще не долетів — не поспічаймо сказати
     // «чату немає», інакше перший кадр буде хибним.
@@ -674,13 +692,26 @@ export default function ChatScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <HeaderBack onPress={leaveRoom} />
-          {peer?.photos[0] ? (
-            <Image accessibilityLabel={t('dashboard.verifiedProfile')} contentFit="cover" source={{ uri: peer.photos[0] }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarMark}>✦</Text>
-            </View>
-          )}
+          <Pressable
+            accessibilityLabel={t('dashboard.profileAccessible')}
+            accessibilityRole="button"
+            hitSlop={hit}
+            onPress={() => {
+              if (!peer) return;
+              // Клавіатура з композера інакше лишається над модалкою й закриває аркуш.
+              Keyboard.dismiss();
+              setProfileOpen(true);
+            }}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            {peer?.photos[0] ? (
+              <Image accessibilityLabel={t('dashboard.verifiedProfile')} contentFit="cover" source={{ uri: peer.photos[0] }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarMark}>✦</Text>
+              </View>
+            )}
+          </Pressable>
           <View style={styles.headCopy}>
             <Text numberOfLines={1} style={styles.headName}>
               {peer?.displayName || t('dashboard.newMatch')}
@@ -931,6 +962,62 @@ export default function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
+      <Modal transparent animationType="slide" visible={profileOpen} onRequestClose={() => setProfileOpen(false)}>
+        <Pressable
+          accessibilityLabel={t('dashboard.closeProfile')}
+          onPress={() => setProfileOpen(false)}
+          style={styles.profileBackdrop}
+        >
+          <View
+            onStartShouldSetResponder={() => true}
+            style={[styles.profileSheet, { paddingBottom: insets.bottom + spacing.md }]}
+          >
+            <View style={styles.profileTop}>
+              <Text numberOfLines={1} style={styles.profileTitle}>
+                {peer ? `${peer.displayName}, ${peer.age}` : ''}
+              </Text>
+              <Pressable
+                accessibilityLabel={t('dashboard.closeProfile')}
+                accessibilityRole="button"
+                hitSlop={hit}
+                onPress={() => setProfileOpen(false)}
+                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.profileCloseMark}>✕</Text>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.profileBody} style={styles.profileScroll}>
+              {peer?.photos.length ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.profileGallery}>
+                  {peer.photos.map((photo) => (
+                    <Image key={photo} contentFit="cover" source={{ uri: photo }} style={styles.profilePhoto} />
+                  ))}
+                </ScrollView>
+              ) : null}
+              <Text style={styles.profileMeta}>
+                {peer?.city || t('dashboard.noCity')}
+                {peer?.verified ? ` · ${t('dashboard.verified')}` : ''}
+                {peer?.level ? ` · ${t('dashboard.level', { level: peer.level })}` : ''}
+              </Text>
+              {peer?.interests.length ? (
+                <View style={styles.profileChips}>
+                  {peer.interests.map((interest) => (
+                    <View key={interest} style={styles.profileChip}>
+                      <Text style={styles.profileChipText}>{interest}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              {peer?.bio ? <Text style={styles.profileBio}>{peer.bio}</Text> : null}
+              {peer?.quote ? <Text style={styles.profileQuote}>{peer.quote}</Text> : null}
+              {peer?.prompts.map((prompt, index) => (
+                <Text key={index} style={styles.profilePrompt}>{prompt}</Text>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
       <SafetySheet
         onClose={() => setSafety(null)}
         onSuccess={(action) => {
@@ -1162,6 +1249,49 @@ const styles = StyleSheet.create({
   sheetOptionText: { ...typography.body, color: colors.text },
   footnote: { ...typography.caption, color: colors.muted, marginTop: spacing.sm, textAlign: 'center' },
   pressed: { opacity: 0.8 },
+  profileBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#050b0bcc' },
+  profileSheet: {
+    maxHeight: '86%',
+    marginHorizontal: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
+    overflow: 'hidden',
+  },
+  profileTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  profileTitle: { ...typography.title, flex: 1, color: colors.text, fontSize: 17 },
+  profileCloseMark: { color: colors.textSoft, fontSize: 16 },
+  profileScroll: { flexGrow: 0 },
+  profileBody: { padding: spacing.md, gap: spacing.sm },
+  profileGallery: { flexGrow: 0 },
+  profilePhoto: {
+    width: 240,
+    height: 300,
+    marginRight: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgDeep,
+  },
+  profileMeta: { ...typography.caption, color: colors.mutedSoft, fontSize: 12 },
+  profileChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  profileChip: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  profileChipText: { ...typography.caption, color: colors.textSoft, fontSize: 11 },
+  profileBio: { ...typography.body, color: colors.textSoft, fontSize: 14 },
+  profileQuote: { borderLeftWidth: 2, borderLeftColor: colors.mint, paddingLeft: spacing.sm, color: colors.text, fontSize: 13 },
+  profilePrompt: { borderLeftWidth: 2, borderLeftColor: colors.gold, paddingLeft: spacing.sm, color: colors.goldSoft, fontSize: 13 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   missingText: { ...typography.body, color: colors.mutedSoft, textAlign: 'center' },
 });

@@ -22,10 +22,10 @@ export const MAX_AUTHOR_ROLE = 120;
 export const MAX_AUTHOR_BIO = 1000;
 export const MAX_SAME_AS = 8;
 
-// `/blog/<slug>` is one segment, `/blog/category/…`, `/blog/tag/…` and `/blog/author/…` are
-// two: a post carrying either of these slugs could never be reached at the bare archive root,
-// so they are refused outright rather than shadowed.
-export const RESERVED_POST_SLUGS = new Set(['category', 'tag', 'author']);
+// `/blog/<slug>` is one segment, `/blog/category/…`, `/blog/tag/…`, `/blog/author/…` and
+// `/blog/search` are two: a post carrying either of these slugs could never be reached at the
+// bare archive root, so they are refused outright rather than shadowed.
+export const RESERVED_POST_SLUGS = new Set(['category', 'tag', 'author', 'search']);
 
 const markdown = z.string().min(1).max(MAX_BODY_CHARACTERS);
 const entitySlug = z.string().trim().min(1).max(200).refine((value) => SLUG_RE.test(value), 'slug must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/i');
@@ -305,6 +305,9 @@ export const publicListQuerySchema = z.object({
   tag: entitySlug.optional(),
   // Слаг автора з `blog_author_translations`, тобто локалізований — як у категорій і тегів.
   author: entitySlug.optional(),
+  // Не менше двох символів: однієї літери на цьому архіві вистачить, щоб «знайти все», і
+  // сторінка почне виглядати зламаною. Довше 80 — уже не пошуковий рядок, а цитата.
+  search: z.string().trim().min(2).max(80).optional(),
   // Post *group* ids, not slugs: a group is language-independent, so an article already on
   // the page stays excluded whatever locale the caller asks for.
   exclude: idList(8).optional(),
@@ -372,6 +375,14 @@ export const estimateReadingMinutes = (bodyMarkdown: string) => {
   const words = (bodyMarkdown.replace(/```[\s\S]*?```/g, ' ').match(WORD_COUNT) ?? []).length;
   return Math.min(240, Math.max(1, Math.round(words / 180)));
 };
+
+/**
+ * Маска для `ILIKE`, а не готовий взірець: без екранування `%` у рядку запитувача перетворював
+ * пошук на «усі статті», а `_` — на «будь-який символ», тобто `cat_x` ловив би `catqx`.
+ * Зворотний слеш подвоюється тим самим класом, що й решта, — інакше він екранував би власні
+ * подвоєння. Postgres без `ESCAPE` вважає екраном саме backslash, тому додаткового клауза немає.
+ */
+export const likePattern = (term: string) => `%${term.trim().replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
 
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type UpdatePostInput = z.infer<typeof updatePostSchema>;

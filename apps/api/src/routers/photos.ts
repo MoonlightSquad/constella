@@ -16,31 +16,42 @@ import {
 } from '../photos/storage.js';
 
 const owned = (userId: string, photoId: string) => and(eq(photoAssets.userId, userId), eq(photoAssets.id, photoId));
+// Ліміт 6 і профільна галерея стосуються лише purpose='profile': чат-фото живуть
+// окремо й не з'їдають слоти профілю.
+const profilePhotos = (ctx: any) => and(
+  eq(photoAssets.userId, ctx.user.id),
+  eq(photoAssets.purpose, 'profile'),
+);
 const activePhotos = (ctx: any) => ctx.db.select({ id: photoAssets.id }).from(photoAssets)
-  .where(and(eq(photoAssets.userId, ctx.user.id), ne(photoAssets.moderationStatus, 'rejected')));
+  .where(and(profilePhotos(ctx), ne(photoAssets.moderationStatus, 'rejected')));
+const purposeInput = z.enum(['profile', 'chat']).default('profile');
 
 export const photosRouter = router({
   mine: protectedProcedure.query(({ ctx }) => ctx.db.select({
     id: photoAssets.id, publicUrl: photoAssets.publicUrl, status: photoAssets.moderationStatus,
     note: photoAssets.moderationNote, createdAt: photoAssets.createdAt,
-  }).from(photoAssets).where(eq(photoAssets.userId, ctx.user.id)).orderBy(desc(photoAssets.createdAt))),
+  }).from(photoAssets).where(profilePhotos(ctx)).orderBy(desc(photoAssets.createdAt))),
 
-  createUpload: protectedProcedure.input(z.object({ contentType: z.enum(['image/jpeg','image/png','image/webp']) }))
+  createUpload: protectedProcedure.input(z.object({
+    contentType: z.enum(['image/jpeg','image/png','image/webp']), purpose: purposeInput,
+  }))
     .mutation(async ({ ctx, input }) => {
-      if ((await activePhotos(ctx)).length >= 6) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Maximum of 6 active photos.' });
+      if (input.purpose === 'profile' && (await activePhotos(ctx)).length >= 6) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Maximum of 6 active photos.' });
       try { return await createPhotoUpload(ctx.user.id, input.contentType); }
       catch (e) { throw new TRPCError({ code: 'PRECONDITION_FAILED', message: e instanceof Error ? e.message : 'Photo storage unavailable.' }); }
     }),
 
   confirmUpload: protectedProcedure.input(z.object({
     objectKey: z.string().min(1).max(512), contentType: z.enum(['image/jpeg','image/png','image/webp']),
+    purpose: purposeInput,
   })).mutation(async ({ ctx, input }) => {
-    if ((await activePhotos(ctx)).length >= 6) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Maximum of 6 active photos.' });
+    if (input.purpose === 'profile' && (await activePhotos(ctx)).length >= 6) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Maximum of 6 active photos.' });
     try {
       const processed = await processPhotoUpload(ctx.user.id, input.objectKey, input.contentType);
       const moderation = await moderatePhoto(processed.bytes);
       const [asset] = await ctx.db.insert(photoAssets).values({
         userId: ctx.user.id,
+        purpose: input.purpose,
         originalKey: input.objectKey,
         imageKey: processed.imageKey,
         publicUrl: processed.publicUrl,
@@ -59,7 +70,8 @@ export const photosRouter = router({
       }
       // pending — існуюча людська черга (`admin.photoQueue`), без публікації: `users.photos`
       // сам по собі робить URL прийнятим для профілю (_app.ts:78), тому лише approved.
-      if (moderation.status === 'approved') {
+      // Чат-фото не чіпають ні галерею, ні квести, ні ачівки профілю.
+      if (moderation.status === 'approved' && input.purpose === 'profile') {
         const [user] = await ctx.db.select({ photos: users.photos, timeZone: users.timeZone }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
         await ctx.db.update(users).set({ photos: [...(user?.photos ?? []), processed.publicUrl] }).where(eq(users.id, ctx.user.id));
         // Quest tracking must never fail the upload itself.

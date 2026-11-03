@@ -50,8 +50,9 @@ const decide = async (photo: any, next: 'approved' | 'rejected') => {
   <section class="adm__panel">
     <div v-if="photos.length" class="adm__grid adm__grid--photos">
       <article v-for="photo in photos" :key="photo.id" class="adm__photo">
-        <img :src="photo.publicUrl" :alt="`Фото профілю ${photo.displayName || photo.userId}`" loading="lazy">
+        <img :src="photo.publicUrl" :alt="`${photo.purpose === 'chat' ? 'Фото з чату' : 'Фото профілю'} ${photo.displayName || photo.userId}`" loading="lazy">
         <strong>{{ photo.displayName || 'Без імені' }}</strong>
+        <span class="adm__tag">{{ photo.purpose === 'chat' ? 'чат' : 'профіль' }}</span>
         <span class="adm__mono">{{ photo.userId }}</span>
         <small class="adm__muted">{{ photo.width }} × {{ photo.height }} · {{ fmtDate(photo.createdAt) }}</small>
         <small class="adm__muted">

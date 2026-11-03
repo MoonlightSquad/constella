@@ -13,6 +13,7 @@ import {
   decodeCursor,
   encodeCursor,
   estimateReadingMinutes,
+  likePattern,
   publicListQuerySchema,
   publishStatusSchema,
   updateAuthorSchema,
@@ -232,6 +233,22 @@ test('list query defaults and bounds', () => {
   assert.equal(publicListQuerySchema.parse({ limit: '25', tag: 'tips', category: 'sicherheit' }).limit, 25);
   assert.equal(publicListQuerySchema.safeParse({ tag: 'Привіт' }).success, false, 'tag filter must be an ASCII slug');
   assert.equal(publicListQuerySchema.safeParse({ category: '../x' }).success, false);
+});
+
+test('search is a trimmed phrase of two to eighty characters', () => {
+  assert.equal(publicListQuerySchema.parse({ search: '  безпека  ' }).search, 'безпека', 'the field is trimmed before it reaches the pattern');
+  assert.equal(publicListQuerySchema.safeParse({ search: 'x' }).success, false, 'one letter would match half the archive and look broken');
+  assert.equal(publicListQuerySchema.safeParse({ search: '  ' }).success, false, 'padding is not a query');
+  assert.equal(publicListQuerySchema.safeParse({ search: 'x'.repeat(81) }).success, false);
+  assert.equal(publicListQuerySchema.parse({}).search, undefined);
+});
+
+test('likePattern quotes the wildcards instead of honouring them', () => {
+  assert.equal(likePattern('безпека'), '%безпека%');
+  assert.equal(likePattern('  100%Match  '), '%100\\%Match%');
+  assert.equal(likePattern('cat_x'), '%cat\\_x%', 'an underscore must not stand for any character');
+  assert.equal(likePattern('a\\b'), '%a\\\\b%', 'the escape character escapes itself, first and once');
+  assert.equal(likePattern('%'), '%\\%%', 'a lone wildcard stays a literal, not a match-everything');
 });
 
 test('exclude splits a csv of group ids and nothing else', () => {

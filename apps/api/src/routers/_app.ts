@@ -74,7 +74,11 @@ export const appRouter = router({
 
     const [currentUser] = await ctx.db.select({ photos: users.photos }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
     const approvedAssets = await ctx.db.select({ publicUrl: photoAssets.publicUrl }).from(photoAssets)
-      .where(and(eq(photoAssets.userId, ctx.user.id), eq(photoAssets.moderationStatus, 'approved')));
+      .where(and(
+        eq(photoAssets.userId, ctx.user.id),
+        eq(photoAssets.moderationStatus, 'approved'),
+        eq(photoAssets.purpose, 'profile'),
+      ));
     const allowedPhotoUrls = new Set([...(currentUser?.photos ?? []), ...approvedAssets.map((asset: { publicUrl: string }) => asset.publicUrl)]);
     if (input.photos.some((url) => !allowedPhotoUrls.has(url))) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Profile photos must be uploaded to this account and approved by moderation.' });

@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
 
 const props = defineProps<{
-  match: { id: string; profile: { id: string; displayName: string; age: number; city: string | null } | null }
+  match: { id: string; profile: { id: string; displayName: string; age: number; city: string | null; photos?: string[] } | null }
   wsConnected: boolean
   contactInfo: { offeredByMe: boolean; mutual: boolean; usernames: string[] } | null
   isSharingContact: boolean
@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   back: []
+  openProfile: []
   startCall: [type: 'audio' | 'video']
   shareContact: []
   block: [profileId: string, matchId: string]
@@ -29,7 +30,10 @@ const menuOpen = ref(false)
 <template>
   <header class="chat-header">
     <button class="back-button" type="button" :aria-label="t('dashboard.allChats')" @click="emit('back')">←</button>
-    <div class="mini-avatar">{{ match.profile?.city?.slice(0, 1)?.toUpperCase() || '✦' }}</div>
+    <button class="mini-avatar" type="button" :aria-label="t('dashboard.profileAccessible')" @click="emit('openProfile')">
+      <img v-if="match.profile?.photos?.[0]" :src="match.profile.photos[0]" :alt="match.profile.displayName" class="mini-avatar-photo">
+      <template v-else>{{ match.profile?.city?.slice(0, 1)?.toUpperCase() || '✦' }}</template>
+    </button>
     <div class="chat-header-info">
       <h1>{{ match.profile?.displayName || t('dashboard.newMatch') }}</h1>
       <p>{{ match.profile?.age }} {{ t('dashboard.years') }} · {{ match.profile?.city }}</p>
@@ -81,5 +85,7 @@ const menuOpen = ref(false)
 .menu-dot { width: 8px; height: 8px; border-radius: 50%; background: #5a6e6a; }
 .menu-dot--on { background: #5eead4; }
 .back-button { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 8px; background: transparent; color: #d6e1dd; font-size: 20px; cursor: pointer; }
-.mini-avatar { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid #587169; border-radius: 50%; background: #24423d; color: #dbf0e6; font-size: 16px; font-weight: 700; }
+.mini-avatar { display: grid; overflow: hidden; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid #587169; border-radius: 50%; background: #24423d; color: #dbf0e6; font-size: 16px; font-weight: 700; padding: 0; cursor: pointer; }
+.mini-avatar:hover { border-color: #85c9b9; }
+.mini-avatar-photo { width: 100%; height: 100%; object-fit: cover; }
 </style>

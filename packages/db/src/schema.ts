@@ -343,6 +343,7 @@ export const photoAssets = pgTable(
     publicUrl: text('public_url').notNull(),
     width: integer('width').notNull(),
     height: integer('height').notNull(),
+    purpose: text('purpose').$type<'profile' | 'chat'>().default('profile').notNull(),
     moderationStatus: text('moderation_status').$type<'pending' | 'approved' | 'rejected'>().default('approved').notNull(),
     moderationScore: doublePrecision('moderation_score'),
     moderationProvider: text('moderation_provider'),
@@ -354,6 +355,8 @@ export const photoAssets = pgTable(
   (table) => ({
     imageKeyUnique: uniqueIndex('photo_assets_image_key_unique').on(table.imageKey),
     userStatusIdx: index('photo_assets_user_status_idx').on(table.userId, table.moderationStatus),
+    userPurposeStatusIdx: index('photo_assets_user_purpose_status_idx').on(table.userId, table.purpose, table.moderationStatus),
+    publicUrlIdx: index('photo_assets_public_url_idx').on(table.publicUrl),
     moderationQueueIdx: index('photo_assets_moderation_queue_idx').on(table.moderationStatus, table.createdAt),
   })
 );

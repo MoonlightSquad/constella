@@ -381,7 +381,8 @@ export const adminRouter = router({
         .innerJoin(users, eq(users.id, photoAssets.userId)).where(eq(photoAssets.moderationStatus, input.status));
       const rows = await ctx.db.select({
         id: photoAssets.id, userId: photoAssets.userId, displayName: users.displayName,
-        publicUrl: photoAssets.publicUrl, width: photoAssets.width, height: photoAssets.height,
+        publicUrl: photoAssets.publicUrl, purpose: photoAssets.purpose,
+        width: photoAssets.width, height: photoAssets.height,
         moderationScore: photoAssets.moderationScore, moderationProvider: photoAssets.moderationProvider,
         moderationStatus: photoAssets.moderationStatus, moderationNote: photoAssets.moderationNote,
         moderatedByUserId: photoAssets.moderatedByUserId, moderatedAt: photoAssets.moderatedAt,
@@ -403,7 +404,9 @@ export const adminRouter = router({
       }).where(eq(photoAssets.id, asset.id));
       const [user] = await tx.select({ photos: users.photos }).from(users).where(eq(users.id, asset.userId)).limit(1);
       const current = user?.photos ?? [];
-      const photos = input.status === 'approved'
+      // Чат-фото не належать профілю: схвалення не додає їх у галерею (відхилення
+      // лишається безпечним — filter по URL просто нічого не знайде).
+      const photos = input.status === 'approved' && asset.purpose === 'profile'
         ? current.includes(asset.publicUrl) ? current : [...current, asset.publicUrl]
         : current.filter((url: string) => url !== asset.publicUrl);
       await tx.update(users).set({ photos }).where(eq(users.id, asset.userId));
@@ -605,7 +608,11 @@ export const adminRouter = router({
       const changes: Record<string, unknown> = { fields: Object.keys(input.patch) };
       if (input.patch.photos) {
         const approved = await tx.select({ publicUrl: photoAssets.publicUrl }).from(photoAssets)
-          .where(and(eq(photoAssets.userId, input.userId), eq(photoAssets.moderationStatus, 'approved')));
+          .where(and(
+            eq(photoAssets.userId, input.userId),
+            eq(photoAssets.moderationStatus, 'approved'),
+            eq(photoAssets.purpose, 'profile'),
+          ));
         const allowed = new Set(approved.map((asset: { publicUrl: string }) => asset.publicUrl));
         const unknown = input.patch.photos.filter((url: string) => !allowed.has(url));
         if (unknown.length) {
