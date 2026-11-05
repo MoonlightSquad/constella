@@ -11,10 +11,11 @@ const route = useRoute();
 const { siteUrl } = useRuntimeConfig().public;
 const slug = computed(() => String(route.params.slug ?? ''));
 
-const { data: term } = await useFetch<BlogAuthorArchive>('/api/blog/author', {
+const { data: term, error: termError } = await useFetch<BlogAuthorArchive>('/api/blog/author', {
   query: computed(() => ({ slug: slug.value, locale: locale.value })),
 });
-if (!term.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
+// Профіль, перейменований у CMS, справді 404; профіль, який база не віддала, — ні.
+if (!term.value) throwBlogUnavailable(termError.value, { notFound: t('common.notFound'), unavailable: t('common.errorTitle') });
 
 const { items, nextCursor, loading, loadMore } = await usePagedArchivePosts(computed(() => ({ author: slug.value })));
 const { crumbs } = useBlogArchive('author', term.value, items);

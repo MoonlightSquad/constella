@@ -11,6 +11,11 @@ useSeoMeta({
   ogImage: `${siteUrl}/og/default.png`,
   twitterCard: 'summary_large_image',
 });
+
+// Лише тут: обидві секції рендеряться на цій сторінці, а пререндерені чотири її корені,
+// тож розмітка потрапляє в статичний HTML і не залежить від гідратації.
+useLandingFaqJsonLd();
+useLandingHowToJsonLd();
 </script>
 
 <template>

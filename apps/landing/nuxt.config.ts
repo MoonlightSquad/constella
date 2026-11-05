@@ -8,7 +8,7 @@ export default defineNuxtConfig({
   ssr: true,
   compatibilityDate: '2025-06-01',
 
-  modules: ['@nuxtjs/i18n', '@nuxtjs/sitemap'],
+  modules: ['@nuxtjs/i18n'],
 
   app: {
     head: {
@@ -58,8 +58,6 @@ export default defineNuxtConfig({
     },
   },
 
-  site: { url: siteUrl, index: true },
-
   i18n: {
     defaultLocale: 'uk',
     strategy: 'prefix_except_default',
@@ -73,29 +71,6 @@ export default defineNuxtConfig({
       { code: 'de', language: 'de-DE', file: 'de.json', name: 'Deutsch' },
       { code: 'fr', language: 'fr-FR', file: 'fr.json', name: 'Français' },
     ],
-  },
-
-  sitemap: {
-    autoLastmod: false,
-    // The default xsl stylesheet only prettifies the sitemap for human browsers; Google ignores
-    // processing instructions per the sitemaps spec. Chrome is retiring its XML viewer's XSLT,
-    // which surfaces a scary "may not display correctly" banner on every sitemap open — so no PI,
-    // no style.xsl route, no banner. Humans see raw XML, which is the format's normal browsing.
-    xsl: false,
-    // The default 10-minute window is per serverless instance, so a GSC fetch that lands on a
-    // cold one always pays a full rebuild (nitro function → API → Aiven). Widen it to an hour:
-    // Google almost always gets a warm cached copy and a transient upstream blip can no longer
-    // turn into «Не вдалося отримати». Staleness is capped because the response also carries
-    // stale-while-revalidate — an expired copy is served while it regenerates in the background.
-    cacheMaxAgeSeconds: 60 * 60,
-    // One /sitemap.xml instead of an index plus four per-locale children: at this scale the
-    // split buys nothing, while every child is its own fetch on Google's side — five endpoints,
-    // five chances for a cold or blipping origin to log a «Не вдалося отримати». The i18n
-    // integration keeps writing hreflang alternatives into each <url>; robots.txt carries
-    // the new pointer (see server/routes/robots.txt.get.ts), so only the GSC submission changes.
-    sitemaps: false,
-    // Published posts live in the database, so their URLs are a source, not pages.
-    sources: ['/api/__sitemap__/blog-urls', '/api/__sitemap__/blog-taxonomy-urls'],
   },
 
   routeRules: {

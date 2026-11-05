@@ -22,6 +22,14 @@ export const pickListParams = (query) => ({
   locale: LOCALES.has(String(query.locale)) ? String(query.locale) : 'uk',
   category: typeof query.category === 'string' && SLUG.test(query.category) ? query.category : undefined,
   tag: typeof query.tag === 'string' && SLUG.test(query.tag) ? query.tag : undefined,
+  // Архів автора фільтрується саме тут, а не на сторінці: відсіяний параметр не дає
+  // помилки — він просто показує «найновіше» замість статей людини, а на блозі з одним
+  // автором це виглядає як справна сторінка.
+  author: typeof query.author === 'string' && SLUG.test(query.author) ? query.author : undefined,
+  // Той самий поріг, що й на сторінці: критерій «це ще не запит» визначений один раз.
+  // Коротший рядок не відправляється взагалі, інакше апстрим відповів би 400, а сторінка —
+  // «нічого не знайдено» замість підказки.
+  search: typeof query.search === 'string' && query.search.trim().length >= 2 ? query.search.trim().slice(0, 80) : undefined,
   exclude: pickExclude(query.exclude),
   limit: Number.isInteger(Number(query.limit)) ? Math.min(50, Math.max(1, Number(query.limit))) : undefined,
   cursor: typeof query.cursor === 'string' && query.cursor.length <= 200 ? query.cursor : undefined,

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useLocale } from '~/composables/useLocale'
 
-type Profile = { id: string; displayName: string; age: number; gender: string; city: string | null; bio: string | null; photos: string[]; prompts: string[]; verified: boolean }
+type Profile = { id: string; displayName: string; age: number; gender: string; city: string | null; bio: string | null; photos: string[]; sharedInterests?: string[]; prompts: string[]; verified: boolean }
 
-const props = defineProps<{ profile: Profile }>()
+const props = defineProps<{ profile: Profile; feedbackEnabled?: boolean }>()
 
 const emit = defineEmits<{
   react: [kind: 'spark' | 'pass' | 'super']
+  feedback: [profileId: string, reason: 'not_interested' | 'distance' | 'profile_incomplete' | 'intent_mismatch' | 'other']
   report: [profile: Profile]
   block: [profileId: string]
 }>()
@@ -16,6 +17,15 @@ const { t } = useLocale()
 const dragX = ref(0)
 const dragY = ref(0)
 const isDragging = ref(false)
+const feedbackOpen = ref(false)
+const feedbackReasons = [
+  { reason: 'not_interested', label: 'recommendations.reasonNotInterested' },
+  { reason: 'distance', label: 'recommendations.reasonDistance' },
+  { reason: 'profile_incomplete', label: 'recommendations.reasonIncomplete' },
+  { reason: 'intent_mismatch', label: 'recommendations.reasonIntent' },
+  { reason: 'other', label: 'recommendations.reasonOther' },
+] as const
+watch(() => props.profile.id, () => { feedbackOpen.value = false })
 let pointerStartX = 0
 let pointerStartY = 0
 
@@ -58,6 +68,10 @@ const onPointerUp = () => {
     <div class="profile-copy">
       <div class="profile-name"><h2>{{ profile.displayName }}, {{ profile.age }}</h2><span>{{ t('dashboard.years') }}</span></div>
       <p class="profile-bio">{{ profile.bio }}</p>
+      <div v-if="profile.sharedInterests?.length" class="shared-interests">
+        <span class="shared-interests-label">{{ t('recommendations.sharedInterests') }}</span>
+        <span v-for="interest in profile.sharedInterests ?? []" :key="interest" class="shared-interest">{{ interest }}</span>
+      </div>
       <blockquote v-for="(prompt, index) in profile.prompts" :key="index" class="prompt-line">"{{ prompt }}"</blockquote>
     </div>
     <div class="profile-actions">
@@ -68,6 +82,17 @@ const onPointerUp = () => {
     <div class="safety-actions">
       <button type="button" @click="emit('report', profile)">{{ t('dashboard.report') }}</button>
       <button type="button" @click="emit('block', profile.id)">{{ t('dashboard.block') }}</button>
+    </div>
+    <div v-if="feedbackEnabled !== false" class="feedback-actions">
+      <button type="button" :aria-expanded="feedbackOpen" @click="feedbackOpen = !feedbackOpen">{{ t('recommendations.notForMe') }}</button>
+      <div v-if="feedbackOpen" class="feedback-reasons">
+        <button
+          v-for="option in feedbackReasons"
+          :key="option.reason"
+          type="button"
+          @click="emit('feedback', profile.id, option.reason); feedbackOpen = false"
+        >{{ t(option.label) }}</button>
+      </div>
     </div>
   </article>
 </template>
@@ -87,6 +112,9 @@ const onPointerUp = () => {
 .profile-name h2 { margin: 0; font-size: 28px; overflow-wrap: anywhere; }
 .profile-name span { color: #9aaba7; font-size: 12px; }
 .profile-bio { color: #d1dcd8; line-height: 1.55; }
+.shared-interests { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0; }
+.shared-interests-label { width: 100%; color: #9aaba7; font-size: 11px; }
+.shared-interest { border: 1px solid #425554; border-radius: 99px; padding: 5px 9px; color: #c4cfcc; font-size: 11px; }
 .prompt-line { margin: 11px 0; border-left: 2px solid #d5a863; padding: 1px 0 1px 12px; color: #e3c99f; font-size: 13px; line-height: 1.5; }
 .profile-actions { display: grid; grid-template-columns: .8fr 1.2fr .55fr; gap: 10px; padding: 14px 20px 20px; }
 .profile-actions button { min-height: 46px; border-radius: 8px; font-size: 13px; font-weight: 700; }
@@ -96,6 +124,10 @@ const onPointerUp = () => {
 .super-button { border: 1px solid #9d815c; border-radius: 8px; background: #30291f; color: #e4b46c; font-size: 20px; }
 .safety-actions { display: flex; justify-content: center; gap: 20px; padding: 0 12px 17px; }
 .safety-actions button { min-height: 44px; border: 0; background: transparent; color: #9aa9a5; font-size: 10px; cursor: pointer; }
+.feedback-actions { display: grid; justify-items: center; gap: 5px; padding: 0 12px 14px; }
+.feedback-actions > button { min-height: 40px; border: 0; background: transparent; color: #9aa9a5; font-size: 11px; cursor: pointer; }
+.feedback-reasons { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+.feedback-reasons button { min-height: 36px; border: 1px solid #425554; border-radius: 99px; padding: 5px 9px; background: transparent; color: #c4cfcc; font-size: 10px; cursor: pointer; }
 @media (min-width: 760px) { .profile-card { display: grid; grid-template-columns: 1.05fr .95fr; } .profile-photo { grid-row: span 2; min-height: 480px; aspect-ratio: auto; } .profile-copy { align-self: end; padding: 28px 24px 8px; } .profile-actions { align-self: start; } }
 @media (max-width: 450px) { .profile-photo { min-height: 250px; } }
 </style>

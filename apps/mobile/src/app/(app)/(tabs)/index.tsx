@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
@@ -47,6 +47,8 @@ export default function OrbitScreen() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [filters, setFilters] = useState<OrbitFilters>({});
   const [safety, setSafety] = useState<SafetyTarget | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
   const reducedMotion = useReducedMotion();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -81,9 +83,27 @@ export default function OrbitScreen() {
 
   const current = deck[0] ?? null;
 
+  const submitRecommendationFeedback = async (
+    reason: 'not_interested' | 'distance' | 'profile_incomplete' | 'intent_mismatch' | 'other',
+  ) => {
+    if (!current || feedbackBusy) return;
+    setFeedbackBusy(true);
+    try {
+      await trpc.recommendations.feedback.mutate({ profileId: current.id, reason });
+      setFeedbackOpen(false);
+      await loadOrbit();
+      flash(t('recommendations.thanks'));
+    } catch (error) {
+      setIssue(messageFrom(error, t('dashboard.loadError')));
+    } finally {
+      setFeedbackBusy(false);
+    }
+  };
+
   const react = async (kind: SwipeKind) => {
     if (!current || busy) return;
     setBusy(true);
+    setFeedbackOpen(false);
     setIssue('');
     try {
       const result = await trpc.social.swipe.mutate({ profileId: current.id, kind });
@@ -212,6 +232,18 @@ export default function OrbitScreen() {
               <Text style={styles.name}>{`${current.displayName}, ${current.age}`}</Text>
               <ScrollView contentContainerStyle={styles.copyScroll} showsVerticalScrollIndicator={false}>
                 {current.bio ? <Text style={styles.bio}>{current.bio}</Text> : null}
+                {current.sharedInterests?.length ? (
+                  <View style={styles.sharedInterests}>
+                    <Text style={styles.sharedInterestsLabel}>{t('recommendations.sharedInterests')}</Text>
+                    <View style={styles.sharedInterestChips}>
+                      {current.sharedInterests.map((interest) => (
+                        <View key={interest} style={styles.sharedInterestChip}>
+                          <Text style={styles.sharedInterestText}>{interest}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
                 {current.prompts.map((prompt, index) => (
                   <Text key={`${prompt}-${index}`} style={styles.prompt}>
                     {`“${prompt}”`}
@@ -268,6 +300,38 @@ export default function OrbitScreen() {
               variant="link"
             />
           </View>
+          {Object.keys(filters).length === 0 ? <View style={styles.feedback}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: feedbackOpen, disabled: feedbackBusy }}
+              disabled={feedbackBusy}
+              onPress={() => setFeedbackOpen((open) => !open)}
+              style={({ pressed }) => [styles.feedbackToggle, pressed && styles.pressed]}
+            >
+              <Text style={styles.feedbackToggleText}>{t('recommendations.notForMe')}</Text>
+            </Pressable>
+            {feedbackOpen ? (
+              <View style={styles.feedbackReasons}>
+                {([
+                  ['not_interested', 'recommendations.reasonNotInterested'],
+                  ['distance', 'recommendations.reasonDistance'],
+                  ['profile_incomplete', 'recommendations.reasonIncomplete'],
+                  ['intent_mismatch', 'recommendations.reasonIntent'],
+                  ['other', 'recommendations.reasonOther'],
+                ] as const).map(([reason, label]) => (
+                  <Pressable
+                    key={reason}
+                    accessibilityRole="button"
+                    disabled={feedbackBusy}
+                    onPress={() => void submitRecommendationFeedback(reason)}
+                    style={({ pressed }) => [styles.feedbackReason, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.feedbackReasonText}>{t(label)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </View> : null}
           <Text style={styles.caption}>{t('orbit.superlikes', { count: billing?.superlikeBalance ?? 0 })}</Text>
           <Text style={styles.caption}>{t('dashboard.dailyLimit')}</Text>
         </View>
@@ -335,6 +399,12 @@ const styles = StyleSheet.create({
   name: { ...typography.title, color: colors.text },
   copyScroll: { gap: spacing.sm, paddingBottom: spacing.md },
   bio: { ...typography.body, color: colors.textSoft },
+  sharedInterests: { gap: spacing.xs },
+  sharedInterestsLabel: { ...typography.caption, color: colors.mutedSoft },
+  sharedInterestChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  sharedInterestChip: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  sharedInterestText: { ...typography.caption, color: colors.textSoft },
+  pressed: { opacity: 0.8 },
   prompt: { ...typography.body, color: colors.mutedSoft, fontStyle: 'italic' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
   emptyStar: { fontSize: 34, color: colors.goldDim },
@@ -343,5 +413,11 @@ const styles = StyleSheet.create({
   foot: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   actions: { flexDirection: 'row', gap: spacing.sm },
   safety: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg },
+  feedback: { gap: spacing.sm, alignItems: 'center' },
+  feedbackToggle: { minHeight: 40, justifyContent: 'center', paddingHorizontal: spacing.md },
+  feedbackToggleText: { ...typography.caption, color: colors.mutedSoft },
+  feedbackReasons: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.xs },
+  feedbackReason: { minHeight: 36, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.sm },
+  feedbackReasonText: { ...typography.caption, color: colors.textSoft },
   caption: { ...typography.caption, color: colors.muted, textAlign: 'center' },
 });

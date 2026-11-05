@@ -1,3 +1,8 @@
+<script setup lang="ts">
+const { t, te } = useI18n();
+const items = computed(() => faqItems(t, te));
+</script>
+
 <template>
   <section id="faq" class="section shell">
     <div class="section-head is-center">
@@ -7,9 +12,9 @@
     </div>
 
     <div class="faq">
-      <details v-for="n in 6" :key="n">
-        <summary>{{ $t(`landing.faq.q${n}`) }}</summary>
-        <p>{{ $t(`landing.faq.a${n}`) }}</p>
+      <details v-for="(item, index) in items" :key="index">
+        <summary>{{ item.name }}</summary>
+        <p>{{ item.text }}</p>
       </details>
     </div>
   </section>

@@ -8,6 +8,8 @@ const props = defineProps<{
   isBuying: string | null
   isLinkingTelegram: boolean
   telegramLinkError: string
+  safetyReports: { id: number; reason: string; status: string; createdAt: string; reviewedAt: string | null }[]
+  safetyReportsLoading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,6 +29,12 @@ const { t } = useLocale()
 const genderLabel = (gender: string) => t(({
   woman: 'profile.women', man: 'profile.men', nonbinary: 'profile.nonbinary', other: 'profile.other',
 } as Record<string, TranslationKey>)[gender] || 'dashboard.notSet')
+const reportStatusLabel = (status: string) => t(({
+  open: 'reports.statusOpen',
+  reviewing: 'reports.statusReviewing',
+  resolved: 'reports.statusResolved',
+  dismissed: 'reports.statusDismissed',
+} as Record<string, TranslationKey>)[status] || 'reports.statusOpen')
 </script>
 
 <template>
@@ -39,6 +47,17 @@ const genderLabel = (gender: string) => t(({
     <section class="sky-section"><h2>{{ t('dashboard.aboutMe') }}</h2><p>{{ account.profile?.bio || t('dashboard.addBio') }}</p></section>
     <section class="sky-section"><h2>{{ t('dashboard.lookingFor') }}</h2><p>{{ (account.profile?.lookingFor || []).map((gender: string) => genderLabel(gender)).join(', ') || t('dashboard.notSet') }}</p></section>
     <section class="sky-section"><h2>{{ t('dashboard.prompts') }}</h2><blockquote v-for="(prompt, index) in [account.profile?.promptOne, account.profile?.promptTwo, account.profile?.promptThree].filter(Boolean)" :key="index">{{ prompt }}</blockquote></section>
+    <section class="sky-section">
+      <h2>{{ t('reports.title') }}</h2>
+      <p v-if="safetyReportsLoading">{{ t('reports.loading') }}</p>
+      <p v-else-if="!safetyReports.length">{{ t('reports.empty') }}</p>
+      <ul v-else class="report-list">
+        <li v-for="report in safetyReports" :key="report.id">
+          <strong>{{ reportStatusLabel(report.status) }}</strong>
+          <time :datetime="report.createdAt">{{ new Date(report.createdAt).toLocaleDateString() }}</time>
+        </li>
+      </ul>
+    </section>
     <section class="sky-section premium-card">
       <h2>{{ t('dashboard.vipTitle') }}</h2>
       <div v-if="!billingStatus?.telegramAvailable" class="telegram-payment-link">
@@ -82,6 +101,9 @@ h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
 .sky-section h2 { margin: 0 0 9px; color: #e4b46c; font-size: 13px; }
 .sky-section p, .sky-section blockquote { margin: 0; color: #c5d0cc; font-size: 13px; line-height: 1.55; }
 .sky-section blockquote { margin-top: 8px; border-left: 2px solid #59897b; padding-left: 10px; }
+.report-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.report-list li { display: flex; justify-content: space-between; gap: 12px; color: #c5d0cc; font-size: 12px; }
+.report-list time { color: #91a19d; }
 .telegram-payment-link { display: grid; gap: 12px; margin: 12px 0; border: 1px solid #344748; border-radius: 9px; padding: 13px; background: #0d1718; }
 .telegram-payment-link p { color: #aab9b6; font-size: 12px; }
 .text-button { min-height: 44px; border: 0; background: none; color: #85c9b9; font-size: 13px; font-weight: 700; cursor: pointer; }

@@ -1,3 +1,8 @@
+<script setup lang="ts">
+const { t, te } = useI18n();
+const steps = computed(() => howSteps(t, te));
+</script>
+
 <template>
   <section id="how" class="section shell">
     <div class="section-head is-center">
@@ -7,10 +12,10 @@
     </div>
 
     <div class="steps">
-      <article v-for="n in 3" :key="n" class="step">
-        <div class="step__num" aria-hidden="true">{{ $t(`landing.how.step${n}Num`) }}</div>
-        <h3>{{ $t(`landing.how.step${n}Title`) }}</h3>
-        <p>{{ $t(`landing.how.step${n}Desc`) }}</p>
+      <article v-for="(step, index) in steps" :key="index" class="step">
+        <div class="step__num" aria-hidden="true">{{ step.num }}</div>
+        <h3>{{ step.name }}</h3>
+        <p>{{ step.text }}</p>
       </article>
     </div>
   </section>

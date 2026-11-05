@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { blogUpstreamUrl, resolveApiInternalSource } from '../server/utils/api-base.mjs';
 import { blogArchivePath, blogIndexPath, blogPath, buildRss, escapeXml } from '../server/utils/feed.mjs';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('upstream base prefers request-time env over the build-time config', () => {
   assert.deepEqual(
@@ -33,6 +38,7 @@ test('taxonomy routes keep their fixed Latin segments', () => {
   assert.equal(blogUpstreamUrl('http://api:4000', 'categories', { locale: 'fr' }), 'http://api:4000/blog/categories?locale=fr');
   // Профіль — одна мовна сутність: апстрим plural (`/blog/authors/:slug`), як категорії з тегами.
   assert.equal(blogUpstreamUrl('http://api:4000', 'author', { slug: 'redaktorka', locale: 'de' }), 'http://api:4000/blog/authors/redaktorka?locale=de');
+  assert.equal(blogUpstreamUrl('http://api:4000', 'authors', { locale: 'uk' }), 'http://api:4000/blog/authors?locale=uk');
   assert.equal(blogUpstreamUrl('http://api:4000', 'sitemapTaxonomy', {}), 'http://api:4000/blog/sitemap/taxonomy');
   assert.throws(() => blogUpstreamUrl('http://api:4000', 'unknown-route', {}), /Unknown blog route/);
 });
@@ -71,4 +77,18 @@ test('an undated post is still a valid item', () => {
   const xml = buildRss({ locale: 'en', language: 'en-US', siteUrl: 'https://constella.pp.ua', title: 't', description: 'd', items: [{ slug: 'x', title: 't', excerpt: 'e', authorName: 'a', publishedAt: null }] });
   assert.ok(!xml.includes('<pubDate>'), xml);
   assert.match(xml, /<link>https:\/\/constella.pp.ua\/en\/blog\/x<\/link>/);
+});
+
+/**
+ * `<language>`-успадкоємець для HTTP: тип відповіді — те, чим читалка вирішує, як парсити
+ * тіло, тому `application/rss+xml; charset=utf-8` прописаний у роуті, а не дістався з навмання.
+ * Друга половина — та сама пастка, що в списку статей: фолбек `{ items: [] }` на відмові бази
+ * видавав би валідний і повністю порожній канал, який край тримає десять хвилин.
+ */
+test('the feed names its media type and refuses to pose as an empty channel', () => {
+  const source = readFileSync(join(root, 'server', 'routes', 'feed', '[locale].xml.get.ts'), 'utf8');
+  assert.match(source, /setHeader\(event, 'content-type', 'application\/rss\+xml; charset=utf-8'\)/);
+  assert.ok(!/\bfetchBlogOr\s*(<|\()/.test(source), 'an unreachable upstream must not become zero items');
+  assert.match(source, /try \{[\s\S]*?fetchBlog</, 'a refused connection is caught, not surfaced as a generic 500');
+  assert.match(source, /statusCode: 502/);
 });

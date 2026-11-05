@@ -251,6 +251,21 @@ export const dailyOrbitProfiles = pgTable(
   })
 );
 
+export const recommendationFeedback = pgTable(
+  'recommendation_feedback',
+  {
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    profileId: uuid('profile_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    feedbackDate: date('feedback_date', { mode: 'string' }).notNull(),
+    reason: text('reason').$type<'not_interested' | 'distance' | 'profile_incomplete' | 'intent_mismatch' | 'other'>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.profileId, table.feedbackDate] }),
+    profileIdx: index('recommendation_feedback_profile_idx').on(table.profileId, table.feedbackDate),
+  })
+);
+
 export const matches = pgTable(
   'matches',
   {
@@ -261,6 +276,24 @@ export const matches = pgTable(
   },
   (table) => ({
     uniquePair: uniqueIndex('matches_user_pair_unique').on(table.userOneId, table.userTwoId),
+  })
+);
+
+export const meetingPlans = pgTable(
+  'meeting_plans',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    matchId: uuid('match_id').references(() => matches.id, { onDelete: 'cascade' }).notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    venueName: text('venue_name').notNull(),
+    city: text('city').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userMatchUnique: uniqueIndex('meeting_plans_user_match_unique').on(table.userId, table.matchId),
+    matchIdx: index('meeting_plans_match_idx').on(table.matchId),
   })
 );
 
@@ -312,7 +345,9 @@ export const reports = pgTable('reports', {
   reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   moderatorNote: text('moderator_note'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  reporterCreatedAtIdx: index('reports_reporter_created_at_idx').on(table.reporterId, table.createdAt),
+}));
 
 export const adminAuditLogs = pgTable(
   'admin_audit_logs',
@@ -343,6 +378,7 @@ export const photoAssets = pgTable(
     publicUrl: text('public_url').notNull(),
     width: integer('width').notNull(),
     height: integer('height').notNull(),
+    purpose: text('purpose').$type<'profile' | 'chat'>().default('profile').notNull(),
     moderationStatus: text('moderation_status').$type<'pending' | 'approved' | 'rejected'>().default('approved').notNull(),
     moderationScore: doublePrecision('moderation_score'),
     moderationProvider: text('moderation_provider'),
@@ -354,17 +390,25 @@ export const photoAssets = pgTable(
   (table) => ({
     imageKeyUnique: uniqueIndex('photo_assets_image_key_unique').on(table.imageKey),
     userStatusIdx: index('photo_assets_user_status_idx').on(table.userId, table.moderationStatus),
+    userPurposeStatusIdx: index('photo_assets_user_purpose_status_idx').on(table.userId, table.purpose, table.moderationStatus),
+    publicUrlIdx: index('photo_assets_public_url_idx').on(table.publicUrl),
     moderationQueueIdx: index('photo_assets_moderation_queue_idx').on(table.moderationStatus, table.createdAt),
   })
 );
 
-export const events = pgTable('events', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  userId: uuid('user_id').references(() => users.id).notNull(),
-  type: text('type').notNull(),
-  meta: jsonb('meta').$type<Record<string, unknown>>().default({}).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const events = pgTable(
+  'events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: uuid('user_id').references(() => users.id).notNull(),
+    type: text('type').notNull(),
+    meta: jsonb('meta').$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userTypeCreatedAtIdx: index('events_user_type_created_at_idx').on(table.userId, table.type, table.createdAt),
+  })
+);
 
 export const userAchievements = pgTable(
   'user_achievements',
@@ -529,6 +573,16 @@ export const blogTagTranslations = pgTable('blog_tag_translations', {
   pk: primaryKey({ columns: [table.tagId, table.locale] }),
   slugLocaleIdx: uniqueIndex('blog_tag_translations_slug_locale_unique').on(table.slug, table.locale),
   localeIdx: index('blog_tag_translations_locale_idx').on(table.locale),
+}));
+
+export const blogTagSlugAliases = pgTable('blog_tag_slug_aliases', {
+  tagId: uuid('tag_id').references(() => blogTags.id, { onDelete: 'cascade' }).notNull(),
+  locale: text('locale').$type<BlogLocale>().notNull(),
+  slug: text('slug').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.locale, table.slug] }),
+  tagIdx: index('blog_tag_slug_aliases_tag_idx').on(table.tagId),
 }));
 
 export const blogPostCategories = pgTable('blog_post_categories', {

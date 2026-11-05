@@ -139,6 +139,31 @@ describe('social.sendMessage', () => {
     await assert.rejects(() => sent(db), { code: 'NOT_FOUND' });
     assert.equal(probe.length, 0);
   });
+
+  it('refuses an image that is still waiting for human review', async () => {
+    const probe: Probe[] = [];
+    const db = fakeDb(baseTables({ photo_assets: [{ status: 'pending' }] }), probe);
+    const body = JSON.stringify({ kind: 'image', url: 'https://cdn.example/p.jpg', fileName: 'p.jpg', size: 10 });
+
+    await assert.rejects(() => sent(db, body), { code: 'FORBIDDEN' });
+    assert.equal(probe.some((entry) => entry.kind === 'insert'), false);
+  });
+
+  it('delivers an image once moderation approved it', async () => {
+    const probe: Probe[] = [];
+    const db = fakeDb(baseTables({ photo_assets: [{ status: 'approved' }] }), probe);
+    const body = JSON.stringify({ kind: 'image', url: 'https://cdn.example/p.jpg', fileName: 'p.jpg', size: 10 });
+
+    await sent(db, body);
+    const insert = probe.find((entry) => entry.kind === 'insert' && entry.table === 'messages');
+    assert.equal(insert!.row.body, body);
+  });
+
+  it('leaves non-image JSON bodies alone', async () => {
+    const probe: Probe[] = [];
+    await sent(fakeDb(baseTables(), probe), JSON.stringify({ kind: 'video', url: 'https://cdn.example/v.mp4' }));
+    assert.ok(probe.find((entry) => entry.kind === 'insert' && entry.table === 'messages'));
+  });
 });
 
 describe('social.sendVoiceMessage', () => {

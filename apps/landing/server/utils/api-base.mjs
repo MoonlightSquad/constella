@@ -30,6 +30,7 @@ const BLOG_ROUTES = {
   category: (slug) => `/blog/categories/${encodeURIComponent(String(slug ?? ''))}`,
   tags: () => '/blog/tags',
   tag: (slug) => `/blog/tags/${encodeURIComponent(String(slug ?? ''))}`,
+  authors: () => '/blog/authors',
   author: (slug) => `/blog/authors/${encodeURIComponent(String(slug ?? ''))}`,
   sitemap: () => '/blog/sitemap',
   sitemapTaxonomy: () => '/blog/sitemap/taxonomy',

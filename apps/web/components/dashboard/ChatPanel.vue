@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useLocale } from '~/composables/useLocale'
 import type { TranslationKey } from '~/composables/useLocale'
 import { useDashboard } from '~/composables/useDashboard'
@@ -7,6 +7,7 @@ import { useChat } from '~/composables/useChat'
 import { useCallRoom } from '~/composables/useCallRoom'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 import ChatRoomHeader from './ChatRoomHeader.vue'
+import ProfileSheet from './ProfileSheet.vue'
 import ChatMessageList from './ChatMessageList.vue'
 import ChatComposer from './ChatComposer.vue'
 import CameraSheet from './CameraSheet.vue'
@@ -37,10 +38,13 @@ const emit = defineEmits<{
 }>()
 
 const { $trpc } = useNuxtApp() as any
+const router = useRouter()
 const { locale, t } = useLocale()
 const localeTag: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', de: 'de-DE', fr: 'fr-FR' }
 const formatTime = (date: string | Date) =>
   new Intl.DateTimeFormat(localeTag[locale.value], { hour: '2-digit', minute: '2-digit' }).format(new Date(date))
+const formatMeetingPlanTime = (date: string | Date) =>
+  new Intl.DateTimeFormat(localeTag[locale.value], { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date))
 
 /** Мітка рядка чату: сьогодні — час, далі — «Вчора», день тижня, дата (`chatStampOf`). */
 const lastActivityOf = (match: Match) => match.lastMessage?.createdAt ?? match.createdAt
@@ -87,10 +91,160 @@ const chat = useChat({
 
 const closeRoom = () => chat.closeChat()
 
+// Профіль піра з шапки: дані вже в `match.profile` (`toPublicProfile`), тож окремий
+// запит не потрібен. Лист закривається разом із кімнатою.
+const profileOpen = ref(false)
+watch(() => chat.selectedMatch.value?.id, () => { profileOpen.value = false })
+const openPeerProfile = () => {
+  if (chat.selectedMatch.value?.profile) profileOpen.value = true
+}
+
 // Layout ховає рамку застосунку, коли відкрита кімната: стан живе в `useState`,
 // бо сторів у вебі немає, а frame і сторінка мають читати одні й ті самі рефи.
 const dash = useDashboard()
 watchEffect(() => { dash.chatRoomOpen.value = Boolean(chat.selectedMatch.value) })
+const hasPremium = computed(() => Boolean(dash.billingStatus.value?.vip))
+const assistantOpen = ref(false)
+const assistantTopic = ref('')
+const assistantSuggestions = ref<string[]>([])
+const assistantRemaining = ref(10)
+const assistantBusy = ref(false)
+const assistantError = ref('')
+const assistantEnabled = ref(false)
+const meetingPlanOpen = ref(false)
+const meetingPlan = ref<{ startsAt: string; venueName: string; city: string } | null>(null)
+const meetingStartsAt = ref('')
+const meetingVenue = ref('')
+const meetingCity = ref('')
+const meetingPlanBusy = ref(false)
+const meetingPlanError = ref('')
+
+const localDateTimeValue = (date: Date) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+const loadMeetingPlan = async (matchId: string) => {
+  try {
+    meetingPlan.value = await $trpc.safetyPlan.get.query({ matchId })
+    if (meetingPlan.value) {
+      meetingStartsAt.value = localDateTimeValue(new Date(meetingPlan.value.startsAt))
+      meetingVenue.value = meetingPlan.value.venueName
+      meetingCity.value = meetingPlan.value.city
+    } else {
+      meetingStartsAt.value = localDateTimeValue(new Date(Date.now() + 60 * 60_000))
+      meetingVenue.value = ''
+      meetingCity.value = ''
+    }
+  } catch {
+    meetingPlanError.value = t('safetyPlan.unavailable')
+  }
+}
+
+watch(() => chat.selectedMatch.value?.id, async (matchId) => {
+  assistantEnabled.value = false
+  if (!matchId || !import.meta.client) return
+  try {
+    assistantEnabled.value = Boolean((await $trpc.assistant.status.query()).enabled)
+  } catch {
+    assistantEnabled.value = false
+  }
+}, { immediate: true })
+
+const requestAssistantSuggestions = async () => {
+  const matchId = chat.selectedMatch.value?.id
+  if (!matchId || !assistantTopic.value.trim() || assistantBusy.value || assistantRemaining.value < 1) return
+  assistantBusy.value = true
+  assistantError.value = ''
+  try {
+    const result = await $trpc.assistant.suggest.mutate({
+      matchId,
+      locale: locale.value,
+      topic: assistantTopic.value.trim(),
+    })
+    assistantSuggestions.value = result.suggestions
+    assistantRemaining.value = result.remaining
+  } catch (error) {
+    const code = (error as { data?: { code?: string } })?.data?.code
+    assistantError.value = code === 'TOO_MANY_REQUESTS'
+      ? t('assistant.quotaReached')
+      : t('assistant.unavailable')
+  } finally {
+    assistantBusy.value = false
+  }
+}
+
+const useAssistantSuggestion = (suggestion: string) => {
+  chat.chatDraft.value = suggestion
+  assistantOpen.value = false
+}
+
+watch(() => chat.selectedMatch.value?.id, () => {
+  assistantOpen.value = false
+  assistantTopic.value = ''
+  assistantSuggestions.value = []
+  assistantRemaining.value = 10
+  assistantError.value = ''
+})
+
+watch(() => chat.selectedMatch.value?.id, (matchId) => {
+  meetingPlanOpen.value = false
+  meetingPlan.value = null
+  meetingPlanError.value = ''
+  if (matchId && import.meta.client) void loadMeetingPlan(matchId)
+}, { immediate: true })
+
+const saveMeetingPlan = async () => {
+  const matchId = chat.selectedMatch.value?.id
+  if (!matchId || !meetingStartsAt.value || meetingPlanBusy.value) return
+  meetingPlanBusy.value = true
+  meetingPlanError.value = ''
+  try {
+    const saved = await $trpc.safetyPlan.save.mutate({
+      matchId,
+      startsAt: new Date(meetingStartsAt.value).toISOString(),
+      venueName: meetingVenue.value,
+      city: meetingCity.value,
+    })
+    meetingPlan.value = saved
+  } catch {
+    meetingPlanError.value = t('safetyPlan.unavailable')
+  } finally {
+    meetingPlanBusy.value = false
+  }
+}
+
+const removeMeetingPlan = async () => {
+  const matchId = chat.selectedMatch.value?.id
+  if (!matchId || meetingPlanBusy.value) return
+  meetingPlanBusy.value = true
+  meetingPlanError.value = ''
+  try {
+    await $trpc.safetyPlan.remove.mutate({ matchId })
+    meetingPlan.value = null
+    meetingVenue.value = ''
+    meetingCity.value = ''
+    meetingStartsAt.value = localDateTimeValue(new Date(Date.now() + 60 * 60_000))
+  } catch {
+    meetingPlanError.value = t('safetyPlan.unavailable')
+  } finally {
+    meetingPlanBusy.value = false
+  }
+}
+
+const shareMeetingPlan = async () => {
+  if (!meetingPlan.value) return
+  const person = chat.selectedMatch.value?.profile?.displayName || t('dashboard.traveler')
+  const when = formatMeetingPlanTime(meetingPlan.value.startsAt)
+  const text = `${person} · ${meetingPlan.value.venueName}, ${meetingPlan.value.city} · ${when}`
+  try {
+    if (navigator.share) await navigator.share({ title: t('safetyPlan.open'), text })
+    else if (navigator.clipboard) await navigator.clipboard.writeText(text)
+    else throw new Error('Sharing is unavailable.')
+  } catch {
+    meetingPlanError.value = t('safetyPlan.shareFailed')
+  }
+}
 
 // ---------- Voice / note recorder ----------
 const recorder = useVoiceRecorder({
@@ -322,6 +476,7 @@ onUnmounted(() => {
         :notifications-enabled="chat.notificationsEnabled.value"
         :calls-available="callsAvailable"
         @back="closeRoom"
+        @open-profile="openPeerProfile"
         @start-call="startCallUI"
         @share-contact="chat.shareContact()"
         @block="(pid: string, mid: string) => blockProfile(pid, mid)"
@@ -347,12 +502,75 @@ onUnmounted(() => {
         @toggle-speed="(id) => chat.togglePlaybackSpeed(id)"
         @toggle-pin="(m) => chat.togglePinMedia(m)"
       />
+      <ProfileSheet
+        v-if="profileOpen && chat.selectedMatch.value.profile"
+        :profile="chat.selectedMatch.value.profile"
+        @close="profileOpen = false"
+      />
       <CameraSheet
         v-if="cameraOpen"
         @shot="(file: File) => { cameraOpen = false; void chat.sendMediaMessage(file) }"
         @close="closeCamera"
         @error="onCameraError"
       />
+      <section class="assistant-tool">
+        <button class="assistant-toggle" type="button" :aria-expanded="meetingPlanOpen" @click="meetingPlanOpen = !meetingPlanOpen">
+          {{ t('safetyPlan.open') }}
+        </button>
+        <div v-if="meetingPlanOpen" class="assistant-panel">
+          <p class="assistant-privacy">{{ t('safetyPlan.privacy') }}</p>
+          <p class="assistant-privacy">{{ t('safetyPlan.reminderMobileOnly') }}</p>
+          <template v-if="meetingPlan">
+            <p class="assistant-privacy">{{ meetingPlan.venueName }}, {{ meetingPlan.city }} · {{ formatMeetingPlanTime(meetingPlan.startsAt) }}</p>
+            <p class="assistant-privacy">{{ t('safetyPlan.saved') }}</p>
+            <div class="assistant-controls">
+              <button type="button" :disabled="meetingPlanBusy" @click="shareMeetingPlan">{{ t('safetyPlan.share') }}</button>
+              <button type="button" :disabled="meetingPlanBusy" @click="removeMeetingPlan">{{ t('safetyPlan.remove') }}</button>
+            </div>
+          </template>
+          <template v-else>
+            <label class="assistant-label" for="meeting-starts-at">{{ t('safetyPlan.time') }}</label>
+            <input id="meeting-starts-at" v-model="meetingStartsAt" type="datetime-local" :aria-label="t('safetyPlan.time')">
+            <label class="assistant-label" for="meeting-venue">{{ t('safetyPlan.venue') }}</label>
+            <input id="meeting-venue" v-model="meetingVenue" maxlength="100" :placeholder="t('safetyPlan.venuePlaceholder')">
+            <label class="assistant-label" for="meeting-city">{{ t('safetyPlan.city') }}</label>
+            <input id="meeting-city" v-model="meetingCity" maxlength="80" :placeholder="t('safetyPlan.city')">
+            <button type="button" :disabled="meetingPlanBusy || !meetingStartsAt || !meetingVenue.trim() || !meetingCity.trim()" @click="saveMeetingPlan">
+              {{ meetingPlanBusy ? t('assistant.loading') : t('safetyPlan.save') }}
+            </button>
+          </template>
+          <p v-if="meetingPlanError" class="assistant-error" role="status">{{ meetingPlanError }}</p>
+        </div>
+      </section>
+      <section v-if="assistantEnabled" class="assistant-tool">
+        <button
+          v-if="assistantEnabled && hasPremium"
+          class="assistant-toggle"
+          type="button"
+          :aria-expanded="assistantOpen"
+          @click="assistantOpen = !assistantOpen"
+        >{{ t('assistant.open') }}</button>
+        <button v-else-if="assistantEnabled" class="assistant-toggle" type="button" @click="router.push('/sky')">
+          {{ t('assistant.premiumCta') }}
+        </button>
+        <div v-if="assistantEnabled && assistantOpen && hasPremium" class="assistant-panel">
+          <label class="assistant-label" for="assistant-topic">{{ t('assistant.topicLabel') }}</label>
+          <div class="assistant-controls">
+            <input id="assistant-topic" v-model="assistantTopic" maxlength="120" :placeholder="t('assistant.topicPlaceholder')" />
+            <button type="button" :disabled="assistantBusy || !assistantTopic.trim() || assistantRemaining < 1" @click="requestAssistantSuggestions">
+              {{ assistantBusy ? t('assistant.loading') : assistantSuggestions.length ? t('assistant.again') : t('assistant.generate') }}
+            </button>
+          </div>
+          <p class="assistant-privacy">{{ t('assistant.privacy') }}</p>
+          <p v-if="assistantRemaining < 10" class="assistant-privacy">{{ t('assistant.remaining', { count: assistantRemaining }) }}</p>
+          <p v-if="assistantError" class="assistant-error" role="status">{{ assistantError }}</p>
+          <div v-if="assistantSuggestions.length" class="assistant-suggestions">
+            <button v-for="suggestion in assistantSuggestions" :key="suggestion" type="button" @click="useAssistantSuggestion(suggestion)">
+              {{ suggestion }}
+            </button>
+          </div>
+        </div>
+      </section>
       <ChatComposer
         :chat-mode="recorder.chatMode.value"
         :chat-draft="chat.chatDraft.value"
@@ -424,6 +642,19 @@ onUnmounted(() => {
 h1 { margin: 0; font-size: clamp(25px, 6vw, 34px); line-height: 1.12; }
 .counter { display: inline-flex; align-items: baseline; gap: 3px; padding: 7px 10px; border: 1px solid #334545; border-radius: 8px; color: #e7bd7e; font-size: 18px; font-weight: 700; }
 .chat-panel { display: flex; min-height: min(72svh, 720px); flex-direction: column; border: 1px solid #2b3c3d; border-radius: 10px; background: #121f20; }
+.assistant-tool { padding: 8px 12px 0; }
+.assistant-toggle, .assistant-controls button { min-height: 36px; border: 1px solid #3d524f; border-radius: 8px; padding: 0 12px; background: #192d2b; color: #e4b46c; font: inherit; cursor: pointer; }
+.assistant-panel > input { min-width: 0; border: 1px solid #344748; border-radius: 8px; padding: 9px; background: #0d1718; color: #fff; }
+.assistant-toggle { font-size: 12px; font-weight: 700; }
+.assistant-panel { display: grid; gap: 7px; padding: 10px 0 2px; }
+.assistant-label { color: #b7c8c1; font-size: 12px; }
+.assistant-controls { display: flex; gap: 8px; }
+.assistant-controls input { min-width: 0; flex: 1; border: 1px solid #344748; border-radius: 8px; padding: 9px; background: #0d1718; color: #fff; }
+.assistant-controls button:disabled { opacity: .5; cursor: not-allowed; }
+.assistant-privacy, .assistant-error { margin: 0; color: #879894; font-size: 11px; }
+.assistant-error { color: #f0a29b; }
+.assistant-suggestions { display: grid; gap: 6px; }
+.assistant-suggestions button { border: 1px solid #344748; border-radius: 8px; padding: 9px 10px; background: #162628; color: #e6eeeb; text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
 .match-list { border-top: 1px solid #2a393a; }
 .match-row { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid #2a393a; padding: 14px 3px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .mini-avatar { display: grid; width: 46px; height: 46px; flex: 0 0 auto; place-items: center; border: 1px solid #587169; border-radius: 50%; background: #24423d; color: #dbf0e6; font-size: 15px; font-weight: 700; }

@@ -7,3 +7,24 @@ export const formatDate = (value: string | null | undefined, language: string) =
   if (Number.isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat(language, DATE_OPTIONS).format(date);
 };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Правка через тиждень після публікації — це редактор, що знайшов одруківку, а не нова
+ * версія тексту. Показувати за неї «Оновлено» означає вчити читача, що рядок про дату
+ * нічого не вартий; поріг у два тижні лишає сигнал для справжніх переробок.
+ */
+export const SHOW_UPDATED_AFTER_DAYS = 14;
+
+/** Дата редагування, яку варто показати, або `null`, якщо «Оновлено» ще не є правдою про текст. */
+export const updatedNote = (
+  publishedAt: string | null | undefined,
+  updatedAt: string | null | undefined,
+): string | null => {
+  if (!publishedAt || !updatedAt) return null;
+  const published = new Date(publishedAt).getTime();
+  const revised = new Date(updatedAt).getTime();
+  if (Number.isNaN(published) || Number.isNaN(revised)) return null;
+  return revised - published >= SHOW_UPDATED_AFTER_DAYS * DAY_MS ? updatedAt : null;
+};

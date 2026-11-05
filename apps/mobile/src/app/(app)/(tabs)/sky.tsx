@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { TRPCClientError } from '@trpc/client';
@@ -11,7 +11,7 @@ import { LanguageSwitcher } from '@/components/language-switcher';
 import { useLocale } from '@/i18n/locale-provider';
 import { useDashboard } from '@/state/dashboard';
 import type { TranslationKey } from '@/i18n/messages';
-import { toIsoDate } from '@/utils/dates';
+import { formatDateTime, toIsoDate } from '@/utils/dates';
 import { colors, radius, spacing, typography } from '@/theme/tokens';
 import type { StarSku } from '@constella/shared/client';
 
@@ -62,11 +62,38 @@ export default function SkyScreen() {
   const [incognitoBusy, setIncognitoBusy] = useState(false);
   const [passport, setPassport] = useState({ city: '', latitude: '', longitude: '' });
   const [passportBusy, setPassportBusy] = useState(false);
+  const [safetyReports, setSafetyReports] = useState<{ id: number; status: string; createdAt: Date | string }[]>([]);
+  const [reportsIssue, setReportsIssue] = useState('');
+  const [reportsLoading, setReportsLoading] = useState(false);
   const snapshot = useRef<BillingSnapshot | null>(null);
 
   const profile = me?.profile ?? null;
   const vipProduct = billing?.products.find((product) => product.id === 'vip');
   const boostProducts = (billing?.products ?? []).filter((product) => product.kind === 'consumable');
+  const reportStatusLabel = (status: string) => t(({
+    open: 'reports.statusOpen',
+    reviewing: 'reports.statusReviewing',
+    resolved: 'reports.statusResolved',
+    dismissed: 'reports.statusDismissed',
+  } as Record<string, TranslationKey>)[status] || 'reports.statusOpen');
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setReportsLoading(true);
+      void trpc.social.myReports.query().then((rows) => {
+        if (active) {
+          setSafetyReports(rows);
+          setReportsIssue('');
+        }
+      }).catch((error: unknown) => {
+        if (active) setReportsIssue(errorText(error, t('dashboard.loadError')));
+      }).finally(() => {
+        if (active) setReportsLoading(false);
+      });
+      return () => { active = false; };
+    }, [t]),
+  );
 
   // Повернення з Telegram не дає клієнтові вебхука: порівнюємо статус зі знімком,
   // зробленим перед створенням рахунку, і зупиняємось, щойно щось змінилось.
@@ -244,6 +271,18 @@ export default function SkyScreen() {
 
       {issue ? <Notice kind="error">{issue}</Notice> : null}
       {toast ? <Notice kind="status">{toast}</Notice> : null}
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t('reports.title')}</Text>
+        {reportsIssue ? <Notice kind="error">{reportsIssue}</Notice> : null}
+        {reportsLoading ? <Text style={styles.cardHint}>{t('reports.loading')}</Text> : null}
+        {safetyReports.length ? safetyReports.map((report) => (
+          <View key={report.id} style={styles.reportRow}>
+            <Text style={styles.cardHint}>{reportStatusLabel(report.status)}</Text>
+            <Text style={styles.cardHint}>{formatDateTime(report.createdAt)}</Text>
+          </View>
+        )) : reportsLoading || reportsIssue ? null : <Text style={styles.cardHint}>{t('reports.empty')}</Text>}
+      </View>
 
       <View style={styles.block}>
         <Eyebrow>{t('dashboard.aboutMe')}</Eyebrow>
@@ -434,6 +473,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: { ...typography.title, color: colors.goldSoft, fontSize: 17 },
   cardHint: { ...typography.caption, color: colors.mutedSoft, lineHeight: 17 },
+  reportRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
   cardActions: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center', flexWrap: 'wrap' },
   confirm: { gap: spacing.sm },
   productRow: { gap: spacing.xs },

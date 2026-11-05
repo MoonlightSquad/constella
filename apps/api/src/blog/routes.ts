@@ -16,6 +16,7 @@ import {
   listPublishedForSitemap,
   listPublishedPosts,
   listPublishedTaxonomyForSitemap,
+  listPublicAuthors,
   listPublicCategories,
   listPublicTags,
   setPostStatus,
@@ -113,7 +114,7 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
 
   fastify.get(
     '/blog/posts',
-    { schema: { tags: ['Blog'], summary: 'List published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] }, category: { type: 'string' }, tag: { type: 'string' }, exclude: { type: 'string', description: 'Comma-separated post group ids (1-8) to leave out' }, limit: { type: 'integer' }, cursor: { type: 'string' } } } }, config: PUBLIC_READ_LIMIT },
+    { schema: { tags: ['Blog'], summary: 'List published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] }, category: { type: 'string' }, tag: { type: 'string' }, author: { type: 'string', description: 'Localized author slug from blog_author_translations' }, search: { type: 'string', minLength: 2, maxLength: 80, description: 'Case-insensitive substring of the title or the excerpt, in this locale' }, exclude: { type: 'string', description: 'Comma-separated post group ids (1-8) to leave out' }, limit: { type: 'integer' }, cursor: { type: 'string' } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
       const parsed = publicListQuerySchema.safeParse(request.query);
       if (!parsed.success) return badRequest(reply, parsed.error);
@@ -190,6 +191,21 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
         return await listPublicTags(parsed.data.locale);
       } catch (error) {
         return fail(request, reply, error, 'tag');
+      }
+    },
+  );
+
+  fastify.get(
+    '/blog/authors',
+    { schema: { tags: ['Blog'], summary: 'Authors with published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
+    async (request, reply) => {
+      const parsed = publicPostQuerySchema.safeParse(request.query);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      try {
+        reply.headers({ 'cache-control': PUBLIC_CACHE });
+        return await listPublicAuthors(parsed.data.locale);
+      } catch (error) {
+        return fail(request, reply, error, 'author');
       }
     },
   );
@@ -363,7 +379,13 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
       const parsed = publishStatusSchema.safeParse(request.body);
       if (!parsed.success) return badRequest(reply, parsed.error);
       try {
-        return await setPostStatus(id, parsed.data.status, parsed.data.reason, claims.id);
+        return await setPostStatus(
+          id,
+          parsed.data.status,
+          parsed.data.reason,
+          claims.id,
+          parsed.data.status === 'published' ? parsed.data.publishedAt ?? null : null,
+        );
       } catch (error) {
         return fail(request, reply, error);
       }

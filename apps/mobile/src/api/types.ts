@@ -15,6 +15,7 @@ export type PublicProfile = {
   photos: string[];
   prompts: string[];
   interests: string[];
+  sharedInterests?: string[];
   verified: boolean;
   level: number;
   zodiac: string | null;

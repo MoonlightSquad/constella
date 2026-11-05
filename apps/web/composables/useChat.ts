@@ -445,15 +445,18 @@ export function useChat(options: ChatOptions = {}) {
     try {
       const uploadMeta = isVideo
         ? await $trpc.photos.createVideoUpload.mutate({ contentType: media.contentType as 'video/mp4' | 'video/webm' })
-        : await $trpc.photos.createUpload.mutate({ contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp' })
+        : await $trpc.photos.createUpload.mutate({ contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp', purpose: 'chat' })
       // PUT і confirm мусять оголошувати той самий тип, що й підписаний запит: `confirmUpload`
       // порівнює збережений `head.ContentType` і відхиляє об'єкт при розбіжності.
       await fetch(uploadMeta.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': media.contentType } })
       const processed = isVideo
         ? await $trpc.photos.confirmVideoUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'video/mp4' | 'video/webm' })
-        : await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp' })
+        : await $trpc.photos.confirmUpload.mutate({ objectKey: uploadMeta.objectKey, contentType: media.contentType as 'image/jpeg' | 'image/png' | 'image/webp', purpose: 'chat' })
       // Сервер видаляє відхилене фото, тож таке посилання було б бульбашкою на битий URL.
       if (processed.status === 'rejected') { toast(t('photos.rejectedContent')); return }
+      // Pending — фото в людській черзі; постити його в чат до вердикту не можна
+      // (сервер теж це відхилить, тут лише зрозуміле повідомлення замість помилки).
+      if (processed.status === 'pending') { toast(t('photos.pendingReview')); return }
       const message = await $trpc.social.sendMessage.mutate({ matchId: selectedMatch.value.id, body: JSON.stringify({ kind: media.kind, url: processed.publicUrl, fileName: file.name, size: file.size }) })
       // Рядок із відповіді — той самий, що й у стрічці, тож перезавантаження історії
       // тут зайве: воно прибирало б галочку «pending» на цілу секунду.

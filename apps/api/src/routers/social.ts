@@ -8,7 +8,9 @@ import {
   gifts,
   matches,
   messages,
+  photoAssets,
   questProgress,
+  recommendationFeedback,
   reports,
   swipes,
   userAchievements,
@@ -49,6 +51,23 @@ import {
 import { notifyUser } from '../push/notify.js';
 
 const MAX_MESSAGE_LENGTH = 1000;
+
+/**
+ * Медіа-тіло — це JSON `{kind, url, ...}` (схема узгоджена з обома клієнтами). Для
+ * зображень витягуємо URL, щоб не дати надіслати фото, яке ще не пройшло модерацію:
+ * `pending` живе у сховищі й доступне за посиланням, тож клієнтської перевірки мало.
+ */
+const imageUrlFromBody = (body: string): string | null => {
+  if (!body.startsWith('{')) return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const { kind, url } = parsed as { kind?: unknown; url?: unknown };
+    return kind === 'image' && typeof url === 'string' ? url : null;
+  } catch {
+    return null;
+  }
+};
 
 /** Quest progress is counted per local day, so the sender's timezone is read first. */
 const bumpQuestsForSender = async (db: any, userId: string, codes: string[]) => {
@@ -332,9 +351,17 @@ export const socialRouter = router({
     const profile = await touchStreakAndPresence(ctx.db, await requireCompleteProfile(ctx.db, ctx.user.id));
     const today = getLocalDate(profile.timeZone);
 
+    const feedbackRows = await ctx.db
+      .select({ profileId: recommendationFeedback.profileId })
+      .from(recommendationFeedback)
+      .where(and(
+        eq(recommendationFeedback.userId, ctx.user.id),
+        eq(recommendationFeedback.feedbackDate, today),
+      ));
     const excluded = [
       ...(await blockedIds(ctx.db, ctx.user.id)),
       ...(await ctx.db.select({ id: swipes.toId }).from(swipes).where(eq(swipes.fromId, ctx.user.id))).map((row: { id: string }) => row.id),
+      ...feedbackRows.map((row: { profileId: string }) => row.profileId),
     ];
     const filtersActive = hasOrbitFilters(input);
     if (filtersActive) {
@@ -643,6 +670,21 @@ export const socialRouter = router({
       return { ok: true };
     }),
 
+  myReports: protectedProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select({
+        id: reports.id,
+        reason: reports.reason,
+        status: reports.status,
+        createdAt: reports.createdAt,
+        reviewedAt: reports.reviewedAt,
+      })
+      .from(reports)
+      .where(eq(reports.reporterId, ctx.user.id))
+      .orderBy(desc(reports.createdAt))
+      .limit(20);
+  }),
+
   matches: protectedProcedure.query(async ({ ctx }) => {
     const excluded = new Set(await blockedIds(ctx.db, ctx.user.id));
     // Порядок — за свіжістю розмови, а не знайомства: `limit(100)` інакше відрізав би
@@ -749,6 +791,17 @@ export const socialRouter = router({
         .where(and(eq(messages.senderId, ctx.user.id), gte(messages.createdAt, new Date(Date.now() - 60_000))));
       if ((recentCount?.count ?? 0) >= 12) {
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Please slow down before sending more messages.' });
+      }
+      const imageUrl = imageUrlFromBody(input.body);
+      if (imageUrl) {
+        const [asset] = await ctx.db
+          .select({ status: photoAssets.moderationStatus })
+          .from(photoAssets)
+          .where(eq(photoAssets.publicUrl, imageUrl))
+          .limit(1);
+        if (asset && asset.status !== 'approved') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'This photo is still under moderation review.' });
+        }
       }
       const [message] = await ctx.db
         .insert(messages)

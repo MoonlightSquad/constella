@@ -13,11 +13,13 @@ const { declare: declareAlternates } = useSeoAlternates();
 const { siteUrl } = useRuntimeConfig().public;
 
 const slug = computed(() => String(route.params.slug ?? ''));
-const { data: post } = await useFetch<BlogPost>('/api/blog/post', {
+const { data: post, error: postError } = await useFetch<BlogPost>('/api/blog/post', {
   query: computed(() => ({ slug: slug.value, locale: locale.value })),
 });
 
-if (!post.value) throw createError({ statusCode: 404, statusMessage: t('common.notFound') });
+// Чернетка й справжня відмова бази виглядають для сторінки однаково «даних немає», але
+// для індексу вони різні: 404 знімає URL, 502 повертає краулера пізніше.
+if (!post.value) throwBlogUnavailable(postError.value, { notFound: t('common.notFound'), unavailable: t('common.errorTitle') });
 
 // Three more articles from the same shelf, never this one: `exclude` is the group id, so the
 // filter survives the locale switch. No category means the newest three instead.
@@ -55,6 +57,11 @@ const picture = computed(() =>
   `${siteUrl}/api/og?kind=post&slug=${encodeURIComponent(slug.value)}&locale=${locale.value}`,
 );
 const primary = computed(() => translations.value.find((item) => item.locale === 'uk') ?? translations.value[0]);
+
+// `dateModified` у JSON-LD є завжди, а рядок «Оновлено» під заголовком — ні: без порогу він
+// з'являвся б на кожній статті, яку редактор перечитав через два дні, і читач перестав би
+// вірити даті.
+const revised = computed(() => updatedNote(post.value?.publishedAt, post.value?.updatedAt));
 
 useSeoMeta({
   title: () => headline.value,
@@ -160,6 +167,11 @@ useBreadcrumbList(() => crumbs.value);
              автора, автор веде назад на свої статті. Без рядка-автора лишається текстовий підпис. -->
         <NuxtLink v-if="post?.author" :to="localePath(`/blog/author/${post.author.slug}`)">{{ post.author.name }}</NuxtLink>
         <span v-else>{{ post?.authorName }}</span>
+      </p>
+      <!-- Окремий рядок, а не четвертий роздільник у мета: дата редагування стосується всього
+           тексту, тоді як публікація, довжина читання й підпис — властивостей першого видання. -->
+      <p v-if="revised" class="updated">
+        {{ $t('blog.updated') }} <time :datetime="revised">{{ formatDate(revised, language) }}</time>
       </p>
       <p v-if="post?.excerpt" class="post-head__excerpt">{{ post.excerpt }}</p>
       <img

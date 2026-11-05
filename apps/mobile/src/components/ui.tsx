@@ -180,17 +180,20 @@ export function Checkbox({
   label,
   checked,
   onChange,
+  disabled,
 }: {
   label: string;
   checked: boolean;
   onChange: (next: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="checkbox"
-      accessibilityState={{ checked }}
+      accessibilityState={{ checked, disabled: Boolean(disabled) }}
+      disabled={disabled}
       hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-      style={styles.checkbox}
+      style={[styles.checkbox, disabled && styles.checkboxDisabled]}
       onPress={() => onChange(!checked)}
     >
       <View style={[styles.checkboxBox, checked && styles.checkboxBoxChecked]}>
@@ -278,6 +281,7 @@ const styles = StyleSheet.create({
   noticeStatus: { color: colors.mintSoft },
   loadIssue: { gap: 2 },
   checkbox: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  checkboxDisabled: { opacity: 0.55 },
   checkboxBox: {
     width: 20,
     height: 20,

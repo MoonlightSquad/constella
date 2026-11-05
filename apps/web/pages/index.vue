@@ -3,8 +3,8 @@ import { useDashboard } from '~/composables/useDashboard'
 
 definePageMeta({ layout: 'dashboard' })
 const dash = useDashboard()
-const { orbitProfiles, orbitRemaining, releasePending, isLoading, billingStatus } = dash
-const { reactToProfile, applyOrbitFilters, clearOrbitFilters, openReport, blockProfile, refreshAll, goTab } = dash
+const { orbitProfiles, orbitRemaining, releasePending, isLoading, billingStatus, appliedOrbitFilters } = dash
+const { reactToProfile, submitRecommendationFeedback, applyOrbitFilters, clearOrbitFilters, openReport, blockProfile, refreshAll, goTab } = dash
 </script>
 
 <template>
@@ -14,7 +14,9 @@ const { reactToProfile, applyOrbitFilters, clearOrbitFilters, openReport, blockP
     :release-pending="releasePending"
     :is-loading="isLoading"
     :vip="!!billingStatus?.vip"
+    :feedback-enabled="Object.keys(appliedOrbitFilters).length === 0"
     @react="reactToProfile"
+    @feedback="submitRecommendationFeedback"
     @apply-filters="applyOrbitFilters"
     @clear-filters="clearOrbitFilters"
     @report="openReport"
