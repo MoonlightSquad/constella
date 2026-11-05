@@ -79,6 +79,10 @@ export default defineNuxtConfig({
     '/de': { prerender: true },
     '/fr': { prerender: true },
     '/legal/**': { prerender: true },
+    '/security': { prerender: true },
+    '/en/security': { prerender: true },
+    '/de/security': { prerender: true },
+    '/fr/security': { prerender: true },
     // ISR on Vercel; ignored by the node server preset, where it is plain SSR.
     ...Object.fromEntries(blogPaths.map((path) => [path, { isr: 60 }])),
     '/feed/**': { isr: 600 },

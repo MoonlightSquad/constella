@@ -217,6 +217,47 @@
       "termsDesc": "Règles d’utilisation de Constella, âge minimum, abonnement VIP et résiliation.",
       "community": "Règles de la communauté",
       "communityDesc": "Ce qui est autorisé sur Constella, comment se passent la modération et les signalements."
+    },
+    "security": {
+      "title": "Aperçu de la sécurité de Constella",
+      "description": "Périmètre, méthode et limites de l’examen interne du code source et de la configuration du dépôt.",
+      "eyebrow": "Sécurité et transparence",
+      "intro": "Il s’agit d’un examen interne du code source et de la configuration du dépôt à la date indiquée. Il décrit le périmètre examiné, sans confirmer l’absence de tout risque.",
+      "linkLabel": "Aperçu sécurité",
+      "reviewLabel": "État de l’examen",
+      "reviewDate": "5 novembre 2026",
+      "reviewType": "Examen interne du code",
+      "outcomeEyebrow": "Résultat",
+      "outcomeTitle": "Problèmes identifiés corrigés dans cette branche",
+      "outcomeText": "L’examen a relevé des problèmes liés à la suppression des médias et à l’intégrité des messages. Les modifications correspondantes sont incluses ; la production n’a pas fait l’objet d’une vérification indépendante.",
+      "coverageEyebrow": "Périmètre",
+      "coverageTitle": "Parcours essentiels et contrôles d’accès",
+      "coverageIntro": "L’examen s’est concentré sur les principaux parcours liés aux comptes, paiements, messages et données.",
+      "coverage": [
+        { "title": "Comptes et accès", "description": "Récupération de compte, vérification d’identité Telegram, sessions API et frontière d’autorisation administrateur." },
+        { "title": "Paiements et messages", "description": "Factures Telegram Stars, contrôles des webhooks et des doublons, et autorisation des canaux temps réel." },
+        { "title": "Médias et frontière IA", "description": "Téléversement et traitement des médias, service privé de modération et parcours associés de suppression des données." },
+        { "title": "Build et exploitation", "description": "Modèles de configuration du dépôt, processus CI et pratiques de base concernant les dépendances." }
+      ],
+      "methodEyebrow": "Méthode",
+      "methodTitle": "Déroulement de l’examen",
+      "methodIntro": "L’examen était manuel et limité au code et à la configuration présents dans le dépôt.",
+      "methodSteps": [
+        "Parcours sélectionnés d’authentification et d’autorisation suivis entre l’API, les clients et la console d’administration.",
+        "Frontières des paiements, webhooks, téléversements, canaux temps réel et service IA examinées.",
+        "Parcours de suppression de compte comparé aux enregistrements et objets de stockage associés."
+      ],
+      "limitsEyebrow": "Limites",
+      "limitsTitle": "Ce que cet examen ne garantit pas",
+      "limitations": [
+        "Les systèmes de production, valeurs secrètes, réglages des fournisseurs cloud et trafic réel n’ont pas été examinés.",
+        "Aucun test d’intrusion externe, scan en production ou audit exhaustif de toutes les dépendances n’a été réalisé.",
+        "Il s’agit d’un examen ponctuel du code, pas d’une certification, d’un avis juridique ni d’une garantie d’absence de vulnérabilités."
+      ],
+      "contactTitle": "Vous avez repéré un problème de sécurité ?",
+      "contactText": "Signalez-le en privé au support Constella via le bot Telegram officiel.",
+      "contactCta": "Contacter le support",
+      "disclaimer": "Cette page décrit le périmètre et les limites de l’examen. Ce n’est pas un registre complet des constats et elle ne publie pas de détails techniques susceptibles d’accroître le risque pour les utilisateurs."
     }
   },
   "legal": {

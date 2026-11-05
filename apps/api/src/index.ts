@@ -22,12 +22,13 @@ import { registerBlogRoutes } from './blog/routes.js';
 import { authTokens, closeDb, db, users, identities, webCredentials, photoAssets, swipes, events, userAchievements, paymentIntents, supportMessages, matches, messages } from '@constella/db';
 import { appendTrpcOpenApiPaths } from './openapi.js';
 import { isEmailDeliveryConfigured, sendTransactionalEmail } from './utils/email.js';
-import { isPhotoStorageConfigured, removePhotoObjects } from './photos/storage.js';
+import { isPhotoStorageConfigured, removePhotoObjects, removeUserMediaObjects } from './photos/storage.js';
 import { hashOpaqueToken, issueAuthToken } from './utils/auth-tokens.js';
 import { startBackgroundScheduler } from './engine/scheduler.js';
 import { closeSentry, initSentry } from './sentry.js';
 import { bot as telegramBot } from '@constella/bot';
 import { isConfiguredTelegramWebhookSecret, isValidTelegramWebhookSecret } from './utils/telegram-webhook.js';
+import { updateChatMessageFromSocket } from './realtime/message-actions.js';
 import { z } from 'zod';
 
 declare module 'fastify' {
@@ -45,17 +46,6 @@ dotenv.config({ path: resolve(process.cwd(), '../../.env') });
 initSentry();
 
 const logger = createLogger('api');
-/** Parses a JSON object, returning `{}` for malformed or non-object payloads. */
-const parseJsonObject = (raw: string): Record<string, unknown> => {
-  try {
-    const value: unknown = JSON.parse(raw);
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-};
 const configuredTrustProxy = process.env.TRUST_PROXY;
 const trustProxy = configuredTrustProxy === 'true'
   ? true
@@ -425,14 +415,13 @@ async function initialize() {
           case 'send.pin': {
             const messageId = Number(data.messageId);
             if (!Number.isSafeInteger(messageId) || messageId <= 0 || typeof data.body !== 'string') return;
-            const nextBody = data.type === 'send.pin'
-              ? JSON.stringify({ ...parseJsonObject(data.body), pinned: true })
-              : data.body;
-            const [m] = await db
-              .update(messages)
-              .set({ body: nextBody })
-              .where(and(eq(messages.id, messageId), eq(messages.matchId, matchId)))
-              .returning();
+            const m = await updateChatMessageFromSocket(db, {
+              type: data.type,
+              messageId,
+              matchId,
+              userId,
+              body: data.body,
+            });
             if (m) await deliverToMatch(matchId, { type: 'chat.message', message: m });
             break;
           }
@@ -946,10 +935,12 @@ async function initialize() {
       } catch { return reply.status(401).send({ error: 'Telegram account confirmation failed.' }); }
     }
     const photos = await db.select({ imageKey: photoAssets.imageKey }).from(photoAssets).where(eq(photoAssets.userId, claims.id));
-    try { await removePhotoObjects(photos.map((photo) => photo.imageKey)); }
-    catch (error) {
-      request.log.error({ err: error, userId: claims.id }, 'Account deletion stopped because photo storage cleanup failed.');
-      return reply.status(503).send({ error: 'Photo cleanup is unavailable; retry account deletion later.', requestId: request.id });
+    try {
+      await removePhotoObjects(photos.map((photo) => photo.imageKey));
+      await removeUserMediaObjects(claims.id);
+    } catch (error) {
+      request.log.error({ err: error, userId: claims.id }, 'Account deletion stopped because media storage cleanup failed.');
+      return reply.status(503).send({ error: 'Media cleanup is unavailable; retry account deletion later.', requestId: request.id });
     }
     await db.transaction(async (tx) => {
       await tx.delete(swipes).where(or(eq(swipes.fromId, claims.id), eq(swipes.toId, claims.id)));

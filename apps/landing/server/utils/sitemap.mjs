@@ -22,6 +22,7 @@ export const staticSitemapEntries = () => [
   ...['privacy', 'terms', 'community'].flatMap((slug) =>
     pageGroup((locale) => (locale === 'uk' ? `/legal/${slug}` : `/${locale}/legal/${slug}`)),
   ),
+  ...pageGroup((locale) => (locale === 'uk' ? '/security' : `/${locale}/security`)),
 ];
 
 /** Рядки `/blog/sitemap`: одна стаття — багато мов, тому альтернативи збираються по групі. */

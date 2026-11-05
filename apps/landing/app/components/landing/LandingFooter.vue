@@ -46,6 +46,7 @@ const topCategories = computed(() => (categories.value?.items ?? []).slice(0, 4)
         <NuxtLinkLocale to="/legal/privacy">{{ $t('landing.footer.privacy') }}</NuxtLinkLocale>
         <NuxtLinkLocale to="/legal/terms">{{ $t('landing.footer.terms') }}</NuxtLinkLocale>
         <NuxtLinkLocale to="/legal/community">{{ $t('landing.footer.community') }}</NuxtLinkLocale>
+        <NuxtLinkLocale to="/security">{{ $t('meta.security.linkLabel') }}</NuxtLinkLocale>
         <a :href="bot" rel="noopener noreferrer">{{ $t('landing.footer.support') }}</a>
       </div>
 
