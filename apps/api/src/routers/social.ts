@@ -10,6 +10,7 @@ import {
   messages,
   photoAssets,
   questProgress,
+  recommendationFeedback,
   reports,
   swipes,
   userAchievements,
@@ -350,9 +351,17 @@ export const socialRouter = router({
     const profile = await touchStreakAndPresence(ctx.db, await requireCompleteProfile(ctx.db, ctx.user.id));
     const today = getLocalDate(profile.timeZone);
 
+    const feedbackRows = await ctx.db
+      .select({ profileId: recommendationFeedback.profileId })
+      .from(recommendationFeedback)
+      .where(and(
+        eq(recommendationFeedback.userId, ctx.user.id),
+        eq(recommendationFeedback.feedbackDate, today),
+      ));
     const excluded = [
       ...(await blockedIds(ctx.db, ctx.user.id)),
       ...(await ctx.db.select({ id: swipes.toId }).from(swipes).where(eq(swipes.fromId, ctx.user.id))).map((row: { id: string }) => row.id),
+      ...feedbackRows.map((row: { profileId: string }) => row.profileId),
     ];
     const filtersActive = hasOrbitFilters(input);
     if (filtersActive) {
@@ -660,6 +669,21 @@ export const socialRouter = router({
       });
       return { ok: true };
     }),
+
+  myReports: protectedProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select({
+        id: reports.id,
+        reason: reports.reason,
+        status: reports.status,
+        createdAt: reports.createdAt,
+        reviewedAt: reports.reviewedAt,
+      })
+      .from(reports)
+      .where(eq(reports.reporterId, ctx.user.id))
+      .orderBy(desc(reports.createdAt))
+      .limit(20);
+  }),
 
   matches: protectedProcedure.query(async ({ ctx }) => {
     const excluded = new Set(await blockedIds(ctx.db, ctx.user.id));

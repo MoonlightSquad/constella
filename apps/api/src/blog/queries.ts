@@ -9,6 +9,7 @@ import {
   blogPostGroups,
   blogPostTags,
   blogPosts,
+  blogTagSlugAliases,
   blogTagTranslations,
   blogTags,
   db,
@@ -24,6 +25,7 @@ import {
   type PublicListInput,
   type UpdatePostInput,
 } from './schemas.js';
+import { missingPublicationFields } from './publication.js';
 
 export const publishedOnly = and(eq(blogPosts.status, 'published'), sql`${blogPosts.publishedAt} <= NOW()`);
 
@@ -367,6 +369,27 @@ export const listPublicTags = async (locale: BlogLocale) => {
   return { items };
 };
 
+export const listPublicAuthors = async (locale: BlogLocale) => {
+  const items = await db
+    .select({
+      id: blogAuthors.id,
+      slug: blogAuthorTranslations.slug,
+      name: blogAuthorTranslations.name,
+      role: blogAuthorTranslations.role,
+      avatarUrl: blogAuthors.avatarUrl,
+      avatarAlt: blogAuthors.avatarAlt,
+      postCount: sql<number>`count(distinct ${blogPosts.id})::int`,
+    })
+    .from(blogAuthors)
+    .innerJoin(blogAuthorTranslations, and(eq(blogAuthorTranslations.authorId, blogAuthors.id), eq(blogAuthorTranslations.locale, locale)))
+    .leftJoin(blogPosts, and(eq(blogPosts.authorId, blogAuthors.id), eq(blogPosts.locale, locale), publishedOnly))
+    .groupBy(blogAuthors.id, blogAuthorTranslations.slug, blogAuthorTranslations.name, blogAuthorTranslations.role, blogAuthors.avatarUrl, blogAuthors.avatarAlt)
+    .having(sql`count(distinct ${blogPosts.id}) > 0`)
+    .orderBy(desc(sql`count(distinct ${blogPosts.id})`), blogAuthorTranslations.name)
+    .limit(60);
+  return { items };
+};
+
 /** Один термін + hreflang-альтернативи; `null`, коли в цій мові немає чого показувати. */
 export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
   const [term] = await db
@@ -411,11 +434,27 @@ export const getPublicCategory = async (slug: string, locale: BlogLocale) => {
 };
 
 export const getPublicTag = async (slug: string, locale: BlogLocale) => {
-  const [term] = await db
+  let [term] = await db
     .select()
     .from(blogTagTranslations)
     .where(and(eq(blogTagTranslations.slug, slug), eq(blogTagTranslations.locale, locale)))
     .limit(1);
+  if (!term) {
+    [term] = await db
+      .select({
+        tagId: blogTagSlugAliases.tagId,
+        locale: blogTagTranslations.locale,
+        slug: blogTagTranslations.slug,
+        name: blogTagTranslations.name,
+      })
+      .from(blogTagSlugAliases)
+      .innerJoin(
+        blogTagTranslations,
+        and(eq(blogTagTranslations.tagId, blogTagSlugAliases.tagId), eq(blogTagTranslations.locale, blogTagSlugAliases.locale)),
+      )
+      .where(and(eq(blogTagSlugAliases.slug, slug), eq(blogTagSlugAliases.locale, locale)))
+      .limit(1);
+  }
   if (!term) return null;
 
   const counts = await tagCountsByLocale(term.tagId);
@@ -656,19 +695,33 @@ export const updatePost = async (id: string, patch: UpdatePostInput, actorUserId
     return post;
   });
 
-export const setPostStatus = async (id: string, status: 'draft' | 'published' | 'archived', reason: string, actorUserId: string) =>
+export const setPostStatus = async (
+  id: string,
+  status: 'draft' | 'published' | 'archived',
+  reason: string,
+  actorUserId: string,
+  publishedAtOverride?: Date | string | null,
+) =>
   db.transaction(async (tx) => {
     const [current] = await tx.select().from(blogPosts).where(eq(blogPosts.id, id)).limit(1);
     if (!current) throw httpError('Post not found.', 404);
-    // Re-publishing must not move `datePublished`, which Google has already indexed;
-    // `updatedAt` carries the change instead.
-    const publishedAt = status === 'published' ? current.publishedAt ?? new Date() : current.publishedAt;
+
+    if (status === 'published' && missingPublicationFields(current).length) {
+      throw httpError('This post is not ready to publish yet: add a title, an excerpt, and the body.', 409);
+    }
+
+    const publishedAt = status === 'published'
+      ? publishedAtOverride ? new Date(publishedAtOverride) : current.publishedAt ?? new Date()
+      : current.publishedAt;
+    if (status === 'published' && (!publishedAt || Number.isNaN(publishedAt.getTime()))) {
+      throw httpError('Published time is invalid.', 400);
+    }
     const [post] = await tx
       .update(blogPosts)
       .set({ status, publishedAt, updatedAt: new Date() })
       .where(eq(blogPosts.id, id))
       .returning();
-    await audit(tx, actorUserId, 'blog.post.status', reason, { postId: id, from: current.status, to: status, locale: post.locale, slug: post.slug });
+    await audit(tx, actorUserId, 'blog.post.status', reason, { postId: id, from: current.status, to: status, locale: post.locale, slug: post.slug, publishedAt: post.publishedAt?.toISOString() ?? null });
     return post;
   });
 

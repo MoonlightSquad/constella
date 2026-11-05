@@ -46,16 +46,40 @@ useSaveHotkey(save);
 
 const target = ref<BlogStatus>(post.value?.status ?? 'draft');
 const reason = ref('');
+const publishedAtInput = ref('');
 const moving = ref(false);
-watch(post, (value) => { if (value) target.value = value.status; });
+const publishMissing = computed(() => {
+  if (!post.value) return [];
+  return [
+    !post.value.title.trim() ? 'заголовок' : '',
+    !post.value.excerpt.trim() ? 'анотацію' : '',
+    !post.value.bodyMarkdown.trim() ? 'текст статті' : '',
+  ].filter(Boolean);
+});
+watch(post, (value) => {
+  if (value) target.value = value.status;
+  if (value?.publishedAt) {
+    const dt = new Date(value.publishedAt);
+    if (!Number.isNaN(dt.getTime())) publishedAtInput.value = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    else publishedAtInput.value = '';
+  } else {
+    publishedAtInput.value = '';
+  }
+});
 
 const applyStatus = async () => {
   if (moving.value || reason.value.trim().length < 8) return;
   moving.value = true;
   error.value = '';
   try {
-    await api.post(`/api/admin/posts/${id.value}/status`, { status: target.value, reason: reason.value.trim() });
+    const payload = {
+      status: target.value,
+      reason: reason.value.trim(),
+      ...(target.value === 'published' && publishedAtInput.value ? { publishedAt: new Date(publishedAtInput.value).toISOString() } : {}),
+    };
+    await api.post(`/api/admin/posts/${id.value}/status`, payload);
     reason.value = '';
+    publishedAtInput.value = '';
     await refresh();
   } catch (cause) {
     error.value = (cause as Error).message;
@@ -149,27 +173,35 @@ const publicPath = computed(() => (post.value ? publicPostUrl(post.value.locale,
 
     <div class="adm__panel" style="margin-top: 22px">
       <h2>Статус і журнал</h2>
-      <div class="adm__row" style="margin-top: 12px">
+      <div class="adm__row" style="margin-top: 12px; flex-wrap: wrap">
         <select v-model="target" class="adm__select" aria-label="Новий статус">
           <option value="draft">чернетка</option>
           <option value="published">опубліковано</option>
           <option value="archived">архів</option>
         </select>
-        <input v-model="reason" class="adm__input" style="flex: 1" type="text" maxlength="500" placeholder="Причина (від 8 символів) — потрапить у admin_audit_logs">
+        <input v-model="reason" class="adm__input" style="flex: 1; min-width: 220px" type="text" maxlength="500" placeholder="Причина (від 8 символів) — потрапить у admin_audit_logs">
+        <div v-if="target === 'published'" class="adm__field" style="flex: 1; min-width: 220px; margin: 0">
+          <label class="adm__label" for="published-at">Час публікації</label>
+          <input id="published-at" v-model="publishedAtInput" class="adm__input" type="datetime-local">
+        </div>
         <button
           type="button"
           class="adm__btn adm__btn--gold"
-          :disabled="moving || reason.trim().length < 8 || target === post.status || dirty"
+          :disabled="moving || reason.trim().length < 8 || target === post.status || dirty || (target === 'published' && publishMissing.length > 0)"
           @click="applyStatus"
         >
           {{ moving ? '…' : 'Застосувати' }}
         </button>
       </div>
       <p v-if="dirty" class="adm__hint">Спочатку збережи зміни — статус не повинен їх загубити.</p>
+      <p v-else-if="target === 'published' && publishMissing.length" class="adm__hint">
+        Не можна опублікувати незавершений переклад. Додай: {{ publishMissing.join(', ') }}.
+      </p>
       <p v-else-if="reason.trim().length && reason.trim().length < 8" class="adm__hint">Ще {{ 8 - reason.trim().length }} символів причини.</p>
       <p v-else class="adm__hint">
         Публікація рухає <code>datePublished</code> лише вперше: при повторній публікації та сама
-        дата лишається в індексі, а зміну несе <code>updatedAt</code>.
+        дата лишається в індексі, а зміну несе <code>updatedAt</code>. Якщо вказати час, він стане
+        точкою публікації для цього рядка.
       </p>
 
       <hr style="border: 0; border-top: 1px solid var(--hairline); margin: 18px 0">

@@ -15,6 +15,9 @@ const { data: term, error: termError } = await useFetch<BlogTagArchive>('/api/bl
 // Той самий розділ, що й в інших архівах: відмова апстриму — це 502 і ретрай, а не 404,
 // який знімає URL з індексу.
 if (!term.value) throwBlogUnavailable(termError.value, { notFound: t('common.notFound'), unavailable: t('common.errorTitle') });
+if (term.value.slug !== slug.value) {
+  await navigateTo(localePath(`/blog/tag/${term.value.slug}`), { redirectCode: 301, replace: true });
+}
 
 const { items, nextCursor, loading, loadMore } = await usePagedArchivePosts(computed(() => ({ tag: slug.value })));
 const { crumbs } = useBlogArchive('tag', term.value, items);

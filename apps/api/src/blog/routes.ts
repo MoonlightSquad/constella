@@ -16,6 +16,7 @@ import {
   listPublishedForSitemap,
   listPublishedPosts,
   listPublishedTaxonomyForSitemap,
+  listPublicAuthors,
   listPublicCategories,
   listPublicTags,
   setPostStatus,
@@ -195,6 +196,21 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
   );
 
   fastify.get(
+    '/blog/authors',
+    { schema: { tags: ['Blog'], summary: 'Authors with published posts in one language', querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
+    async (request, reply) => {
+      const parsed = publicPostQuerySchema.safeParse(request.query);
+      if (!parsed.success) return badRequest(reply, parsed.error);
+      try {
+        reply.headers({ 'cache-control': PUBLIC_CACHE });
+        return await listPublicAuthors(parsed.data.locale);
+      } catch (error) {
+        return fail(request, reply, error, 'author');
+      }
+    },
+  );
+
+  fastify.get(
     '/blog/tags/:slug',
     { schema: { tags: ['Blog'], summary: 'One tag with its hreflang alternates', params: { type: 'object', properties: { slug: { type: 'string' } } }, querystring: { type: 'object', properties: { locale: { type: 'string', enum: ['uk', 'en', 'de', 'fr'] } } } }, config: PUBLIC_READ_LIMIT },
     async (request, reply) => {
@@ -363,7 +379,13 @@ export const registerBlogRoutes = (fastify: FastifyInstance) => {
       const parsed = publishStatusSchema.safeParse(request.body);
       if (!parsed.success) return badRequest(reply, parsed.error);
       try {
-        return await setPostStatus(id, parsed.data.status, parsed.data.reason, claims.id);
+        return await setPostStatus(
+          id,
+          parsed.data.status,
+          parsed.data.reason,
+          claims.id,
+          parsed.data.status === 'published' ? parsed.data.publishedAt ?? null : null,
+        );
       } catch (error) {
         return fail(request, reply, error);
       }

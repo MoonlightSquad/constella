@@ -38,6 +38,7 @@ describe('profile and discovery helpers', () => {
     assert.deepEqual(publicProfile.prompts, ['Prompt']);
     assert.deepEqual(publicProfile.photos, []);
     assert.equal(publicProfile.matchPercent, 100);
+    assert.deepEqual(publicProfile.sharedInterests, ['music']);
     assert.equal(publicProfile.distanceKm, 3);
     assert.equal('email' in publicProfile, false);
   });

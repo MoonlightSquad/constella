@@ -21,14 +21,19 @@ photos.confirmUpload                    Caddy :443  ── TLS, limit тіла 1
 | Директорія | Що | Ранбук |
 | --- | --- | --- |
 | `nsfw/` | класифікатор фото профілю (ViT-Base, 5 класів) | [`nsfw/README.md`](nsfw/README.md) |
+| `assistant/` | Premium AI Chat Coach; окремий FastAPI сервіс, увімкнений лише після затвердження провайдера | [`assistant/README.md`](assistant/README.md) |
 
 ## Конвенція для наступних
 
-Наступний — асистент листування для VIP (`ai/assistant/`), той самий патерн:
-директорія → `x-*-token` → один типований клієнт на здатність
-(`apps/api/src/photos/ai-client.ts`, далі `apps/api/src/assistant/client.ts`), спільні
-Dockerfile/Caddy. Нічого більше спільного: жодного «generic AI gateway», жодної
-маршрутизації моделей і версіювання схем.
+Асистент листування для Premium (`ai/assistant/`) дотримується того самого патерну:
+окрема директорія → `x-*-token` → один типований клієнт на здатність
+(`apps/api/src/assistant/client.ts`) → окремий Caddy route. Нічого більше спільного:
+жодного «generic AI gateway», жодної маршрутизації моделей і версіювання схем.
+
+Інтеграційний статус Premium, safety та recommendation фіч описаний у кореневому
+[`PRODUCT_ROADMAP_PREMIUM_AI.md`](../PRODUCT_ROADMAP_PREMIUM_AI.md); перелічені там
+міграції додаються до репозиторію, але не застосовуються до спільної production DB
+агентом без окремого узгодженого deployment-кроку.
 
 Кілька правил, які стосуються всіх сервісів цієї директорії, а не тільки NSFW:
 

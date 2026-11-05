@@ -106,6 +106,11 @@ export const updatePostSchema = z
 export const publishStatusSchema = z.object({
   status: z.enum(BLOG_STATUSES),
   reason: z.string().trim().min(8).max(500),
+  publishedAt: z
+    .string()
+    .trim()
+    .refine((value) => !value || !Number.isNaN(new Date(value).getTime()), 'publishedAt must be a valid ISO timestamp')
+    .optional(),
 });
 
 export const translationSchema = z.object({

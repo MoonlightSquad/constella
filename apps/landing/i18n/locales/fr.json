@@ -165,6 +165,11 @@
       "blog": "Blog"
     },
     "categories": "Catégories",
+    "searchLabel": "Rechercher dans le blog",
+    "searchPlaceholder": "Rechercher dans les titres et résumés",
+    "searchSubmit": "Rechercher",
+    "searchClear": "Effacer",
+    "searchEmpty": "Aucun article ne correspond à cette recherche.",
     "inCategory": "Catégorie",
     "archiveBlurb": "les derniers articles de cette archive du blog Constella",
     "topics": "Thèmes",

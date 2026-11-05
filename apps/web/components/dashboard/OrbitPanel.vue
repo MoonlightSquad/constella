@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useLocale } from '~/composables/useLocale'
 import OrbitCard from './OrbitCard.vue'
 
-type Profile = { id: string; displayName: string; age: number; gender: string; city: string | null; bio: string | null; photos: string[]; prompts: string[]; verified: boolean }
+type Profile = { id: string; displayName: string; age: number; gender: string; city: string | null; bio: string | null; photos: string[]; sharedInterests?: string[]; prompts: string[]; verified: boolean }
 
 const props = defineProps<{
   profiles: Profile[]
@@ -11,10 +11,12 @@ const props = defineProps<{
   releasePending: boolean
   isLoading: boolean
   vip: boolean
+  feedbackEnabled: boolean
 }>()
 
 const emit = defineEmits<{
   react: [kind: 'spark' | 'pass' | 'super']
+  feedback: [profileId: string, reason: 'not_interested' | 'distance' | 'profile_incomplete' | 'intent_mismatch' | 'other']
   applyFilters: [filters: Record<string, string | number>]
   clearFilters: []
   report: [profile: Profile]
@@ -75,7 +77,7 @@ const clearFilters = () => {
     </div>
 
     <div v-if="isLoading" class="empty-state">{{ t('dashboard.loadingOrbit') }}</div>
-    <OrbitCard v-else-if="currentProfile()" :profile="currentProfile()!" @react="(k) => $emit('react', k)" @report="(p) => $emit('report', p)" @block="(id) => $emit('block', id)" />
+    <OrbitCard v-else-if="currentProfile()" :profile="currentProfile()!" :feedback-enabled="feedbackEnabled" @react="(k) => $emit('react', k)" @feedback="(id, reason) => $emit('feedback', id, reason)" @report="(p) => $emit('report', p)" @block="(id) => $emit('block', id)" />
     <div v-else class="empty-state orbit-empty">
       <span class="empty-star">✦</span>
       <h2>{{ t(releasePending ? 'dashboard.releasePending' : 'dashboard.emptyOrbit') }}</h2>

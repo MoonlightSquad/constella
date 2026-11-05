@@ -10,6 +10,16 @@ export type BlogTag = { id: string; slug: string; name: string; postCount: numbe
 /** Підпис-row: `{id, slug, name}` — профіль повністю тягне окрему URL-сторінку. */
 export type AuthorRef = { id: string; slug: string; name: string };
 
+export type BlogAuthorRow = {
+  id: string;
+  slug: string;
+  name: string;
+  role: string | null;
+  avatarUrl: string | null;
+  avatarAlt: string | null;
+  postCount: number;
+};
+
 /** `/blog/authors/:slug` — payload сторінки профілю. */
 export type BlogAuthorArchive = {
   id: string;

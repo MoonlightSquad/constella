@@ -7,6 +7,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -26,22 +27,25 @@ import {
 } from 'expo-audio';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { TRPCClientError } from '@trpc/client';
+import * as Notifications from 'expo-notifications';
 
 import { MediaError, pickFromCamera, pickFromGallery, pickVideoFromCamera, uploadChatImage, uploadChatVideo, uploadVoice } from '@/api/media';
 import { useChatSocket, type ChatFrame, type ChatSocketHandle } from '@/api/realtime';
 import { trpc } from '@/api/trpc';
 import { displayKind, mediaFromBody, parseVoice, type ChatMessage } from '@/api/types';
 import { useSession } from '@/auth/session';
-import { Notice } from '@/components/ui';
+import { Checkbox, Notice } from '@/components/ui';
 import { SafetySheet, type SafetyTarget } from '@/components/safety-sheet';
 import { useLocale } from '@/i18n/locale-provider';
 import { useDashboard } from '@/state/dashboard';
+import { clearSecret, readSecret, writeSecret } from '@/storage';
 import { colors, radius, spacing, typography } from '@/theme/tokens';
 import { formatTime, toIsoDate } from '@/utils/dates';
 
 const MAX_DRAFT = 1000;
 const MAX_RECORDING_SEC = 300;
 const TYPING_THROTTLE_MS = 1500;
+const LOCAL_REMINDER_CHANNEL = 'constella-default';
 /** Тап, а не затискання, не має випадково відправити порожню голосову. */
 const MIN_HOLD_MS = 400;
 const CANCEL_DRAG_PX = 60;
@@ -269,7 +273,8 @@ export default function ChatScreen() {
   const params = useLocalSearchParams<{ matchId?: string }>();
   const matchId = params.matchId ?? '';
   const { me } = useSession();
-  const { matches, loading, loadMatches } = useDashboard();
+  const { matches, loading, loadMatches, billing } = useDashboard();
+  const { locale } = useLocale();
 
   const [thread, setThread] = useState<ChatMessage[]>([]);
   const [contact, setContact] = useState<ContactInfo | null>(null);
@@ -287,6 +292,21 @@ export default function ChatScreen() {
   const [attachOpen, setAttachOpen] = useState(false);
   /** Профіль піра з шапки: дані вже в `social.matches`, окремий запит не потрібен. */
   const [profileOpen, setProfileOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantTopic, setAssistantTopic] = useState('');
+  const [assistantSuggestions, setAssistantSuggestions] = useState<string[]>([]);
+  const [assistantRemaining, setAssistantRemaining] = useState(10);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantIssue, setAssistantIssue] = useState('');
+  const [assistantEnabled, setAssistantEnabled] = useState(false);
+  const [meetingPlanOpen, setMeetingPlanOpen] = useState(false);
+  const [meetingPlan, setMeetingPlan] = useState<{ startsAt: Date | string; venueName: string; city: string } | null>(null);
+  const [meetingStartsAt, setMeetingStartsAt] = useState('');
+  const [meetingVenue, setMeetingVenue] = useState('');
+  const [meetingCity, setMeetingCity] = useState('');
+  const [meetingReminderEnabled, setMeetingReminderEnabled] = useState(false);
+  const [meetingPlanBusy, setMeetingPlanBusy] = useState(false);
+  const [meetingPlanIssue, setMeetingPlanIssue] = useState('');
 
   const list = useRef<ScrollViewInstance | null>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -307,6 +327,212 @@ export default function ChatScreen() {
 
   const match = matches.find((entry) => entry.id === matchId) ?? null;
   const myId = me?.userId ?? '';
+
+  const localDateTimeValue = (date: Date) => {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 16);
+  };
+  const meetingPlanDate = (value: Date | string) => value instanceof Date ? value : new Date(value);
+  const meetingReminderKey = (id: string) => `constella_meeting_reminder_${id}`;
+
+  const clearMeetingReminder = async (id: string) => {
+    const notificationId = await readSecret(meetingReminderKey(id));
+    if (notificationId) await Notifications.cancelScheduledNotificationAsync(notificationId);
+    await clearSecret(meetingReminderKey(id));
+    setMeetingReminderEnabled(false);
+  };
+
+  const loadMeetingReminder = async (id: string) => {
+    const notificationId = await readSecret(meetingReminderKey(id));
+    if (!notificationId) {
+      setMeetingReminderEnabled(false);
+      return;
+    }
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const isScheduled = scheduled.some((notification) => notification.identifier === notificationId);
+    setMeetingReminderEnabled(isScheduled);
+    if (!isScheduled) await clearSecret(meetingReminderKey(id));
+  };
+
+  const scheduleMeetingReminder = async (id: string, startsAt: Date) => {
+    const reminderAt = new Date(startsAt.getTime() - 60 * 60_000);
+    if (reminderAt.getTime() <= Date.now() + 60_000) {
+      await clearMeetingReminder(id);
+      return 'tooSoon' as const;
+    }
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync(LOCAL_REMINDER_CHANNEL, {
+        name: 'Constella',
+        importance: Notifications.AndroidImportance.HIGH,
+        lightColor: '#d9b879',
+      });
+    }
+    const permissions = await Notifications.getPermissionsAsync();
+    const requested = permissions.status === 'granted' || !permissions.canAskAgain
+      ? permissions
+      : await Notifications.requestPermissionsAsync();
+    if (requested.status !== 'granted') {
+      await clearMeetingReminder(id);
+      return 'permission' as const;
+    }
+
+    await clearMeetingReminder(id);
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: t('safetyPlan.reminderTitle'),
+        body: t('safetyPlan.reminderBody'),
+        data: { matchId: id },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: reminderAt,
+        ...(Platform.OS === 'android' ? { channelId: LOCAL_REMINDER_CHANNEL } : {}),
+      },
+    });
+    try {
+      await writeSecret(meetingReminderKey(id), notificationId);
+    } catch (error) {
+      await Notifications.cancelScheduledNotificationAsync(notificationId);
+      throw error;
+    }
+    setMeetingReminderEnabled(true);
+    return 'scheduled' as const;
+  };
+
+  useEffect(() => {
+    setAssistantOpen(false);
+    setAssistantEnabled(false);
+    setAssistantTopic('');
+    setAssistantSuggestions([]);
+    setAssistantRemaining(10);
+    setAssistantIssue('');
+    setMeetingPlanOpen(false);
+    setMeetingPlan(null);
+    setMeetingReminderEnabled(false);
+    setMeetingPlanIssue('');
+    if (!matchId) return;
+    void trpc.assistant.status.query()
+      .then((result) => setAssistantEnabled(result.enabled))
+      .catch(() => setAssistantEnabled(false));
+    void trpc.safetyPlan.get.query({ matchId })
+      .then((plan) => {
+        setMeetingPlan(plan);
+        if (plan && matchId) void loadMeetingReminder(matchId).catch(() => setMeetingPlanIssue(t('safetyPlan.reminderUnavailable')));
+        setMeetingStartsAt(plan
+          ? localDateTimeValue(meetingPlanDate(plan.startsAt))
+          : localDateTimeValue(new Date(Date.now() + 60 * 60_000)));
+        setMeetingVenue(plan?.venueName ?? '');
+        setMeetingCity(plan?.city ?? '');
+      })
+      .catch(() => setMeetingPlanIssue(t('safetyPlan.unavailable')));
+  }, [matchId]);
+
+  const requestAssistantSuggestions = async () => {
+    if (!matchId || !assistantTopic.trim() || assistantBusy || assistantRemaining < 1) return;
+    setAssistantBusy(true);
+    setAssistantIssue('');
+    try {
+      const result = await trpc.assistant.suggest.mutate({
+        matchId,
+        locale,
+        topic: assistantTopic.trim(),
+      });
+      setAssistantSuggestions(result.suggestions);
+      setAssistantRemaining(result.remaining);
+    } catch (error) {
+      const code = error instanceof TRPCClientError ? error.data?.code : undefined;
+      setAssistantIssue(code === 'TOO_MANY_REQUESTS' ? t('assistant.quotaReached') : t('assistant.unavailable'));
+    } finally {
+      setAssistantBusy(false);
+    }
+  };
+
+  const saveMeetingPlan = async () => {
+    if (!matchId || !meetingStartsAt || meetingPlanBusy) return;
+    setMeetingPlanBusy(true);
+    setMeetingPlanIssue('');
+    let saved: NonNullable<typeof meetingPlan>;
+    try {
+      saved = await trpc.safetyPlan.save.mutate({
+        matchId,
+        startsAt: new Date(meetingStartsAt).toISOString(),
+        venueName: meetingVenue,
+        city: meetingCity,
+      });
+      setMeetingPlan(saved);
+    } catch {
+      setMeetingPlanIssue(t('safetyPlan.unavailable'));
+      setMeetingPlanBusy(false);
+      return;
+    }
+    try {
+      if (meetingReminderEnabled) {
+        const reminder = await scheduleMeetingReminder(matchId, meetingPlanDate(saved.startsAt));
+        if (reminder === 'tooSoon') setMeetingPlanIssue(t('safetyPlan.reminderTooSoon'));
+        else if (reminder === 'permission') setMeetingPlanIssue(t('safetyPlan.reminderUnavailable'));
+      } else {
+        await clearMeetingReminder(matchId);
+      }
+    } catch {
+      setMeetingReminderEnabled(false);
+      setMeetingPlanIssue(t('safetyPlan.reminderUnavailable'));
+    } finally {
+      setMeetingPlanBusy(false);
+    }
+  };
+
+  const toggleMeetingReminder = async (enabled: boolean) => {
+    if (!matchId || !meetingPlan || meetingPlanBusy) return;
+    setMeetingPlanBusy(true);
+    setMeetingPlanIssue('');
+    try {
+      if (enabled) {
+        const result = await scheduleMeetingReminder(matchId, meetingPlanDate(meetingPlan.startsAt));
+        if (result === 'tooSoon') setMeetingPlanIssue(t('safetyPlan.reminderTooSoon'));
+        else if (result === 'permission') setMeetingPlanIssue(t('safetyPlan.reminderUnavailable'));
+      } else {
+        await clearMeetingReminder(matchId);
+      }
+    } catch {
+      setMeetingReminderEnabled(false);
+      setMeetingPlanIssue(t('safetyPlan.reminderUnavailable'));
+    } finally {
+      setMeetingPlanBusy(false);
+    }
+  };
+
+  const removeMeetingPlan = async () => {
+    if (!matchId || meetingPlanBusy) return;
+    setMeetingPlanBusy(true);
+    setMeetingPlanIssue('');
+    try {
+      await clearMeetingReminder(matchId);
+      await trpc.safetyPlan.remove.mutate({ matchId });
+      setMeetingPlan(null);
+      setMeetingVenue('');
+      setMeetingCity('');
+      setMeetingStartsAt(localDateTimeValue(new Date(Date.now() + 60 * 60_000)));
+    } catch {
+      setMeetingPlanIssue(t('safetyPlan.unavailable'));
+    } finally {
+      setMeetingPlanBusy(false);
+    }
+  };
+
+  const shareMeetingPlan = async () => {
+    if (!meetingPlan) return;
+    const when = new Intl.DateTimeFormat(locale === 'uk' ? 'uk-UA' : locale === 'de' ? 'de-DE' : locale === 'fr' ? 'fr-FR' : 'en-GB', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(meetingPlanDate(meetingPlan.startsAt));
+    const text = `${match?.profile?.displayName ?? t('safetyPlan.open')} · ${meetingPlan.venueName}, ${meetingPlan.city} · ${when}`;
+    try {
+      await Share.share({ title: t('safetyPlan.open'), message: text });
+    } catch {
+      setMeetingPlanIssue(t('safetyPlan.shareFailed'));
+    }
+  };
 
   /** Ліміт 12 повідомлень/хв (`social.ts:626`) — той самий переклад, що для WS-кадру. */
   const chatError = (error: unknown) =>
@@ -926,6 +1152,180 @@ export default function ChatScreen() {
             ) : null}
           </View>
 
+          <View style={styles.assistantTool}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: meetingPlanOpen }}
+              onPress={() => setMeetingPlanOpen((open) => !open)}
+              style={({ pressed }) => [styles.assistantToggle, pressed && styles.pressed]}
+            >
+              <Text style={styles.assistantToggleText}>{t('safetyPlan.open')}</Text>
+            </Pressable>
+            {meetingPlanOpen ? (
+              <View style={styles.assistantPanel}>
+                <Text style={styles.assistantPrivacy}>{t('safetyPlan.privacy')}</Text>
+                {meetingPlan ? (
+                  <>
+                    <Text style={styles.assistantPrivacy}>
+                      {meetingPlan.venueName}, {meetingPlan.city} · {new Intl.DateTimeFormat(locale === 'uk' ? 'uk-UA' : locale === 'de' ? 'de-DE' : locale === 'fr' ? 'fr-FR' : 'en-GB', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(meetingPlanDate(meetingPlan.startsAt))}
+                    </Text>
+                    <Text style={styles.assistantPrivacy}>{t('safetyPlan.saved')}</Text>
+                    <Checkbox
+                      checked={meetingReminderEnabled}
+                      disabled={meetingPlanBusy}
+                      label={t('safetyPlan.reminderToggle')}
+                      onChange={(enabled) => void toggleMeetingReminder(enabled)}
+                    />
+                    {meetingReminderEnabled ? <Text style={styles.assistantPrivacy}>{t('safetyPlan.reminderScheduled')}</Text> : null}
+                    <View style={styles.meetingPlanActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={meetingPlanBusy}
+                        onPress={() => void shareMeetingPlan()}
+                        style={({ pressed }) => [styles.assistantGenerate, pressed && styles.pressed]}
+                      >
+                        <Text style={styles.assistantToggleText}>{t('safetyPlan.share')}</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={meetingPlanBusy}
+                        onPress={() => void removeMeetingPlan()}
+                        style={({ pressed }) => [styles.assistantGenerate, pressed && styles.pressed]}
+                      >
+                        <Text style={styles.assistantToggleText}>{t('safetyPlan.remove')}</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.assistantLabel}>{t('safetyPlan.time')}</Text>
+                    <TextInput
+                      accessibilityLabel={t('safetyPlan.time')}
+                      autoCapitalize="none"
+                      onChangeText={setMeetingStartsAt}
+                      placeholder={t('safetyPlan.dateTimePlaceholder')}
+                      placeholderTextColor={colors.muted}
+                      style={styles.assistantInput}
+                      value={meetingStartsAt}
+                    />
+                    <Text style={styles.assistantLabel}>{t('safetyPlan.venue')}</Text>
+                    <TextInput
+                      accessibilityLabel={t('safetyPlan.venue')}
+                      maxLength={100}
+                      onChangeText={setMeetingVenue}
+                      placeholder={t('safetyPlan.venuePlaceholder')}
+                      placeholderTextColor={colors.muted}
+                      style={styles.assistantInput}
+                      value={meetingVenue}
+                    />
+                    <Text style={styles.assistantLabel}>{t('safetyPlan.city')}</Text>
+                    <TextInput
+                      accessibilityLabel={t('safetyPlan.city')}
+                      maxLength={80}
+                      onChangeText={setMeetingCity}
+                      placeholder={t('safetyPlan.city')}
+                      placeholderTextColor={colors.muted}
+                      style={styles.assistantInput}
+                      value={meetingCity}
+                    />
+                    <Checkbox
+                      checked={meetingReminderEnabled}
+                      disabled={meetingPlanBusy}
+                      label={t('safetyPlan.reminderToggle')}
+                      onChange={setMeetingReminderEnabled}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: meetingPlanBusy || !meetingStartsAt || !meetingVenue.trim() || !meetingCity.trim() }}
+                      disabled={meetingPlanBusy || !meetingStartsAt || !meetingVenue.trim() || !meetingCity.trim()}
+                      onPress={() => void saveMeetingPlan()}
+                      style={({ pressed }) => [styles.assistantGenerate, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.assistantToggleText}>{meetingPlanBusy ? t('assistant.loading') : t('safetyPlan.save')}</Text>
+                    </Pressable>
+                  </>
+                )}
+                {meetingPlanIssue ? <Text accessibilityRole="alert" style={styles.assistantError}>{meetingPlanIssue}</Text> : null}
+              </View>
+            ) : null}
+          </View>
+
+          {assistantEnabled ? (
+          <View style={styles.assistantTool}>
+            {billing?.vip ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: assistantOpen }}
+                onPress={() => setAssistantOpen((open) => !open)}
+                style={({ pressed }) => [styles.assistantToggle, pressed && styles.pressed]}
+              >
+                <Text style={styles.assistantToggleText}>{t('assistant.open')}</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push('/(app)/(tabs)/sky')}
+                style={({ pressed }) => [styles.assistantToggle, pressed && styles.pressed]}
+              >
+                <Text style={styles.assistantToggleText}>{t('assistant.premiumCta')}</Text>
+              </Pressable>
+            )}
+            {assistantOpen && billing?.vip ? (
+              <View style={styles.assistantPanel}>
+                <Text style={styles.assistantLabel}>{t('assistant.topicLabel')}</Text>
+                <View style={styles.assistantControls}>
+                  <TextInput
+                    accessibilityLabel={t('assistant.topicLabel')}
+                    maxLength={120}
+                    onChangeText={setAssistantTopic}
+                    placeholder={t('assistant.topicPlaceholder')}
+                    placeholderTextColor={colors.muted}
+                    style={styles.assistantInput}
+                    value={assistantTopic}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: assistantBusy || !assistantTopic.trim() || assistantRemaining < 1 }}
+                    disabled={assistantBusy || !assistantTopic.trim() || assistantRemaining < 1}
+                    onPress={() => void requestAssistantSuggestions()}
+                    style={({ pressed }) => [styles.assistantGenerate, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.assistantToggleText}>
+                      {assistantBusy
+                        ? t('assistant.loading')
+                        : assistantSuggestions.length
+                          ? t('assistant.again')
+                          : t('assistant.generate')}
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.assistantPrivacy}>{t('assistant.privacy')}</Text>
+                {assistantRemaining < 10 ? (
+                  <Text style={styles.assistantPrivacy}>{t('assistant.remaining', { count: assistantRemaining })}</Text>
+                ) : null}
+                {assistantIssue ? <Text accessibilityRole="alert" style={styles.assistantError}>{assistantIssue}</Text> : null}
+                {assistantSuggestions.map((suggestion) => (
+                  <Pressable
+                    key={suggestion}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setDraft(suggestion);
+                      setAssistantOpen(false);
+                      Keyboard.dismiss();
+                    }}
+                    style={({ pressed }) => [styles.assistantSuggestion, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.assistantSuggestionText}>{suggestion}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </View>
+          ) : null}
+
           <Modal transparent visible={attachOpen} onRequestClose={() => setAttachOpen(false)}>
             <Pressable
               accessibilityLabel={t('dashboard.cancel')}
@@ -1182,6 +1582,50 @@ const styles = StyleSheet.create({
   noticeWrap: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   composer: { paddingHorizontal: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+  assistantTool: { gap: spacing.sm, paddingTop: spacing.sm },
+  assistantToggle: {
+    minHeight: 36,
+    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+  },
+  assistantToggleText: { ...typography.caption, color: colors.gold, fontWeight: '700' },
+  assistantPanel: { gap: spacing.sm },
+  assistantLabel: { ...typography.caption, color: colors.mutedSoft },
+  assistantControls: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  meetingPlanActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  assistantInput: {
+    flex: 1,
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bgDeep,
+    color: colors.text,
+  },
+  assistantGenerate: {
+    minHeight: 42,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+  },
+  assistantPrivacy: { ...typography.caption, color: colors.muted, fontSize: 10 },
+  assistantError: { ...typography.caption, color: colors.danger },
+  assistantSuggestion: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    padding: spacing.sm,
+  },
+  assistantSuggestionText: { ...typography.body, color: colors.text, fontSize: 13 },
   input: {
     flex: 1,
     maxHeight: 96,

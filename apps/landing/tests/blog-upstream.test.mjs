@@ -38,6 +38,7 @@ test('taxonomy routes keep their fixed Latin segments', () => {
   assert.equal(blogUpstreamUrl('http://api:4000', 'categories', { locale: 'fr' }), 'http://api:4000/blog/categories?locale=fr');
   // Профіль — одна мовна сутність: апстрим plural (`/blog/authors/:slug`), як категорії з тегами.
   assert.equal(blogUpstreamUrl('http://api:4000', 'author', { slug: 'redaktorka', locale: 'de' }), 'http://api:4000/blog/authors/redaktorka?locale=de');
+  assert.equal(blogUpstreamUrl('http://api:4000', 'authors', { locale: 'uk' }), 'http://api:4000/blog/authors?locale=uk');
   assert.equal(blogUpstreamUrl('http://api:4000', 'sitemapTaxonomy', {}), 'http://api:4000/blog/sitemap/taxonomy');
   assert.throws(() => blogUpstreamUrl('http://api:4000', 'unknown-route', {}), /Unknown blog route/);
 });

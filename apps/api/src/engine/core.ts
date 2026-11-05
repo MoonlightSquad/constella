@@ -84,6 +84,7 @@ export const toPublicProfile = (profile: Record<string, any>, viewerInterests: s
   photos: profile.photos ?? [],
   prompts: [profile.promptOne, profile.promptTwo, profile.promptThree].filter(Boolean),
   interests: profile.interests ?? [],
+  sharedInterests: (profile.interests ?? []).filter((interest: string) => viewerInterests.includes(interest)),
   verified: Boolean(profile.verifiedAt),
   level: profile.level ?? 1,
   zodiac: getZodiac(new Date(profile.birthdate)),

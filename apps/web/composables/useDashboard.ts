@@ -11,6 +11,7 @@ export interface DashProfile {
   city: string | null
   bio: string | null
   photos: string[]
+  sharedInterests?: string[]
   prompts: string[]
   verified: boolean
 }
@@ -77,6 +78,8 @@ export function useDashboard() {
   const safetyTarget = useState<{ profileId: string; matchId?: string; label: string } | null>('dash:safetyTarget', () => null)
   const reportReason = useState<string>('dash:reportReason', () => 'spam')
   const reportDetails = useState<string>('dash:reportDetails', () => '')
+  const safetyReports = useState<{ id: number; reason: string; status: string; createdAt: string; reviewedAt: string | null }[]>('dash:safetyReports', () => [])
+  const safetyReportsLoading = useState<boolean>('dash:safetyReportsLoading', () => false)
 
   const currentProfile = computed(() => orbitProfiles.value[0] ?? null)
 
@@ -91,6 +94,13 @@ export function useDashboard() {
   const showToast = (msg: string) => {
     toast.value = msg
     window.setTimeout(() => { toast.value = '' }, 3600)
+  }
+
+  const loadSafetyReports = async () => {
+    safetyReportsLoading.value = true
+    try { safetyReports.value = await $trpc.social.myReports.query() }
+    catch (error) { showError(error) }
+    finally { safetyReportsLoading.value = false }
   }
 
   // --- Loaders ---
@@ -175,6 +185,17 @@ export function useDashboard() {
       }
       // Liking someone back from Orbit removes them from the pending likes list.
       await Promise.all([loadOrbit(), loadSparks()])
+    } catch (error) { showError(error) }
+  }
+
+  const submitRecommendationFeedback = async (
+    profileId: string,
+    reason: 'not_interested' | 'distance' | 'profile_incomplete' | 'intent_mismatch' | 'other',
+  ) => {
+    try {
+      await $trpc.recommendations.feedback.mutate({ profileId, reason })
+      await loadOrbit()
+      showToast(t('recommendations.thanks'))
     } catch (error) { showError(error) }
   }
 
@@ -289,12 +310,13 @@ export function useDashboard() {
     orbitRemaining, orbitDate, releasePending, isLoading, isBuying,
     isLinkingTelegram, telegramLinkError, currentProfile,
     // notices + report
-    toast, issue, safetyTarget, reportReason, reportDetails,
+    toast, issue, safetyTarget, reportReason, reportDetails, safetyReports, safetyReportsLoading,
     // nav
     activeTab, goTab,
     // actions
     showError, showToast, refreshAll, refreshChatSideEffects, loadOrbit, applyOrbitFilters, clearOrbitFilters,
-    loadMatches, loadQuests, loadBilling, loadSparks, reactToProfile, likeIncomingProfile, blockProfile,
+    loadMatches, loadQuests, loadBilling, loadSparks, loadSafetyReports, reactToProfile, likeIncomingProfile, blockProfile,
+    submitRecommendationFeedback,
     openReport, submitReport, linkTelegramAccount, cancelVip, buyProduct,
     refreshAfterBrowserPayment, formatOrbitDate, requestEditProfile,
     completeInviteQuest, authActions,

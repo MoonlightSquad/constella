@@ -220,10 +220,18 @@ test('an author is a slug publicly, an id in the admin and both on the post row'
   assert.equal(createPostSchema.safeParse({ ...validPost, authorId: 'redaktorka' }).success, false);
 });
 
-test('publishing requires an audit reason', () => {
+test('publishing requires an audit reason and accepts an optional publication time', () => {
   assert.equal(publishStatusSchema.safeParse({ status: 'published' }).success, false);
   assert.equal(publishStatusSchema.safeParse({ status: 'published', reason: 'short' }).success, false);
   assert.equal(publishStatusSchema.safeParse({ status: 'published', reason: 'reviewed by editor' }).success, true);
+  assert.equal(
+    publishStatusSchema.safeParse({ status: 'published', reason: 'reviewed by editor', publishedAt: '2026-03-01T10:00' }).success,
+    true,
+  );
+  assert.equal(
+    publishStatusSchema.safeParse({ status: 'published', reason: 'reviewed by editor', publishedAt: 'not-a-date' }).success,
+    false,
+  );
 });
 
 test('list query defaults and bounds', () => {

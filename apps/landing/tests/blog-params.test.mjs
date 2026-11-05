@@ -8,7 +8,7 @@ const OTHER = '7a2c1d94-8b6e-4f03-9c5d-2e1a6b7f8d90';
 test('the list proxy forwards only known, well-formed parameters', () => {
   assert.deepEqual(
     pickListParams({ locale: 'de', category: 'daten', tag: 'tips', author: 'volodymyr-semenko', limit: 3, cursor: 'abc', exclude: ID, evil: '<script>' }),
-    { locale: 'de', category: 'daten', tag: 'tips', author: 'volodymyr-semenko', exclude: ID, limit: 3, cursor: 'abc' },
+    { locale: 'de', category: 'daten', tag: 'tips', author: 'volodymyr-semenko', search: undefined, exclude: ID, limit: 3, cursor: 'abc' },
   );
   assert.deepEqual(
     pickListParams({ locale: 'es', category: 'Привіт', tag: '../x', author: 'Володимир', limit: 'x', cursor: 'a'.repeat(300), exclude: 'nope' }),
@@ -17,11 +17,19 @@ test('the list proxy forwards only known, well-formed parameters', () => {
       category: undefined,
       tag: undefined,
       author: undefined,
+      search: undefined,
       exclude: undefined,
       limit: undefined,
       cursor: undefined,
     },
   );
+});
+
+test('search is trimmed, bounded, and omitted until it has two characters', () => {
+  assert.equal(pickListParams({ search: '  stars  ' }).search, 'stars');
+  assert.equal(pickListParams({ search: ' x ' }).search, undefined);
+  assert.equal(pickListParams({ search: 'a'.repeat(100) }).search, 'a'.repeat(80));
+  assert.equal(pickListParams({ search: ['unsafe'] }).search, undefined);
 });
 
 test('limit stays inside the upstream window', () => {

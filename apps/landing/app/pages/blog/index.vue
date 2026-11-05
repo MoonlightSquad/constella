@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BlogCategory, BlogPostSummary, BlogTag } from '~/types/blog';
+import type { BlogAuthorRow, BlogCategory, BlogPostSummary, BlogTag } from '~/types/blog';
 
 type BlogList = { items: BlogPostSummary[]; nextCursor: string | null };
 
@@ -8,11 +8,28 @@ const { t, locale, localeProperties } = useI18n();
 const route = useRoute();
 const localePath = useLocalePath();
 const { siteUrl } = useRuntimeConfig().public;
+const searchInput = ref(typeof route.query.q === 'string' ? route.query.q : '');
+const searchQuery = computed(() => {
+  const query = typeof route.query.q === 'string' ? route.query.q.trim().slice(0, 80) : '';
+  return query.length >= 2 ? query : '';
+});
+watch(() => route.query.q, (value) => {
+  searchInput.value = typeof value === 'string' ? value : '';
+});
+
+const submitSearch = async () => {
+  const query = searchInput.value.trim().slice(0, 80);
+  if (query.length === 1) return;
+  await navigateTo({
+    path: route.path,
+    query: query.length >= 2 ? { q: query } : {},
+  });
+};
 
 // Server-to-server read through nitro: the browser never talks to the API, so the
 // production CORS allowlist (single origin) never applies to it.
 const { data: firstPage, error: listError } = await useFetch<BlogList>('/api/blog/posts', {
-  query: computed(() => ({ locale: locale.value, limit: PAGE_SIZE })),
+  query: computed(() => ({ locale: locale.value, limit: PAGE_SIZE, search: searchQuery.value || undefined })),
 });
 // Порожня головна блогу, згенерована під час відмови, — це сторінка, яку пошук запам'ятає
 // як «блог порожній». Список ніколи не відповідає 404, тому тут лише 502 і ретрай.
@@ -31,6 +48,11 @@ const { data: categoryRows } = await useFetch<{ items: BlogCategory[] }>('/api/b
 const { data: tagRows } = await useFetch<{ items: BlogTag[] }>('/api/blog/tags', {
   query: computed(() => ({ locale: locale.value })),
 });
+const { data: authorRows } = await useFetch<{ items: BlogAuthorRow[] }>('/api/blog/authors', {
+  query: computed(() => ({ locale: locale.value })),
+});
+
+const authorShelfLabel = computed(() => ({ uk: 'Автори', en: 'Authors', de: 'Autoren', fr: 'Auteurs' }[locale.value] ?? 'Authors'));
 
 const loading = ref(false);
 const loadMore = async () => {
@@ -38,7 +60,7 @@ const loadMore = async () => {
   loading.value = true;
   try {
     older.value.push(await $fetch<BlogList>('/api/blog/posts', {
-      query: { locale: locale.value, limit: PAGE_SIZE, cursor: nextCursor.value },
+      query: { locale: locale.value, limit: PAGE_SIZE, cursor: nextCursor.value, search: searchQuery.value || undefined },
     }));
   } finally {
     loading.value = false;
@@ -85,6 +107,24 @@ const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
       <p class="section-sub">{{ $t('blog.subtitle') }}</p>
     </div>
 
+    <form class="blog-search" role="search" @submit.prevent="submitSearch">
+      <label class="sr-only" for="blog-search">{{ $t('blog.searchLabel') }}</label>
+      <input
+        id="blog-search"
+        v-model="searchInput"
+        class="blog-search__input"
+        type="search"
+        name="q"
+        minlength="2"
+        maxlength="80"
+        :placeholder="$t('blog.searchPlaceholder')"
+      >
+      <button class="btn btn-ghost" type="submit">{{ $t('blog.searchSubmit') }}</button>
+      <button v-if="searchQuery" class="blog-search__clear" type="button" @click="searchInput = ''; submitSearch()">
+        {{ $t('blog.searchClear') }}
+      </button>
+    </form>
+
     <div v-if="categoryRows?.items.length" class="tag-row" role="navigation" :aria-label="$t('blog.categories')">
       <NuxtLink
         v-for="row in categoryRows.items"
@@ -104,6 +144,17 @@ const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
         :to="localePath(`/blog/tag/${row.slug}`)"
       >
         #{{ row.name }}
+      </NuxtLink>
+    </div>
+
+    <div v-if="authorRows?.items.length" class="tag-row" role="navigation" :aria-label="authorShelfLabel">
+      <NuxtLink
+        v-for="row in authorRows.items"
+        :key="row.id"
+        class="tag"
+        :to="localePath(`/blog/author/${row.slug}`)"
+      >
+        {{ row.name }}<span v-if="row.role"> · {{ row.role }}</span>
       </NuxtLink>
     </div>
 
@@ -133,7 +184,7 @@ const language = computed(() => localeProperties.value?.language ?? 'uk-UA');
       </article>
     </div>
 
-    <p v-else class="teaser teaser--empty">{{ $t('blog.empty') }}</p>
+    <p v-else class="teaser teaser--empty">{{ searchQuery ? $t('blog.searchEmpty') : $t('blog.empty') }}</p>
 
     <div class="posts__foot">
       <button v-if="nextCursor" class="btn btn-ghost" type="button" :disabled="loading" @click="loadMore">

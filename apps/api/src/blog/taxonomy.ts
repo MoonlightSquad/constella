@@ -6,6 +6,7 @@ import {
   blogPostGroups,
   blogPostTags,
   blogPosts,
+  blogTagSlugAliases,
   blogTagTranslations,
   blogTags,
   db,
@@ -313,11 +314,17 @@ export const updateTag = async (id: string, patch: UpdateTagInput, actorUserId: 
       const { locale, ...fields } = translation;
       const values = applyTagPatch(fields);
       const [existing] = await tx
-        .select({ locale: blogTagTranslations.locale })
+        .select({ locale: blogTagTranslations.locale, slug: blogTagTranslations.slug })
         .from(blogTagTranslations)
         .where(and(eq(blogTagTranslations.tagId, id), eq(blogTagTranslations.locale, locale)))
         .limit(1);
       if (existing) {
+        if (fields.slug !== undefined && fields.slug !== existing.slug) {
+          await tx
+            .insert(blogTagSlugAliases)
+            .values({ tagId: id, locale, slug: existing.slug })
+            .onConflictDoNothing();
+        }
         if (Object.keys(values).length) {
           await tx.update(blogTagTranslations).set(values).where(and(eq(blogTagTranslations.tagId, id), eq(blogTagTranslations.locale, locale)));
         }
