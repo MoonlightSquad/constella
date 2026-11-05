@@ -217,6 +217,47 @@
       "termsDesc": "Rules for using Constella, the age requirement, the VIP subscription and termination.",
       "community": "Community guidelines",
       "communityDesc": "What is allowed on Constella, and how moderation and reports work."
+    },
+    "security": {
+      "title": "Constella security overview",
+      "description": "Scope, method and limitations of Constella's internal source-code and repository-configuration review.",
+      "eyebrow": "Security & transparency",
+      "intro": "This is an internal review of source code and repository configuration as of the date shown. It describes review coverage; it does not confirm that all risks are absent.",
+      "linkLabel": "Security overview",
+      "reviewLabel": "Review snapshot",
+      "reviewDate": "November 5, 2026",
+      "reviewType": "Internal source-code review",
+      "outcomeEyebrow": "Outcome",
+      "outcomeTitle": "Identified issues addressed in this branch",
+      "outcomeText": "The review noted issues related to media deletion and message integrity. Corresponding code changes are included here; production has not been independently verified.",
+      "coverageEyebrow": "Review scope",
+      "coverageTitle": "Core flows and access boundaries",
+      "coverageIntro": "The review focused on key account, payment, messaging and data-handling paths.",
+      "coverage": [
+        { "title": "Accounts & access", "description": "Account recovery, Telegram identity verification, API sessions and the administrative authorization boundary." },
+        { "title": "Payments & messaging", "description": "Telegram Stars invoices, webhook and duplicate-event checks, and authorization for realtime channels." },
+        { "title": "Media & AI boundary", "description": "Media upload and processing flows, the private moderation service, and related data-deletion paths." },
+        { "title": "Build & operations", "description": "Repository configuration templates, CI workflow and baseline dependency practices." }
+      ],
+      "methodEyebrow": "Method",
+      "methodTitle": "How the review was carried out",
+      "methodIntro": "The review was manual and limited to code and configuration in the repository.",
+      "methodSteps": [
+        "Traced selected authentication and authorization paths across the API, clients and admin console.",
+        "Reviewed payment, webhook, media-upload, realtime-channel and AI-service boundaries.",
+        "Compared account-deletion flows with related records and storage objects."
+      ],
+      "limitsEyebrow": "Limitations",
+      "limitsTitle": "What this review does not establish",
+      "limitations": [
+        "Production systems, secret values, cloud-provider settings and live traffic were not examined.",
+        "No external penetration test, live scanning or comprehensive audit of every dependency was performed.",
+        "This is a point-in-time code review—not a certification, legal opinion or guarantee that vulnerabilities are absent."
+      ],
+      "contactTitle": "Noticed a security concern?",
+      "contactText": "Please report it privately to Constella support through the official Telegram bot.",
+      "contactCta": "Contact support",
+      "disclaimer": "This page describes review scope and limits. It is not a complete findings register and does not publish technical details that could increase risk to users."
     }
   },
   "legal": {

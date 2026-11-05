@@ -106,6 +106,11 @@ S3_SECRET_ACCESS_KEY=<storage.s3_secret_access_key>
 S3_PUBLIC_BASE_URL=<storage.s3_public_base_url>
 S3_FORCE_PATH_STYLE=false
 
+# Ключ R2 має дозволяти `ListBucket` із префіксами `uploads/<user-id>/`, `profiles/<user-id>/`,
+# `voice/<user-id>/` і `videos/<user-id>/`, а також `DeleteObject` для об'єктів там.
+# API використовує цей доступ для видалення медіафайлів акаунта; без нього запит зупиниться
+# з помилкою, а не залишить файли непоміченими.
+
 # Пошта (Resend)
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=587

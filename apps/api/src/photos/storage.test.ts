@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, describe, it } from 'node:test';
-import { createPhotoUpload, createVoiceUpload, isPhotoStorageConfigured, processPhotoUpload } from './storage.js';
+import { createPhotoUpload, createVoiceUpload, isPhotoStorageConfigured, mediaPrefixesForUser, processPhotoUpload } from './storage.js';
 
 const names = ['PHOTO_BUCKET', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_PUBLIC_BASE_URL'] as const;
 const original = Object.fromEntries(names.map((name) => [name, process.env[name]]));
@@ -25,5 +25,13 @@ describe('photo storage validation', () => {
     await assert.rejects(processPhotoUpload('user-1', 'uploads/user-2/photo.jpg', 'image/jpeg'), /Invalid or unauthorized/);
     await assert.rejects(processPhotoUpload('user-1', 'uploads/user-1/../other.jpg', 'image/jpeg'), /Invalid or unauthorized/);
     await assert.rejects(processPhotoUpload('user-1', 'uploads/user-1/photo.svg', 'image/svg+xml'), /Invalid or unauthorized/);
+  });
+  it('limits account media cleanup to its generated storage prefixes', () => {
+    assert.deepEqual(mediaPrefixesForUser('user-1'), [
+      'uploads/user-1/',
+      'profiles/user-1/',
+      'voice/user-1/',
+      'videos/user-1/',
+    ]);
   });
 });

@@ -3,6 +3,7 @@ import {
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -218,13 +219,43 @@ export const processPhotoUpload = async (userId: string, objectKey: string, cont
   return { imageKey, publicUrl, width: output.info.width, height: output.info.height, bytes: output.data };
 };
 
-export const removePhotoObjects = async (keys: string[]) => {
+const deleteObjects = async (client: S3Client, keys: string[]) => {
   const uniqueKeys = [...new Set(keys.filter(Boolean))];
   if (!uniqueKeys.length) return;
+  for (let offset = 0; offset < uniqueKeys.length; offset += 1000) {
+    const response = await client.send(new DeleteObjectsCommand({
+      Bucket: bucket(),
+      Delete: { Objects: uniqueKeys.slice(offset, offset + 1000).map((Key) => ({ Key })), Quiet: false },
+    }));
+    if (response.Errors?.length) throw new Error(`Could not delete ${response.Errors.length} object(s) from photo storage.`);
+  }
+};
+
+export const removePhotoObjects = async (keys: string[]) => {
+  if (!keys.some(Boolean)) return;
+  await deleteObjects(getClient(), keys);
+};
+
+export const mediaPrefixesForUser = (userId: string) =>
+  ['uploads', 'profiles', 'voice', 'videos'].map((directory) => `${directory}/${userId}/`);
+
+export const removeUserMediaObjects = async (userId: string) => {
   const client = getClient();
-  const response = await client.send(new DeleteObjectsCommand({
-    Bucket: bucket(),
-    Delete: { Objects: uniqueKeys.map((Key) => ({ Key })), Quiet: false },
-  }));
-  if (response.Errors?.length) throw new Error(`Could not delete ${response.Errors.length} object(s) from photo storage.`);
+  for (const Prefix of mediaPrefixesForUser(userId)) {
+    let continuationToken: string | undefined;
+    do {
+      const page = await client.send(new ListObjectsV2Command({
+        Bucket: bucket(),
+        Prefix,
+        ...(continuationToken ? { ContinuationToken: continuationToken } : {}),
+      }));
+      await deleteObjects(client, (page.Contents ?? [])
+        .map((object) => object.Key)
+        .filter((key): key is string => Boolean(key?.startsWith(Prefix))));
+      if (page.IsTruncated && !page.NextContinuationToken) {
+        throw new Error(`Photo storage did not return a continuation token for ${Prefix}.`);
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+  }
 };
