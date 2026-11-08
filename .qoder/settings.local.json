@@ -269,7 +269,8 @@
       "Bash(command -v psql || echo \"no psql\")",
       "Bash(cd /home/allko/constella && git status --short)",
       "Bash(cd /home/allko/constella && find apps/landing/app/pages apps/landing/app/components apps/landing/app/composables apps/landing/app/types apps/landing/app/utils apps/landing/app/layouts apps/landing/app/middleware -type f | sort; echo '--- server ---'; find apps/landing/server -type f | sort)",
-      "Bash(cd /home/allko/constella && find apps/admin -path '*/node_modules' -prune -o -path '*/.nuxt' -prune -o -path '*/.output' -prune -o -type f -print | sort)"
+      "Bash(cd /home/allko/constella && find apps/admin -path '*/node_modules' -prune -o -path '*/.nuxt' -prune -o -path '*/.output' -prune -o -type f -print | sort)",
+      "Bash(ls SECURITY-REVIEW.md apps/landing 2>&1 | head -20; git log --oneline -3)"
     ]
   }
 }

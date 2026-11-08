@@ -220,7 +220,7 @@
     },
     "security": {
       "title": "Aperçu de la sécurité de Constella",
-      "description": "Périmètre, méthode et limites de l’examen interne du code source et de la configuration du dépôt.",
+      "description": "Périmètre, méthode et limites de l’examen interne du code source : les deux constats confirmés, leur statut de correction et les prérequis de déploiement.",
       "eyebrow": "Sécurité et transparence",
       "intro": "Il s’agit d’un examen interne du code source et de la configuration du dépôt à la date indiquée. Il décrit le périmètre examiné, sans confirmer l’absence de tout risque.",
       "linkLabel": "Aperçu sécurité",
@@ -228,8 +228,35 @@
       "reviewDate": "5 novembre 2026",
       "reviewType": "Examen interne du code",
       "outcomeEyebrow": "Résultat",
-      "outcomeTitle": "Problèmes identifiés corrigés dans cette branche",
-      "outcomeText": "L’examen a relevé des problèmes liés à la suppression des médias et à l’intégrité des messages. Les modifications correspondantes sont incluses ; la production n’a pas fait l’objet d’une vérification indépendante.",
+      "outcomeTitle": "Deux constats confirmés — tous deux corrigés dans cette branche",
+      "outcomeText": "Les deux constats sont clos par des modifications de code et appuyés par des tests ciblés sur cette branche. Rien n’a encore été vérifié séparément en production.",
+      "findingsEyebrow": "Constats",
+      "findingsTitle": "Constats confirmés et leur statut",
+      "findingsIntro": "L’examen a confirmé deux problèmes. Nous donnons l’impact et le statut sans détails techniques qui pourraient accroître le risque pour les utilisateurs.",
+      "findings": [
+        {
+          "severity": "Élevé",
+          "tone": "high",
+          "status": "Corrigé dans le code",
+          "confidence": "8/10",
+          "title": "Des médias de chat pouvaient rester dans le stockage après la suppression du compte",
+          "problem": "La suppression du compte retirait les photos de profil mais laissait les fichiers vocaux et vidéo du chat, rangés dans des préfixes séparés.",
+          "change": "Les objets des préfixes du compte — uploads, profiles, voice et videos — sont désormais supprimés en premier, puis les enregistrements du compte. Une erreur de nettoyage interrompt la requête au lieu de passer sans rien dire."
+        },
+        {
+          "severity": "Moyen",
+          "tone": "medium",
+          "status": "Corrigé dans le code",
+          "confidence": "9/10",
+          "title": "Les mises à jour temps réel ne respectaient pas toujours l’auteur",
+          "problem": "Via le canal temps réel, un participant pouvait modifier le message d’un autre participant.",
+          "change": "Les modifications d’un message lié sont réservées à son auteur. L’épinglage lit le corps enregistré et applique une mise à jour conditionnelle : il ne peut ni remplacer le contenu ni écraser une modification concurrente."
+        }
+      ],
+      "problemLabel": "Le problème",
+      "changedLabel": "Ce qui a changé",
+      "confidenceLabel": "Confiance",
+      "scopeNote": "L’examen a été étendu à d’autres surfaces. Les points non encore corrigés ne sont pas publiés ici : ils figurent dans un registre interne et sont traités par ordre de priorité.",
       "coverageEyebrow": "Périmètre",
       "coverageTitle": "Parcours essentiels et contrôles d’accès",
       "coverageIntro": "L’examen s’est concentré sur les principaux parcours liés aux comptes, paiements, messages et données.",
@@ -253,6 +280,14 @@
         "Les systèmes de production, valeurs secrètes, réglages des fournisseurs cloud et trafic réel n’ont pas été examinés.",
         "Aucun test d’intrusion externe, scan en production ou audit exhaustif de toutes les dépendances n’a été réalisé.",
         "Il s’agit d’un examen ponctuel du code, pas d’une certification, d’un avis juridique ni d’une garantie d’absence de vulnérabilités."
+      ],
+      "prereqEyebrow": "Prérequis",
+      "prereqTitle": "Ce qu’il faut avant le déploiement, et ce que l’examen n’établit pas",
+      "prereqIntro": "Une correction ne vaut comme terminale qu’une fois vérifiée en exploitation. Voici ce que cela exige.",
+      "prerequisites": [
+        "Les identifiants de stockage de l’API doivent autoriser ListBucket et DeleteObject uniquement dans les préfixes du compte lui-même — uploads, profiles, voice et videos. Sans ces droits, la suppression du compte s’arrête sur une erreur de nettoyage.",
+        "Supprimer les objets d’origine n’établit pas qu’un CDN ou un cache intermédiaire ait été purgé ; le comportement du cache n’a pas été testé.",
+        "Ces modifications sont confirmées par des tests locaux et une build sur cette branche. Le comportement de production, la configuration du stockage cloud et le trafic réel n’ont pas été examinés."
       ],
       "contactTitle": "Vous avez repéré un problème de sécurité ?",
       "contactText": "Signalez-le en privé au support Constella via le bot Telegram officiel.",

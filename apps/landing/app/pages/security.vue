@@ -1,11 +1,22 @@
 <script setup lang="ts">
 type CoverageItem = { title: string; description: string };
+type FindingItem = {
+  severity: string;
+  tone: 'high' | 'medium';
+  status: string;
+  confidence: string;
+  title: string;
+  problem: string;
+  change: string;
+};
 
 const { t, tm, localeProperties } = useI18n();
 const { siteUrl } = useRuntimeConfig().public;
 const { bot } = useSiteLinks();
 const localePath = useLocalePath();
 const coverage = computed(() => tm('meta.security.coverage') as CoverageItem[]);
+const findings = computed(() => tm('meta.security.findings') as FindingItem[]);
+const prerequisites = computed(() => tm('meta.security.prerequisites') as string[]);
 const methodSteps = computed(() => tm('meta.security.methodSteps') as string[]);
 const limitations = computed(() => tm('meta.security.limitations') as string[]);
 
@@ -47,12 +58,38 @@ useJsonLd(() => ({
       </header>
 
       <section class="security-outcome" aria-labelledby="security-outcome-title">
-        <span class="security-outcome__mark" aria-hidden="true">✓</span>
+        <span class="security-outcome__mark" aria-hidden="true">{{ findings.length }}</span>
         <div>
           <p class="eyebrow">{{ t('meta.security.outcomeEyebrow') }}</p>
           <h2 id="security-outcome-title">{{ t('meta.security.outcomeTitle') }}</h2>
           <p>{{ t('meta.security.outcomeText') }}</p>
         </div>
+      </section>
+
+      <section class="security-section" aria-labelledby="security-findings-title">
+        <div class="section-head">
+          <p class="eyebrow">{{ t('meta.security.findingsEyebrow') }}</p>
+          <h2 id="security-findings-title" class="section-title">{{ t('meta.security.findingsTitle') }}</h2>
+          <p class="section-sub">{{ t('meta.security.findingsIntro') }}</p>
+        </div>
+        <div class="security-grid">
+          <article v-for="(finding, index) in findings" :key="finding.title" class="security-card">
+            <span class="security-card__index">{{ String(index + 1).padStart(2, '0') }}</span>
+            <p class="security-card__badges">
+              <span class="chip" :class="`chip--${finding.tone}`">{{ finding.severity }}</span>
+              <span class="chip chip--fixed">{{ finding.status }}</span>
+            </p>
+            <h3>{{ finding.title }}</h3>
+            <p class="security-finding__label">{{ t('meta.security.problemLabel') }}</p>
+            <p>{{ finding.problem }}</p>
+            <p class="security-finding__label">{{ t('meta.security.changedLabel') }}</p>
+            <p>{{ finding.change }}</p>
+            <p class="security-finding__meta">
+              {{ t('meta.security.confidenceLabel') }} {{ finding.confidence }}
+            </p>
+          </article>
+        </div>
+        <p class="security-note">{{ t('meta.security.scopeNote') }}</p>
       </section>
 
       <section class="security-section" aria-labelledby="security-coverage-title">
@@ -88,6 +125,15 @@ useJsonLd(() => ({
           </ul>
         </aside>
       </div>
+
+      <section class="security-panel security-panel--verify" aria-labelledby="security-prereq-title">
+        <p class="eyebrow">{{ t('meta.security.prereqEyebrow') }}</p>
+        <h2 id="security-prereq-title">{{ t('meta.security.prereqTitle') }}</h2>
+        <p>{{ t('meta.security.prereqIntro') }}</p>
+        <ul class="security-limits">
+          <li v-for="prerequisite in prerequisites" :key="prerequisite">{{ prerequisite }}</li>
+        </ul>
+      </section>
 
       <div class="security-contact">
         <div>

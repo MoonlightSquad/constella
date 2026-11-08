@@ -282,6 +282,8 @@
   text-transform: uppercase;
 }
 .chip--soon { background: rgba(130, 199, 183, 0.13); border-color: rgba(130, 199, 183, 0.35); color: var(--mint-2); }
+.chip--high { background: rgba(255, 156, 143, 0.14); border-color: rgba(255, 156, 143, 0.38); color: var(--danger); }
+.chip--fixed { background: rgba(130, 199, 183, 0.13); border-color: rgba(130, 199, 183, 0.35); color: var(--mint-2); }
 
 /* ---------- steps ---------- */
 .steps { display: grid; gap: clamp(16px, 2.4vw, 24px); counter-reset: step; }
@@ -476,6 +478,11 @@
 .security-contact p { max-width: 650px; }
 .security-contact .btn { flex: none; }
 .security-disclaimer { max-width: 900px; margin: 22px auto 0; color: var(--fg-muted-2); font-size: 12.5px; line-height: 1.6; text-align: center; }
+.security-card__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.security-card .security-finding__label { margin-top: 15px; color: var(--gold-eyebrow); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.security-card .security-finding__meta { margin-top: 15px; color: var(--fg-muted-2); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
+.security-note { max-width: 900px; margin-top: 16px; color: var(--fg-muted-2); font-size: 13px; line-height: 1.65; }
+.security-panel--verify { margin-top: 18px; background: linear-gradient(145deg, rgba(255, 156, 143, 0.07), rgba(15, 27, 28, 0.86)); }
 @media (max-width: 760px) {
   .security-hero, .security-details { grid-template-columns: 1fr; }
   .security-stamp { max-width: none; }
