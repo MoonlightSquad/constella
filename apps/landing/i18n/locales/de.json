@@ -217,6 +217,82 @@
       "termsDesc": "Regeln für Constella, Mindestalter, VIP-Abo und Beendigung des Zugangs.",
       "community": "Community-Regeln",
       "communityDesc": "Was in Constella erlaubt ist und wie Moderation und Meldungen funktionieren."
+    },
+    "security": {
+      "title": "Sicherheitsüberblick zu Constella",
+      "description": "Umfang, Methode und Grenzen der internen Quellcode-Prüfung: die beiden bestätigten Befunde, ihr Behebungsstatus und die Voraussetzungen für das Ausrollen.",
+      "eyebrow": "Sicherheit & Transparenz",
+      "intro": "Dies ist eine interne Prüfung von Quellcode und Repository-Konfiguration zum angegebenen Datum. Sie beschreibt den Prüfungsumfang und bestätigt nicht, dass alle Risiken ausgeschlossen sind.",
+      "linkLabel": "Sicherheitsüberblick",
+      "reviewLabel": "Prüfungsstand",
+      "reviewDate": "5. November 2026",
+      "reviewType": "Interne Quellcode-Prüfung",
+      "outcomeEyebrow": "Ergebnis",
+      "outcomeTitle": "Zwei bestätigte Befunde — beide in diesem Branch behoben",
+      "outcomeText": "Beide Befunde sind durch Codeänderungen geschlossen und auf diesem Branch durch fokussierte Tests abgesichert. Eine separate Verifikation in der Produktivumgebung steht noch aus.",
+      "findingsEyebrow": "Befunde",
+      "findingsTitle": "Bestätigte Befunde und ihr Status",
+      "findingsIntro": "Die Prüfung hat zwei Probleme bestätigt. Wir nennen Auswirkung und Status ohne technische Details, die das Risiko für Nutzer erhöhen könnten.",
+      "findings": [
+        {
+          "severity": "Hoch",
+          "tone": "high",
+          "status": "Im Code behoben",
+          "confidence": "8/10",
+          "title": "Chat-Medien konnten nach der Kontolöschung im Storage bleiben",
+          "problem": "Die Kontolöschung entfernte Profilfoto-Objekte, aber nicht Sprach- und Videodateien aus dem Chat, die in eigenen Präfixen lagen.",
+          "change": "Gelöscht werden zuerst die Objekte in den Präfixen des eigenen Kontos — uploads, profiles, voice und videos — erst danach die Kontodaten. Ein Fehler beim Aufräumen bricht die Anfrage ab, statt sie still durchlaufen zu lassen."
+        },
+        {
+          "severity": "Mittel",
+          "tone": "medium",
+          "status": "Im Code behoben",
+          "confidence": "9/10",
+          "title": "Echtzeit-Updates haben die Autorschaft nicht immer gewahrt",
+          "problem": "Über den Echtzeitkanal konnte ein Chat-Teilnehmer die Nachricht eines anderen verändern.",
+          "change": "Änderungen an verknüpften Nachrichten sind nur der Autor erlaubt. Das Anheften liest den gespeicherten Nachrichteninhalt und setzt ein bedingtes Update ein, sodass es weder Inhalt ersetzen noch eine parallele Änderung überschreiben kann."
+        }
+      ],
+      "problemLabel": "Was war das Problem",
+      "changedLabel": "Was wurde geändert",
+      "confidenceLabel": "Konfidenz",
+      "scopeNote": "Die Prüfung wurde auf weitere Bereiche ausgeweitet. Noch nicht abgeschlossene Punkte nennen wir hier nicht öffentlich; sie stehen in einem internen Register und werden nach Priorität behoben.",
+      "coverageEyebrow": "Prüfungsumfang",
+      "coverageTitle": "Zentrale Abläufe und Zugriffskontrollen",
+      "coverageIntro": "Im Mittelpunkt standen wichtige Abläufe für Konten, Zahlungen, Nachrichten und Datenverarbeitung.",
+      "coverage": [
+        { "title": "Konten & Zugriff", "description": "Kontowiederherstellung, Telegram-Identitätsprüfung, API-Sitzungen und die Grenze der Admin-Berechtigungen." },
+        { "title": "Zahlungen & Nachrichten", "description": "Telegram-Stars-Rechnungen, Webhook- und Duplikatprüfungen sowie Zugriff auf Echtzeitkanäle." },
+        { "title": "Medien & KI-Grenze", "description": "Medien-Upload und -Verarbeitung, der private Moderationsdienst und zugehörige Datenlöschpfade." },
+        { "title": "Build & Betrieb", "description": "Konfigurationsvorlagen im Repository, CI-Ablauf und grundlegende Praktiken für Abhängigkeiten." }
+      ],
+      "methodEyebrow": "Methode",
+      "methodTitle": "So lief die Prüfung ab",
+      "methodIntro": "Die Prüfung erfolgte manuell und beschränkte sich auf Code und Konfiguration im Repository.",
+      "methodSteps": [
+        "Ausgewählte Authentifizierungs- und Autorisierungspfade zwischen API, Clients und Admin-Konsole wurden nachvollzogen.",
+        "Zahlungs-, Webhook-, Medien-Upload-, Echtzeitkanal- und KI-Service-Grenzen wurden geprüft.",
+        "Kontolöschung wurde mit den zugehörigen Datensätzen und Speicherobjekten abgeglichen."
+      ],
+      "limitsEyebrow": "Grenzen",
+      "limitsTitle": "Was diese Prüfung nicht bestätigt",
+      "limitations": [
+        "Produktivsysteme, Geheimnisse, Cloud-Provider-Einstellungen und Live-Traffic wurden nicht untersucht.",
+        "Es gab keinen externen Penetrationstest, kein Live-Scanning und keine umfassende Prüfung aller Abhängigkeiten.",
+        "Dies ist eine punktuelle Quellcode-Prüfung – keine Zertifizierung, Rechtsberatung oder Garantie, dass keine Schwachstellen bestehen."
+      ],
+      "prereqEyebrow": "Voraussetzungen",
+      "prereqTitle": "Was vor dem Ausrollen nötig ist — und was die Prüfung nicht belegt",
+      "prereqIntro": "Als fertig gilt eine Behebung erst, wenn sie im Betrieb verifiziert ist. Dafür braucht es Folgendes.",
+      "prerequisites": [
+        "Die Storage-Zugangsdaten des API müssen ListBucket und DeleteObject ausschließlich innerhalb der Präfixe des eigenen Kontos erlauben — uploads, profiles, voice und videos. Fehlen diese Rechte, bricht die Kontolöschung mit einem Aufräumfehler ab.",
+        "Das Löschen der Originale im Storage belegt nicht, dass ein CDN oder Zwischen-Cache geleert wurde; das Cache-Verhalten wurde nicht getestet.",
+        "Die Änderungen sind durch lokale Tests und einen Build auf diesem Branch bestätigt. Produktives Verhalten, die Konfiguration des Cloud-Storage und echter Traffic wurden nicht untersucht."
+      ],
+      "contactTitle": "Ein Sicherheitsproblem entdeckt?",
+      "contactText": "Bitte melde es vertraulich beim Constella-Support über den offiziellen Telegram-Bot.",
+      "contactCta": "Support kontaktieren",
+      "disclaimer": "Diese Seite beschreibt Umfang und Grenzen der Prüfung. Sie ist kein vollständiges Findings-Verzeichnis und veröffentlicht keine technischen Details, die das Risiko für Nutzer erhöhen könnten."
     }
   },
   "legal": {

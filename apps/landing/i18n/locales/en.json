@@ -217,6 +217,82 @@
       "termsDesc": "Rules for using Constella, the age requirement, the VIP subscription and termination.",
       "community": "Community guidelines",
       "communityDesc": "What is allowed on Constella, and how moderation and reports work."
+    },
+    "security": {
+      "title": "Constella security overview",
+      "description": "Scope, method and limits of Constella's internal source-code review: the two confirmed findings, their remediation status and the prerequisites for deploying the fixes.",
+      "eyebrow": "Security & transparency",
+      "intro": "This is an internal review of source code and repository configuration as of the date shown. It describes review coverage; it does not confirm that all risks are absent.",
+      "linkLabel": "Security overview",
+      "reviewLabel": "Review snapshot",
+      "reviewDate": "November 5, 2026",
+      "reviewType": "Internal source-code review",
+      "outcomeEyebrow": "Outcome",
+      "outcomeTitle": "Two confirmed findings — both fixed in this branch",
+      "outcomeText": "Both findings are closed by code changes and backed by focused tests on this branch. Neither has been separately verified in production.",
+      "findingsEyebrow": "Findings",
+      "findingsTitle": "Confirmed findings and their status",
+      "findingsIntro": "The review confirmed two issues. We state the impact and the status without technical detail that could increase risk to users.",
+      "findings": [
+        {
+          "severity": "High",
+          "tone": "high",
+          "status": "Fixed in code",
+          "confidence": "8/10",
+          "title": "Chat media could remain in storage after account deletion",
+          "problem": "Account deletion removed profile-photo objects but left voice and video chat media, stored under separate prefixes, behind.",
+          "change": "Deletion now removes the account's own uploads, profiles, voice and video objects first, and only then removes the account records. A cleanup error stops the request instead of quietly carrying on."
+        },
+        {
+          "severity": "Medium",
+          "tone": "medium",
+          "status": "Fixed in code",
+          "confidence": "9/10",
+          "title": "Realtime message updates did not always respect authorship",
+          "problem": "Through the realtime channel, one chat participant could change another participant's message.",
+          "change": "Linked-message updates are now restricted to the author. Pinning reads the stored message body and applies a conditional update, so it cannot replace content or overwrite a concurrent change."
+        }
+      ],
+      "problemLabel": "What was wrong",
+      "changedLabel": "What changed",
+      "confidenceLabel": "Confidence",
+      "scopeNote": "The review was extended to additional surfaces. Items that are not yet closed are not published here: they are recorded in an internal register and fixed by priority.",
+      "coverageEyebrow": "Review scope",
+      "coverageTitle": "Core flows and access boundaries",
+      "coverageIntro": "The review focused on key account, payment, messaging and data-handling paths.",
+      "coverage": [
+        { "title": "Accounts & access", "description": "Account recovery, Telegram identity verification, API sessions and the administrative authorization boundary." },
+        { "title": "Payments & messaging", "description": "Telegram Stars invoices, webhook and duplicate-event checks, and authorization for realtime channels." },
+        { "title": "Media & AI boundary", "description": "Media upload and processing flows, the private moderation service, and related data-deletion paths." },
+        { "title": "Build & operations", "description": "Repository configuration templates, CI workflow and baseline dependency practices." }
+      ],
+      "methodEyebrow": "Method",
+      "methodTitle": "How the review was carried out",
+      "methodIntro": "The review was manual and limited to code and configuration in the repository.",
+      "methodSteps": [
+        "Traced selected authentication and authorization paths across the API, clients and admin console.",
+        "Reviewed payment, webhook, media-upload, realtime-channel and AI-service boundaries.",
+        "Compared account-deletion flows with related records and storage objects."
+      ],
+      "limitsEyebrow": "Limitations",
+      "limitsTitle": "What this review does not establish",
+      "limitations": [
+        "Production systems, secret values, cloud-provider settings and live traffic were not examined.",
+        "No external penetration test, live scanning or comprehensive audit of every dependency was performed.",
+        "This is a point-in-time code review—not a certification, legal opinion or guarantee that vulnerabilities are absent."
+      ],
+      "prereqEyebrow": "Prerequisites",
+      "prereqTitle": "What deployment needs, and what the review does not establish",
+      "prereqIntro": "A fix counts as complete only once it is verified in operation. This is what that requires.",
+      "prerequisites": [
+        "The API's storage credentials must allow ListBucket and DeleteObject only within the account's own prefixes — uploads, profiles, voice and videos. Without them, account deletion stops with a storage-cleanup error.",
+        "Deleting origin objects does not establish that a CDN or intermediary cache has been purged; cache behavior was not tested.",
+        "These changes are confirmed by local tests and a build on this branch. Production behavior, cloud storage configuration and live traffic were not examined."
+      ],
+      "contactTitle": "Noticed a security concern?",
+      "contactText": "Please report it privately to Constella support through the official Telegram bot.",
+      "contactCta": "Contact support",
+      "disclaimer": "This page describes review scope and limits. It is not a complete findings register and does not publish technical details that could increase risk to users."
     }
   },
   "legal": {

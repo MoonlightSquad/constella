@@ -23,7 +23,7 @@ test('the file is a single urlset with the prolog the format asks for', () => {
 test('the static pages carry one entry per locale with a complete cluster', () => {
   const xml = buildSitemapXml(SITE, staticSitemapEntries());
   const listed = locs(xml);
-  assert.equal(listed.length, 20, 'home, /blog and three legal pages in four languages');
+  assert.equal(listed.length, 24, 'home, /blog, three legal pages and security page in four languages');
   assert.deepEqual(listed.filter((loc) => !loc.startsWith(`${SITE}/`)), [], 'every loc is absolute on the canonical host');
   for (const block of urlBlocks(xml)) {
     const links = [...block.matchAll(/hreflang="([^"]+)" href="([^"]+)"/g)];
@@ -32,6 +32,10 @@ test('the static pages carry one entry per locale with a complete cluster', () =
   }
   assert.ok(listed.includes(`${SITE}/`), 'the Ukrainian root stays unprefixed, as the i18n strategy promises');
   assert.ok(listed.includes(`${SITE}/de/legal/terms`));
+  assert.ok(listed.includes(`${SITE}/security`));
+  assert.ok(listed.includes(`${SITE}/en/security`));
+  assert.ok(listed.includes(`${SITE}/de/security`));
+  assert.ok(listed.includes(`${SITE}/fr/security`));
 });
 
 /**
