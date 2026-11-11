@@ -33,7 +33,10 @@ export function resolveApiInternalSource(env, fallback) {
 export function getApiProxyTarget(path, search, apiInternalBase) {
   const segments = path?.split('/');
   if (!segments?.length || segments.some((segment) => !segment || segment === '.' || segment === '..' || segment.includes(':')) || !validPath.test(path)) return null;
-  const target = new URL(segments.map(encodeURIComponent).join('/'), apiInternalBase.replace(/\/$/, '') + '/');
+  const target = new URL(
+    segments.map((segment) => encodeURIComponent(segment).replaceAll('%2C', ',')).join('/'),
+    apiInternalBase.replace(/\/$/, '') + '/',
+  );
   target.search = search;
   return target.toString();
 }

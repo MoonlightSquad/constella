@@ -3,6 +3,9 @@ import { after, describe, it } from 'node:test';
 
 process.env.DATABASE_URL ??= 'postgres://constella:test@127.0.0.1:5432/constella';
 const { adminProcedure, isAdminAccount, isConfiguredAdmin, protectedProcedure, router } = await import('./trpc.js');
+const { default: Fastify } = await import('fastify');
+const { fastifyTRPCPlugin } = await import('@trpc/server/adapters/fastify');
+const { appRouter } = await import('./routers/_app.js');
 
 const makeContext = (user: any, session: any = { bannedAt: null, sessionVersion: 1, role: 'user' }) => ({
   req: {} as any,
@@ -106,5 +109,43 @@ describe('tRPC authorization middleware', () => {
     assert.equal(isAdminAccount({ id: 'db-admin', telegramId: null }, 'admin'), true);
     assert.equal(isAdminAccount({ id: 'db-user', telegramId: null }, 'user'), false);
     assert.equal(isAdminAccount(null, 'admin'), false);
+  });
+});
+
+describe('tRPC batch route', () => {
+  it('matches the dashboard batch URL against the registered API router', async () => {
+    const app = Fastify();
+    const procedures = [
+      'social.callConfig',
+      'social.realtimeConfig',
+      'social.orbit',
+      'social.matches',
+      'social.quests',
+      'social.incomingSparks',
+      'social.incomingLikes',
+      'billing.status',
+    ];
+
+    await app.register(fastifyTRPCPlugin, {
+      prefix: '/trpc',
+      trpcOptions: {
+        router: appRouter,
+        createContext: async ({ req, res }) => ({ req, res, db: {}, user: null }),
+      },
+    });
+
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/trpc/${procedures.join(',')}?batch=1`,
+      });
+
+      assert.notEqual(response.statusCode, 404, response.body);
+      const results = JSON.parse(response.body);
+      assert.equal(results.length, procedures.length);
+      assert.ok(results.every((result: any) => result.error?.data?.code === 'UNAUTHORIZED'));
+    } finally {
+      await app.close();
+    }
   });
 });

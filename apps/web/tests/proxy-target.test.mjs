@@ -5,6 +5,10 @@ import { getApiProxyTarget, resolveApiInternalBase } from '../server/utils/api-p
 test('proxies health routes to configured API service', () => assert.equal(getApiProxyTarget('health/live', '', 'http://api:4000'), 'http://api:4000/health/live'));
 test('preserves query parameters', () => assert.equal(getApiProxyTarget('auth/web/login', '?next=%2Fapp&mode=web', 'http://api:4000/'), 'http://api:4000/auth/web/login?next=%2Fapp&mode=web'));
 test('keeps nested routes under base path', () => assert.equal(getApiProxyTarget('trpc/profile.get', '', 'https://api.example/v1'), 'https://api.example/v1/trpc/profile.get'));
+test('preserves comma-separated tRPC batch procedure paths', () => {
+  const path = 'trpc/social.callConfig,social.realtimeConfig,social.orbit,social.matches,social.quests,social.incomingSparks,social.incomingLikes,billing.status';
+  assert.equal(getApiProxyTarget(path, '?batch=1', 'https://api.example'), `https://api.example/${path}?batch=1`);
+});
 test('rejects empty, traversal, and URL injection paths', () => { for (const path of [undefined, '', '../health/live', 'health/../admin', 'http:evil', 'health?x=1']) assert.equal(getApiProxyTarget(path, '', 'http://api:4000'), null, String(path)); });
 
 test('uses the Compose API service as the production default', () => assert.equal(resolveApiInternalBase({ NODE_ENV: 'production' }), 'http://api:4000'));

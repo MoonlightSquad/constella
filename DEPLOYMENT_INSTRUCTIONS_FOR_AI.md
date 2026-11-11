@@ -42,7 +42,7 @@ pnpm deploy:vercel -- --skip-webhook
 
 Після того як `api-test.constella.pp.ua` почне резолвитися, повторний звичайний запуск `pnpm deploy:vercel` оновить deployments і налаштує webhook.
 
-Для повторного деплою лише одного застосунку можна використати `pnpm deploy:vercel -- --api-only` або `--web-only`; додай `--skip-webhook`, якщо DNS API ще не готовий.
+Для повторного деплою лише одного застосунку можна використати `pnpm deploy:vercel -- --api-only` або `--web-only`; web-only автоматично деплоїть API перед web, щоб клієнт і серверні tRPC-маршрути залишалися сумісними. Додай `--skip-webhook`, якщо DNS API ще не готовий.
 
 Команда послідовно:
 
