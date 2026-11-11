@@ -14,7 +14,7 @@ const { reactToProfile, submitRecommendationFeedback, applyOrbitFilters, clearOr
     :release-pending="releasePending"
     :is-loading="isLoading"
     :vip="!!billingStatus?.vip"
-    :feedback-enabled="Object.keys(appliedOrbitFilters).length === 0"
+    :feedback-enabled="!appliedOrbitFilters || Object.keys(appliedOrbitFilters).length === 0"
     @react="reactToProfile"
     @feedback="submitRecommendationFeedback"
     @apply-filters="applyOrbitFilters"
