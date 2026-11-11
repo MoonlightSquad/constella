@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDeploymentConfig } from './deployment-config.mjs';
+import { selectDeploymentProjects } from './deployment-targets.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(rootDir, 'apps/api/package.json'));
@@ -141,13 +142,7 @@ const projects = [
     buildCommand: 'cd ../.. && pnpm exec turbo run build --filter=@constella/admin...',
   },
 ];
-const onlyFlags = ['--api-only', '--web-only', '--landing-only', '--admin-only'].filter((flag) => args.has(flag));
-if (onlyFlags.length > 1) {
-  throw new Error(`Choose only one of --api-only, --web-only, --landing-only and --admin-only, got ${onlyFlags.join(' and ')}.`);
-}
-const deploymentProjects = onlyFlags.length
-  ? projects.filter(({ key }) => key === onlyFlags[0].replace(/^--/, '').replace(/-only$/, ''))
-  : projects;
+const deploymentProjects = selectDeploymentProjects(projects, args);
 
 function logPlan() {
   console.log(`Vercel projects: ${projects.map(({ key, name, rootDirectory }) => `${key}=${name} (${rootDirectory})`).join(', ')}`);
